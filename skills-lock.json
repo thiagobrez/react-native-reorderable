@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-device": {
+      "source": "callstack/agent-device",
+      "sourceType": "github",
+      "skillPath": "skills/agent-device/SKILL.md",
+      "computedHash": "d76647cbe0e151da0b1019dc3da7bffd17b735704a45a50a2f2f4aeed0afe8b2"
+    }
+  }
+}

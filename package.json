@@ -117,6 +117,9 @@
     },
     "ios": {
       "components": {
+        "ReorderableContentView": {
+          "className": "ReorderableContentView"
+        },
         "ReorderableView": {
           "className": "ReorderableView"
         }

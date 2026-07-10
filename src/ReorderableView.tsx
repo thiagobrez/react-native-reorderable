@@ -1,11 +1,11 @@
-import type { ColorValue, ViewProps } from 'react-native';
+import { View } from 'react-native';
 
-type Props = ViewProps & {
-  color?: ColorValue;
-};
+import type { NativeProps } from './ReorderableViewNativeComponent';
 
-export function ReorderableView(_props: Props): never {
-  throw new Error(
-    "'react-native-reorderable' is only supported on native platforms."
-  );
-}
+export type {
+  NativeDropEvent,
+  NativeMoveEvent,
+  NativeProps,
+} from './ReorderableViewNativeComponent';
+
+export default View as React.ComponentType<NativeProps>;

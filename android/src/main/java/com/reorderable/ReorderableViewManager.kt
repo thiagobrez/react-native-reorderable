@@ -1,6 +1,6 @@
 package com.reorderable
 
-import android.graphics.Color
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
@@ -30,10 +30,29 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
     return ReorderableView(context)
   }
 
-  @ReactProp(name = "color")
-  override fun setColor(view: ReorderableView?, color: Int?) {
-    view?.setBackgroundColor(color ?: Color.TRANSPARENT)
-  }
+  @ReactProp(name = "mode")
+  override fun setMode(view: ReorderableView?, value: String?) = Unit
+
+  @ReactProp(name = "entryKinds")
+  override fun setEntryKinds(view: ReorderableView?, value: ReadableArray?) = Unit
+
+  @ReactProp(name = "entryIds")
+  override fun setEntryIds(view: ReorderableView?, value: ReadableArray?) = Unit
+
+  @ReactProp(name = "collectionIds")
+  override fun setCollectionIds(view: ReorderableView?, value: ReadableArray?) = Unit
+
+  @ReactProp(name = "orderedEntryIds")
+  override fun setOrderedEntryIds(view: ReorderableView?, value: ReadableArray?) = Unit
+
+  @ReactProp(name = "selectedIds")
+  override fun setSelectedIds(view: ReorderableView?, value: ReadableArray?) = Unit
+
+  @ReactProp(name = "layoutRevision")
+  override fun setLayoutRevision(view: ReorderableView?, value: String?) = Unit
+
+  @ReactProp(name = "enabled")
+  override fun setEnabled(view: ReorderableView?, value: Boolean) = Unit
 
   companion object {
     const val NAME = "ReorderableView"

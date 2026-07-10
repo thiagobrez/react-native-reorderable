@@ -1,2 +1,6 @@
-export { default as ReorderableView } from './ReorderableViewNativeComponent';
-export * from './ReorderableViewNativeComponent';
+export { default } from './ReorderableViewNativeComponent';
+export type {
+  NativeDropEvent,
+  NativeMoveEvent,
+  NativeProps,
+} from './ReorderableViewNativeComponent';

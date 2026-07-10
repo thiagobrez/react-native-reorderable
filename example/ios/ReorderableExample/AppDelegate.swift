@@ -5,29 +5,20 @@ import ReactAppDependencyProvider
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
-  var window: UIWindow?
-
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
+  var launchOptions: [UIApplication.LaunchOptionsKey: Any]?
 
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    let delegate = ReactNativeDelegate()
-    let factory = RCTReactNativeFactory(delegate: delegate)
-    delegate.dependencyProvider = RCTAppDependencyProvider()
+    self.launchOptions = launchOptions
 
-    reactNativeDelegate = delegate
-    reactNativeFactory = factory
-
-    window = UIWindow(frame: UIScreen.main.bounds)
-
-    factory.startReactNative(
-      withModuleName: "ReorderableExample",
-      in: window,
-      launchOptions: launchOptions
-    )
+    let reactNativeDelegate = ReactNativeDelegate()
+    reactNativeDelegate.dependencyProvider = RCTAppDependencyProvider()
+    self.reactNativeDelegate = reactNativeDelegate
+    reactNativeFactory = RCTReactNativeFactory(delegate: reactNativeDelegate)
 
     return true
   }

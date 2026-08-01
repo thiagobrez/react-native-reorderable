@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-01T13:59:31.078Z",
+  "events": [
+    {
+      "kind": "longpress",
+      "tMs": 175,
+      "x": 201,
+      "y": 205,
+      "referenceWidth": 402,
+      "referenceHeight": 874,
+      "durationMs": 3000
+    }
+  ]
+}

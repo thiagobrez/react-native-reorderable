@@ -52,6 +52,9 @@ drag. Drag behavior therefore requires this short manual pass.
   bug: the gesture update calculated the active top for index selection without
   writing it back to the Reanimated shared value. The follow-up commit corrects
   that wiring; tactile comparison remains pending a retest.
+- `recording-review/contact-sheet.png` — sampled frames from that recording,
+  confirming that surrounding fallback rows displaced while the active Blue row
+  stayed pinned until it appeared in the correct final slot.
 - TypeScript, ESLint, CocoaPods installation, and an Xcode 27 Beta 4 iOS
   simulator build all pass.
 - Gesture Handler 3.1.0 emits an Xcode 27 warning because its iOS pan

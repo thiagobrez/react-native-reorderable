@@ -46,6 +46,12 @@ drag. Drag behavior therefore requires this short manual pass.
 - `screenshots/baseline.png` — both engines rendered with equal source order and
   heterogeneous measured heights.
 - `screenshots/resize-armed.png` — the mid-drag mutation control enabled.
+- `/Users/thiagobrez/Downloads/Screen Recording 2026-08-01 at 17.50.04.mov` —
+  first manual comparison. The fallback committed the correct final index, but
+  its active row did not visually follow the pointer. This exposed a prototype
+  bug: the gesture update calculated the active top for index selection without
+  writing it back to the Reanimated shared value. The follow-up commit corrects
+  that wiring; tactile comparison remains pending a retest.
 - TypeScript, ESLint, CocoaPods installation, and an Xcode 27 Beta 4 iOS
   simulator build all pass.
 - Gesture Handler 3.1.0 emits an Xcode 27 warning because its iOS pan

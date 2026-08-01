@@ -92,6 +92,7 @@ function FallbackRow({
 }) {
   const desiredTop = useSharedValue(measurement.top);
   const dragTop = useSharedValue(measurement.top);
+  const startTop = useSharedValue(measurement.top);
   const dragging = useSharedValue(false);
 
   useEffect(() => {
@@ -113,12 +114,14 @@ function FallbackRow({
       Gesture.Pan()
         .activateAfterLongPress(220)
         .onBegin(() => {
-          dragTop.value = desiredTop.value;
+          startTop.value = desiredTop.value;
+          dragTop.value = startTop.value;
           dragging.value = true;
           runOnJS(reportStart)();
         })
         .onUpdate((event) => {
-          const top = dragTop.value + event.translationY;
+          const top = startTop.value + event.translationY;
+          dragTop.value = top;
           runOnJS(reportCenter)(top + measurement.height / 2);
         })
         .onFinalize(() => {
@@ -133,6 +136,7 @@ function FallbackRow({
       reportCenter,
       reportEnd,
       reportStart,
+      startTop,
     ]
   );
 

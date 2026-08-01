@@ -55,6 +55,18 @@ drag. Drag behavior therefore requires this short manual pass.
 - `recording-review/contact-sheet.png` — sampled frames from that recording,
   confirming that surrounding fallback rows displaced while the active Blue row
   stayed pinned until it appeared in the correct final slot.
+- `/Users/thiagobrez/Downloads/Screen Recording 2026-08-01 at 17.57.35.mov` —
+  second manual comparison. The active fallback row now tracks the pointer and
+  lands correctly. Displaced-row springs were judged too prominent; the next
+  revision clamps overshoot, settles faster, and removes the lift scale.
+- `recording-review-2/contact-sheet-01.png` and
+  `recording-review-2/contact-sheet-02.png` — sampled frames from the second
+  recording. They also expose a native-path invalidation gap: when the shared
+  Yellow height changes from 54 to 104 points, its React child updates but the
+  SwiftUI/Yoga slot remains at the old height, shifting and clipping the label.
+  The fallback row expands correctly. The probe now limits its mid-drag mutation
+  to the fallback column and records the native behavior as a hard part instead
+  of obscuring the fallback comparison.
 - TypeScript, ESLint, CocoaPods installation, and an Xcode 27 Beta 4 iOS
   simulator build all pass.
 - Gesture Handler 3.1.0 emits an Xcode 27 warning because its iOS pan

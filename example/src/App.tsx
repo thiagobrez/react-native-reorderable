@@ -143,8 +143,12 @@ function FallbackRow({
   const animatedStyle = useAnimatedStyle(() => ({
     top: dragging.value
       ? dragTop.value
-      : withSpring(desiredTop.value, { damping: 20, stiffness: 220 }),
-    transform: [{ scale: withSpring(dragging.value ? 1.035 : 1) }],
+      : withSpring(desiredTop.value, {
+          damping: 28,
+          mass: 0.65,
+          overshootClamping: true,
+          stiffness: 360,
+        }),
     zIndex: dragging.value ? 2 : 1,
   }));
 
@@ -180,14 +184,14 @@ function FallbackEngine({
   onOrderChange,
   onTrace,
   order,
-  setTall,
+  setFallbackTall,
 }: {
   autoResize: boolean;
   cardHeights: Readonly<Record<string, number>>;
   onOrderChange: (order: readonly string[]) => void;
   onTrace: (message: string) => void;
   order: readonly string[];
-  setTall: (tall: boolean) => void;
+  setFallbackTall: (tall: boolean) => void;
 }) {
   const [measuredHeights, setMeasuredHeights] = useState(cardHeights);
   const dragBaseOrderRef = useRef(order);
@@ -213,12 +217,12 @@ function FallbackEngine({
       onTrace(`fallback began ${id}`);
       if (autoResize) {
         resizeTimer.current = setTimeout(() => {
-          setTall(true);
+          setFallbackTall(true);
           onTrace('yellow resized while drag was active');
         }, 600);
       }
     },
-    [autoResize, onTrace, setTall]
+    [autoResize, onTrace, setFallbackTall]
   );
 
   const handleDragCenter = useCallback(
@@ -287,19 +291,19 @@ export default function App() {
   const [fallbackOrder, setFallbackOrder] =
     useState<readonly string[]>(initialOrder);
   const [autoResize, setAutoResize] = useState(false);
-  const [tall, setTall] = useState(false);
+  const [fallbackTall, setFallbackTall] = useState(false);
   const [trace, setTrace] = useState<readonly string[]>([
     'Ready — hold, then drag the same card in each column.',
   ]);
-  const cardHeights = useMemo(
+  const fallbackCardHeights = useMemo(
     () =>
       Object.fromEntries(
         cards.map((card) => [
           card.id,
-          card.id === 'yellow' && tall ? 104 : card.height,
+          card.id === 'yellow' && fallbackTall ? 104 : card.height,
         ])
       ),
-    [tall]
+    [fallbackTall]
   );
   const addTrace = useCallback((message: string) => {
     setTrace((current) => [message, ...current].slice(0, 4));
@@ -315,7 +319,7 @@ export default function App() {
   const reset = () => {
     setNativeOrder(initialOrder);
     setFallbackOrder(initialOrder);
-    setTall(false);
+    setFallbackTall(false);
     setTrace(['Reset — both engines have the same source order.']);
   };
 
@@ -338,7 +342,7 @@ export default function App() {
         accessibilityState={{ checked: autoResize }}
         onPress={() => {
           setAutoResize((current) => !current);
-          setTall(false);
+          setFallbackTall(false);
         }}
         style={[styles.resizeToggle, autoResize && styles.resizeToggleActive]}
         testID="auto-resize"
@@ -371,15 +375,13 @@ export default function App() {
                     styles.card,
                     {
                       backgroundColor: card.color,
-                      height: cardHeights[id] ?? card.height,
+                      height: card.height,
                     },
                   ]}
                   testID={`native-${id}`}
                 >
                   <Text style={styles.cardLabel}>{card.label}</Text>
-                  <Text style={styles.heightLabel}>
-                    {cardHeights[id] ?? card.height}pt
-                  </Text>
+                  <Text style={styles.heightLabel}>{card.height}pt</Text>
                 </ReorderableItem>
               );
             })}
@@ -393,11 +395,11 @@ export default function App() {
           </Text>
           <FallbackEngine
             autoResize={autoResize}
-            cardHeights={cardHeights}
+            cardHeights={fallbackCardHeights}
             onOrderChange={setFallbackOrder}
             onTrace={addTrace}
             order={fallbackOrder}
-            setTall={setTall}
+            setFallbackTall={setFallbackTall}
           />
         </View>
       </View>

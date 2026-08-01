@@ -1,7 +1,7 @@
 {
   "name": "react-native-reorderable",
   "version": "0.1.0",
-  "description": "Native reorder and drag-and-drop containers for React Native",
+  "description": "Virtualized, sectioned and native reorder and drag-and-drop library for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -41,6 +41,10 @@
   },
   "keywords": [
     "react-native",
+    "reorder",
+    "drag-and-drop",
+    "virtualized-list",
+    "sectioned-list",
     "ios",
     "android"
   ],

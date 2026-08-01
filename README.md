@@ -1,13 +1,15 @@
 # react-native-reorderable
 
-Native reorder and drag-and-drop containers for React Native
+Virtualized, sectioned and native reorder and drag-and-drop library for React Native
+
+Reordering uses the native engine where supported and the cross-platform
+fallback elsewhere.
 
 ## Installation
 
 ```sh
 npm install react-native-reorderable
 ```
-
 
 ## Reordering one collection
 

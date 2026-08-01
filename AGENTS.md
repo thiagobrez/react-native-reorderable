@@ -1,6 +1,6 @@
 # react-native-reorderable
 
-Native reorder and drag-and-drop containers for React Native.
+Virtualized, sectioned and native reorder and drag-and-drop library for React Native.
 
 ## Agent skills
 

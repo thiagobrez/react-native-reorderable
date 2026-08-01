@@ -81,3 +81,40 @@ engine cannot extend this exact algorithm beyond the render window: it needs an
 estimated layout model for unseen rows, a prefix-sum/index structure updated by
 real measurements, and scroll-offset compensation. That is architectural work,
 not a missing condition in this five-row implementation.
+
+## Final feasibility read
+
+The fallback engine is feasible for a fully rendered collection. The recordings
+establish that it can measure heterogeneous rows, track the pointer, displace
+neighbours with restrained motion, and commit the expected index for stable
+geometry. The fallback-only mid-drag resize also updates its measured geometry
+without the native bridge's clipping failure.
+
+It is not an inexpensive or visually interchangeable polyfill for SwiftUI:
+
+- The active row still lacks SwiftUI's opacity/scale treatment.
+- There is no semi-transparent destination placeholder. In the final recording,
+  Orange crosses into index 2 and then back to index 3 before release; the trace
+  explains the final order, but the UI does not. This is a predictability gap,
+  even though the threshold result is internally consistent.
+- The prototype calls into JavaScript on every pan update and re-renders order
+  state at threshold crossings. A production engine must keep geometry and
+  destination decisions on the UI worklet and commit to JavaScript only at the
+  contractually chosen event boundary.
+- Dynamic sizes require invalidating prefix positions while preserving pointer
+  anchoring and placeholder geometry.
+- A windowed list needs estimated geometry for unmounted rows, prefix-sum/index
+  lookup, scroll-offset compensation, and reconciliation as real measurements
+  replace estimates. This prototype cannot validate that cost.
+
+Therefore the honest v1 claim is semantic cross-engine parity with an explicitly
+decided visual contract—not identical native and fallback rendering for free.
+
+## Third manual comparison
+
+- `/Users/thiagobrez/Downloads/Screen Recording 2026-08-01 at 18.15.49.mov`
+  confirms restrained displacement, correct pointer tracking, stable-size index
+  parity, fallback-only resizing, and the missing active/placeholder feedback.
+- `recording-review-3/contact-sheet-01.png` through
+  `recording-review-3/contact-sheet-03.png` capture the full sequence.
+- `recording-review-3/resize-sequence.png` isolates the resize and Orange move.

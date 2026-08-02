@@ -88,3 +88,13 @@ _Avoid_: Edge animation, scroll feel
 A reorder whose complete move set and destination are reconciled together
 against the latest application order, or not committed at all.
 _Avoid_: Partial move, best-effort move
+
+**Data-driven entry/exit**:
+An item identity appearing in or disappearing from application-owned data
+outside an active reorder.
+_Avoid_: Reorder insertion, reorder removal
+
+**Post-drop reconciliation**:
+The engine visually conforming to the latest application-owned order after a
+reorder commit, including when the application renders the prior order again.
+_Avoid_: Entry/exit, second reorder

@@ -62,9 +62,26 @@ A reorder completed through an assistive-technology interaction rather than a
 pointer drag, with the same reorder commit and callback semantics.
 _Avoid_: Accessibility fallback, simulated drag
 
+**Drag activation region**:
+The part of an item from which a pointer drag may begin. V1 defines the whole
+item as the portable drag activation region.
+_Avoid_: Handle area, draggable zone
+
+**Visual grip**:
+A user-authored visual cue that suggests an item can be dragged without
+restricting its drag activation region.
+_Avoid_: Drag handle, handle component
+
+**Drag handle**:
+An interactive subregion that exclusively starts a pointer drag. It is not part
+of the v1 portable contract.
+_Avoid_: Visual grip
+
 **Auto-scroll**:
-Viewport traversal during a drag that exposes reorder destinations beyond the
-currently visible content. Its availability is contractual; its motion is not.
+Traversal of a library-owned scroll viewport during a drag that exposes reorder
+destinations beyond the currently visible content. Its availability is
+contractual and always enabled; its thresholds, velocity, and other motion are
+private engine behaviour rather than caller configuration.
 _Avoid_: Edge animation, scroll feel
 
 **Atomic reorder**:

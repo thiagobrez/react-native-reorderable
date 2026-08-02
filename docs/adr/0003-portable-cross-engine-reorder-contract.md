@@ -1,0 +1,3 @@
+# Define one portable reorder contract across both engines
+
+V1 exposes one application-observable reorder contract shared by the native and fallback engines, with identity-based committed moves reconciled by a single JavaScript module against application-owned order. Engine adapters may differ in presentation but not semantics; callers may require fallback per container, while native unavailability otherwise falls back silently and total engine unavailability fails descriptively. This keeps the SwiftUI path valuable without making application logic depend on an engine that cannot run everywhere.

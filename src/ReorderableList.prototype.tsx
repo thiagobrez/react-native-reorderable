@@ -4,20 +4,10 @@
  * This file sketches the public list seam. It is intentionally not exported and
  * contains no implementation. Delete it after the v1 interface is decided.
  */
-import type { ComponentType, ReactElement, ReactNode } from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { ComponentType, ReactElement } from 'react';
+import type { FlatListProps, SectionListProps } from 'react-native';
 
 import type { ReorderMove } from './types';
-
-declare const reorderableListAdapter: unique symbol;
-
-/**
- * Opaque, library-certified viewport adapter. The implementation interface is
- * private so callers cannot accidentally weaken the portable contract.
- */
-export type ReorderableListAdapter = Readonly<{
-  [reorderableListAdapter]: true;
-}>;
 
 export type ReorderableListRenderItemInfo<Item> = Readonly<{
   index: number;
@@ -39,19 +29,27 @@ type Layout = Readonly<{
 type SharedListProps = Readonly<{
   /** Application order remains authoritative after a reorder commit. */
   onMove: (move: ReorderMove) => void;
-  /** Defaults to the built-in React Native FlatList adapter. */
-  adapter?: ReorderableListAdapter;
   enabled?: boolean;
   engine?: 'auto' | 'fallback';
-  style?: StyleProp<ViewStyle>;
-  contentContainerStyle?: StyleProp<ViewStyle>;
-  ListHeaderComponent?: ReactNode;
-  ListFooterComponent?: ReactNode;
-  ListEmptyComponent?: ReactNode;
-  ItemSeparatorComponent?: ComponentType | null;
 }>;
 
-export type ReorderableListProps<Item> = SharedListProps &
+type OwnedListProp =
+  | 'CellRendererComponent'
+  | 'data'
+  | 'getItemLayout'
+  | 'horizontal'
+  | 'inverted'
+  | 'keyExtractor'
+  | 'maintainVisibleContentPosition'
+  | 'numColumns'
+  | 'renderItem'
+  | 'renderScrollComponent';
+
+export type ReorderableListProps<Item> = Omit<
+  FlatListProps<Item>,
+  OwnedListProp
+> &
+  SharedListProps &
   Readonly<{
     data: readonly Item[];
     keyExtractor: (item: Item, index: number) => string;
@@ -73,7 +71,11 @@ export type ReorderableListSection<Item> = Readonly<{
 export type ReorderableSectionListProps<
   Item,
   Section extends ReorderableListSection<Item>,
-> = SharedListProps &
+> = Omit<
+  SectionListProps<Item, Section>,
+  OwnedListProp | 'renderSectionFooter' | 'renderSectionHeader' | 'sections'
+> &
+  SharedListProps &
   Readonly<{
     sections: readonly Section[];
     keyExtractor: (item: Item, index: number, section: Section) => string;
@@ -101,3 +103,21 @@ export declare function ReorderableSectionList<
   Item,
   Section extends ReorderableListSection<Item>,
 >(props: ReorderableSectionListProps<Item, Section>): ReactElement;
+
+/**
+ * Optional entrypoints follow the same pattern without sharing a public
+ * adapter prop:
+ *
+ *   react-native-reorderable/flash-list
+ *     ReorderableFlashList
+ *     ReorderableFlashSectionList
+ *
+ *   react-native-reorderable/legend-list
+ *     ReorderableLegendList
+ *     ReorderableLegendSectionList
+ *
+ * Each entrypoint derives its props from that list's own props, omits the
+ * correctness-critical OwnedListProp set, and adds the reorder props above.
+ * The concrete imports are omitted from this prototype so those packages stay
+ * absent from the default development/install path.
+ */

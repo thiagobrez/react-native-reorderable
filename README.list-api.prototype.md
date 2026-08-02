@@ -13,13 +13,11 @@ Use sibling, data-driven modules for virtualized collections:
 - Keep `ReorderableContainer` / `ReorderableItem` / `ReorderableSection` for
   fully mounted, free-form layouts rather than as another long-list syntax.
 
-The interface looks familiar to `FlatList` and `SectionList`, but the modules do
-not expose the underlying list interface. They own their scroll viewport,
-virtualization, cell identity, destination feedback, and auto-scroll so both
-native reorder and fallback reorder can satisfy the same portable contract.
-
-The built-in adapter uses React Native's `FlatList`. Certified adapters for
-FlashList and Legend List are available from isolated package subpaths.
+The default modules wrap React Native's `FlatList` and `SectionList`. Optional
+entrypoints wrap FlashList and Legend List. Every wrapper owns the
+correctness-critical parts of its scroll viewport, cell identity, destination
+feedback, and auto-scroll so native reorder and fallback reorder satisfy the
+same portable contract.
 
 ## One collection
 
@@ -81,10 +79,10 @@ Each section has a stable `id` and a `data` array, matching the useful part of
 the React Native `SectionList` shape. Item IDs remain globally unique across
 sections. Empty sections are valid reorder destinations.
 
-## Choosing a viewport adapter
+## Choosing a list implementation
 
-Omitting `adapter` uses React Native's built-in `FlatList`; no other list
-package is installed or required:
+The root entrypoint uses React Native's built-in lists; no other list package is
+installed or required:
 
 ```tsx
 <ReorderableList
@@ -103,14 +101,14 @@ npm install @shopify/flash-list
 
 ```tsx
 import {
-  flashListAdapter,
-} from 'react-native-reorderable/adapters/flash-list';
+  ReorderableFlashList,
+} from 'react-native-reorderable/flash-list';
 
-<ReorderableList
-  adapter={flashListAdapter}
+<ReorderableFlashList
   data={tasks}
   keyExtractor={(task) => task.id}
   renderItem={({ item }) => <TaskRow task={item} />}
+  drawDistance={500}
   onMove={applyTaskOrder}
 />;
 ```
@@ -123,23 +121,35 @@ npm install @legendapp/list
 
 ```tsx
 import {
-  legendListAdapter,
-} from 'react-native-reorderable/adapters/legend-list';
+  ReorderableLegendSectionList,
+} from 'react-native-reorderable/legend-list';
 
-<ReorderableSectionList
-  adapter={legendListAdapter}
+<ReorderableLegendSectionList
   sections={boards}
   keyExtractor={(task) => task.id}
   renderItem={({ item }) => <TaskRow task={item} />}
+  recycleItems
   onMove={applyBoardOrder}
 />;
 ```
 
-The adapters are opaque, library-certified values. They do not expose the
-underlying list's full props or permit arbitrary caller-authored adapters in
-v1. All three adapters must pass the same conformance suite for identity,
+Each wrapper inherits its underlying list's props and forwards the safe ones.
+It reserves props that control reorder correctness: `data`, `sections`,
+`renderItem`, `keyExtractor`, `getItemLayout`, cell and scroll renderers,
+orientation, inversion, columns, and visible-content-position maintenance.
+Caller callbacks such as `onScroll` are composed with internal handlers rather
+than replacing them. All wrappers pass the same conformance suite for identity,
 recycling, variable-height measurement, empty sections, off-window traversal,
 auto-scroll, cancellation, and atomic reorder commit.
+
+The optional entrypoints export both shapes:
+
+- `ReorderableFlashList` and `ReorderableFlashSectionList`.
+- `ReorderableLegendList` and `ReorderableLegendSectionList`.
+
+Their refs and safe implementation-specific props retain the underlying list's
+types. Supported dependency majors are explicit because a new FlashList or
+Legend List interface may require a corresponding wrapper update.
 
 The package manifest keeps optional libraries out of the default install:
 
@@ -147,8 +157,8 @@ The package manifest keeps optional libraries out of the default install:
 {
   "exports": {
     ".": "...",
-    "./adapters/flash-list": "...",
-    "./adapters/legend-list": "..."
+    "./flash-list": "...",
+    "./legend-list": "..."
   },
   "peerDependencies": {
     "@shopify/flash-list": "<supported range>",
@@ -161,10 +171,15 @@ The package manifest keeps optional libraries out of the default install:
 }
 ```
 
-The root entry point must not statically import either adapter subpath. Each
-adapter module imports only its corresponding peer. The library installs both
-as development dependencies solely to build and run its adapter conformance
-tests; consumers receive neither unless they choose and install it.
+The root entrypoint must not import or re-export either optional entrypoint.
+Each optional module imports only its corresponding peer. The library installs
+both as development dependencies solely to build and run conformance tests;
+consumers receive neither unless they choose and install it.
+
+The selected list remains the viewport under both reorder engines. If native
+reorder cannot integrate with a particular list implementation, native reorder
+is unavailable for that wrapper and `engine="auto"` selects fallback reorder;
+the wrapper never accepts backend props and silently renders a different list.
 
 ## Off-window destinations
 
@@ -174,8 +189,10 @@ window. Destination feedback stays on the nearest resolved insertion point
 until that window is ready, then advances to the newly visible identity.
 
 Internally, both engines keep the full identity order plus an estimated,
-measurement-corrected prefix model for row geometry. `getItemLayout` or
-`estimatedItemSize` improves the estimate but is not required for correctness.
+measurement-corrected prefix model for row geometry. The library-owned
+`getItemLayout` retains the FlatList signature and supplies exact geometry to
+the coordinator. It is forwarded to FlatList, consumed only by the coordinator
+for FlashList, and translated to Legend List's fixed-size hint where possible.
 At reorder commit, the shared JavaScript reconciler emits the existing
 identity-based destination `{ sectionId, beforeId }`; it never exposes an index.
 
@@ -183,15 +200,15 @@ identity-based destination `{ sectionId, beforeId }`; it never exposes an index.
 
 - Window planning, mounting, measurement caches, and recycled-cell epochs.
 - A dragged-item overlay that survives cell recycling.
-- Native reorder and FlatList, FlashList, or Legend List viewport integration
-  behind one correctness-critical internal seam.
+- Native reorder and the selected list implementation behind one
+  correctness-critical internal seam.
 - Zero-config auto-scroll and destination feedback.
 - Identity validation and atomic order reconciliation against the latest props.
 - Accessible reorder through the same commit and callback path.
 
-The implementation may use React Native virtualization machinery for the
-fallback adapter and a native lazy host on capable iOS versions. Those are
-implementation details rather than caller-selected list backends.
+The three public wrappers delegate order reconciliation, auto-scroll, drag
+state, accessibility, and engine selection to one deep internal module; their
+list-specific code is limited to viewport integration and prop translation.
 
 ## Deliberate v1 boundaries
 
@@ -200,11 +217,11 @@ implementation details rather than caller-selected list backends.
 - Do not ship a hook that adapts an arbitrary existing list; callers would have
   to wire the recycling, measurement, scroll ownership, and active-row rules
   that this module exists to hide.
-- Do not expose `FlatList`, FlashList, or Legend List props wholesale. Certified
-  opaque adapters may vary viewport implementation without turning
-  correctness-critical behavior into caller configuration.
-- Do not expose an arbitrary custom-backend interface in v1. Additional
-  adapters graduate only after passing the shared conformance suite.
+- Do not expose a generic `adapter` prop or caller-authored adapter interface in
+  v1. Each supported list gets a typed, tested wrapper from an isolated
+  entrypoint.
+- Do not forward correctness-critical list props. Safe presentation,
+  performance, callback, and ref props keep their underlying list types.
 - Do not implement a new general-purpose virtualizer. The library owns a narrow
   reorder coordinator and private adapters, not a replacement for every list.
 - No horizontal lists, multi-column grids, custom cell wrappers, imperative
@@ -221,10 +238,9 @@ The two interfaces own different layout seams:
 That makes the children interface useful for small rows, wraps, and custom
 compositions without presenting it as a second way to build a virtualized list.
 
-## Open reaction point
+## Decision reached
 
-The recommendation uses two sibling modules because it keeps the common case
-familiar and gives cross-section movement a first-class type. The strongest
-alternative is one identity-first `ReorderableList` taking
-`order: CollectionOrder[]` and `renderItem(id)`, which is smaller but forces an
-ID lookup and order projection at every call site.
+V1 uses sibling list and section-list modules. The default root exports wrap
+React Native lists; optional FlashList and Legend List wrappers live in isolated
+subpath exports and forward their safe implementation-specific props. The
+children interface survives only for fully mounted, free-form layouts.

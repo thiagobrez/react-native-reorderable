@@ -14,9 +14,12 @@ Use sibling, data-driven modules for virtualized collections:
   fully mounted, free-form layouts rather than as another long-list syntax.
 
 The interface looks familiar to `FlatList` and `SectionList`, but the modules do
-not wrap either public module. They own their scroll viewport, virtualization,
-cell identity, destination feedback, and auto-scroll so both native reorder and
-fallback reorder can satisfy the same portable contract.
+not expose the underlying list interface. They own their scroll viewport,
+virtualization, cell identity, destination feedback, and auto-scroll so both
+native reorder and fallback reorder can satisfy the same portable contract.
+
+The built-in adapter uses React Native's `FlatList`. Certified adapters for
+FlashList and Legend List are available from isolated package subpaths.
 
 ## One collection
 
@@ -78,6 +81,91 @@ Each section has a stable `id` and a `data` array, matching the useful part of
 the React Native `SectionList` shape. Item IDs remain globally unique across
 sections. Empty sections are valid reorder destinations.
 
+## Choosing a viewport adapter
+
+Omitting `adapter` uses React Native's built-in `FlatList`; no other list
+package is installed or required:
+
+```tsx
+<ReorderableList
+  data={tasks}
+  keyExtractor={(task) => task.id}
+  renderItem={({ item }) => <TaskRow task={item} />}
+  onMove={applyTaskOrder}
+/>;
+```
+
+FlashList is opt-in:
+
+```sh
+npm install @shopify/flash-list
+```
+
+```tsx
+import {
+  flashListAdapter,
+} from 'react-native-reorderable/adapters/flash-list';
+
+<ReorderableList
+  adapter={flashListAdapter}
+  data={tasks}
+  keyExtractor={(task) => task.id}
+  renderItem={({ item }) => <TaskRow task={item} />}
+  onMove={applyTaskOrder}
+/>;
+```
+
+Legend List is independently opt-in:
+
+```sh
+npm install @legendapp/list
+```
+
+```tsx
+import {
+  legendListAdapter,
+} from 'react-native-reorderable/adapters/legend-list';
+
+<ReorderableSectionList
+  adapter={legendListAdapter}
+  sections={boards}
+  keyExtractor={(task) => task.id}
+  renderItem={({ item }) => <TaskRow task={item} />}
+  onMove={applyBoardOrder}
+/>;
+```
+
+The adapters are opaque, library-certified values. They do not expose the
+underlying list's full props or permit arbitrary caller-authored adapters in
+v1. All three adapters must pass the same conformance suite for identity,
+recycling, variable-height measurement, empty sections, off-window traversal,
+auto-scroll, cancellation, and atomic reorder commit.
+
+The package manifest keeps optional libraries out of the default install:
+
+```jsonc
+{
+  "exports": {
+    ".": "...",
+    "./adapters/flash-list": "...",
+    "./adapters/legend-list": "..."
+  },
+  "peerDependencies": {
+    "@shopify/flash-list": "<supported range>",
+    "@legendapp/list": "<supported range>"
+  },
+  "peerDependenciesMeta": {
+    "@shopify/flash-list": { "optional": true },
+    "@legendapp/list": { "optional": true }
+  }
+}
+```
+
+The root entry point must not statically import either adapter subpath. Each
+adapter module imports only its corresponding peer. The library installs both
+as development dependencies solely to build and run its adapter conformance
+tests; consumers receive neither unless they choose and install it.
+
 ## Off-window destinations
 
 An invisible index is not exposed as a public destination. During pointer drag,
@@ -95,7 +183,8 @@ identity-based destination `{ sectionId, beforeId }`; it never exposes an index.
 
 - Window planning, mounting, measurement caches, and recycled-cell epochs.
 - A dragged-item overlay that survives cell recycling.
-- Native-lazy and fallback-virtualized adapters behind one private seam.
+- Native reorder and FlatList, FlashList, or Legend List viewport integration
+  behind one correctness-critical internal seam.
 - Zero-config auto-scroll and destination feedback.
 - Identity validation and atomic order reconciliation against the latest props.
 - Accessible reorder through the same commit and callback path.
@@ -111,9 +200,11 @@ implementation details rather than caller-selected list backends.
 - Do not ship a hook that adapts an arbitrary existing list; callers would have
   to wire the recycling, measurement, scroll ownership, and active-row rules
   that this module exists to hide.
-- Do not expose `FlatList`, `FlashList`, or a custom backend adapter. A literal
-  wrapper couples the native path to a JavaScript list implementation, while a
-  public backend seam turns correctness-critical behavior into caller config.
+- Do not expose `FlatList`, FlashList, or Legend List props wholesale. Certified
+  opaque adapters may vary viewport implementation without turning
+  correctness-critical behavior into caller configuration.
+- Do not expose an arbitrary custom-backend interface in v1. Additional
+  adapters graduate only after passing the shared conformance suite.
 - Do not implement a new general-purpose virtualizer. The library owns a narrow
   reorder coordinator and private adapters, not a replacement for every list.
 - No horizontal lists, multi-column grids, custom cell wrappers, imperative

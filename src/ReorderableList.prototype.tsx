@@ -9,6 +9,16 @@ import type { StyleProp, ViewStyle } from 'react-native';
 
 import type { ReorderMove } from './types';
 
+declare const reorderableListAdapter: unique symbol;
+
+/**
+ * Opaque, library-certified viewport adapter. The implementation interface is
+ * private so callers cannot accidentally weaken the portable contract.
+ */
+export type ReorderableListAdapter = Readonly<{
+  [reorderableListAdapter]: true;
+}>;
+
 export type ReorderableListRenderItemInfo<Item> = Readonly<{
   index: number;
   item: Item;
@@ -29,6 +39,8 @@ type Layout = Readonly<{
 type SharedListProps = Readonly<{
   /** Application order remains authoritative after a reorder commit. */
   onMove: (move: ReorderMove) => void;
+  /** Defaults to the built-in React Native FlatList adapter. */
+  adapter?: ReorderableListAdapter;
   enabled?: boolean;
   engine?: 'auto' | 'fallback';
   style?: StyleProp<ViewStyle>;

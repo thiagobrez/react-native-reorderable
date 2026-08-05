@@ -62,6 +62,21 @@ A reorder completed through an assistive-technology interaction rather than a
 pointer drag, with the same reorder commit and callback semantics.
 _Avoid_: Accessibility fallback, simulated drag
 
+**Reorder selection**:
+The application-owned set of item identities that moves atomically when an
+interaction begins on one of its members. An unselected item moves alone.
+_Avoid_: Drag selection, library selection
+
+**Semantic reorder action**:
+An assistive-technology action that moves the focused item or reorder selection
+earlier or later without simulating a pointer drag.
+_Avoid_: Accessible drag, programmatic drag
+
+**Accessible drop**:
+A drop committed through an assistive-technology action on a drop zone using
+the application-owned selection as its move set.
+_Avoid_: Simulated drop, accessibility fallback
+
 **Drag activation region**:
 The part of an item from which a pointer drag may begin. V1 defines the whole
 item as the portable drag activation region.

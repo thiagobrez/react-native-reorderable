@@ -1,0 +1,52 @@
+diff --git a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerSynthesizedGesture.m b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerSynthesizedGesture.m
+index dd87a0c0e..6f7c6bf71 100644
+--- a/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerSynthesizedGesture.m
++++ b/apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerSynthesizedGesture.m
+@@ -10,6 +10,8 @@ typedef void (*RunnerMsgSendPathMove)(id, SEL, CGPoint, NSTimeInterval);
+ typedef void (*RunnerMsgSendPathOffset)(id, SEL, NSTimeInterval);
+ typedef void (*RunnerMsgSendAddPath)(id, SEL, id);
+ typedef void (*RunnerMsgSendSetInteger)(id, SEL, NSInteger);
++typedef id (*RunnerMsgSendInit)(id, SEL);
++typedef void (*RunnerMsgSendPathTypeKey)(id, SEL, NSString *, NSUInteger, NSTimeInterval);
+ typedef BOOL (*RunnerMsgSendSynthesize)(id, SEL, NSError **);
+ 
+ typedef struct {
+@@ -184,6 +186,38 @@ static id RunnerTapPointerPath(
+       ((RunnerMsgSendAddPath)objc_msgSend)(record, bridge.addPathSelector, path);
+     }
+ 
++    SEL initForTextInputSelector = NSSelectorFromString(@"initForTextInput");
++    SEL typeKeyAtOffsetSelector = NSSelectorFromString(@"typeKey:modifiers:atOffset:");
++    NSString *missingTextInputInit = RunnerRequireSelector(
++      bridge.pathClass,
++      initForTextInputSelector,
++      @"-[XCPointerEventPath initForTextInput]"
++    );
++    if (missingTextInputInit != nil) return missingTextInputInit;
++    NSString *missingTypeKey = RunnerRequireSelector(
++      bridge.pathClass,
++      typeKeyAtOffsetSelector,
++      @"-[XCPointerEventPath typeKey:modifiers:atOffset:]"
++    );
++    if (missingTypeKey != nil) return missingTypeKey;
++
++    id keyboardPath = ((RunnerMsgSendInit)objc_msgSend)(
++      [bridge.pathClass alloc],
++      initForTextInputSelector
++    );
++    if (keyboardPath == nil) {
++      return @"private XCTest event synthesis failed: could not create keyboard path";
++    }
++    ((RunnerMsgSendPathTypeKey)objc_msgSend)(
++      keyboardPath,
++      typeKeyAtOffsetSelector,
++      @"\x1b",
++      0,
++      3.0
++    );
++    ((RunnerMsgSendAddPath)objc_msgSend)(record, bridge.addPathSelector, keyboardPath);
++    NSLog(@"ISSUE20_ESCAPE composite event includes XCTest Escape at offset=3.0s");
++
+     NSError *error = nil;
+     BOOL ok = ((RunnerMsgSendSynthesize)objc_msgSend)(record, bridge.synthesizeSelector, &error);
+     if (!ok) {

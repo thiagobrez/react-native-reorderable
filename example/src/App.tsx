@@ -95,8 +95,10 @@ function DemoSelector({
 
 function SingleCollectionExample() {
   const [cards, setCards] = useState(initialCards);
+  const [moveCount, setMoveCount] = useState(0);
 
   const handleMove = (move: ReorderMove) => {
+    setMoveCount((current) => current + 1);
     const itemIds = move.nextOrder[0]?.itemIds;
     if (itemIds) {
       setCards((current) => itemsInOrder(current, itemIds));
@@ -104,24 +106,47 @@ function SingleCollectionExample() {
   };
 
   return (
-    <ReorderableContainer
-      accessibilityLabel="Single collection cards"
-      onMove={handleMove}
-      style={styles.verticalCards}
-      testID="single-container"
-    >
-      {cards.map((card, index) => (
-        <ReorderableItem
-          accessibilityLabel={`${card.label} card, position ${index + 1}`}
-          id={card.id}
-          key={card.id}
-          style={[styles.card, { backgroundColor: card.color }]}
-          testID={`single-card-${card.id}`}
+    <>
+      {/* PROTOTYPE(issue #20): visible evidence for Escape cancellation. */}
+      <View style={styles.prototypeStatus}>
+        <Text
+          accessibilityLabel={`Reorder callbacks: ${moveCount}; application order: ${cards.map((card) => card.label).join(', ')}`}
+          style={styles.prototypeStatusText}
+          testID="escape-prototype-status"
         >
-          <View />
-        </ReorderableItem>
-      ))}
-    </ReorderableContainer>
+          Callbacks: {moveCount} · {cards.map((card) => card.label).join(' → ')}
+        </Text>
+        <Pressable
+          accessibilityLabel="Reset Escape prototype"
+          onPress={() => {
+            setCards(initialCards);
+            setMoveCount(0);
+          }}
+          style={styles.prototypeReset}
+          testID="escape-prototype-reset"
+        >
+          <Text style={styles.prototypeResetText}>Reset</Text>
+        </Pressable>
+      </View>
+      <ReorderableContainer
+        accessibilityLabel="Single collection cards"
+        onMove={handleMove}
+        style={styles.verticalCards}
+        testID="single-container"
+      >
+        {cards.map((card, index) => (
+          <ReorderableItem
+            accessibilityLabel={`${card.label} card, position ${index + 1}`}
+            id={card.id}
+            key={card.id}
+            style={[styles.card, { backgroundColor: card.color }]}
+            testID={`single-card-${card.id}`}
+          >
+            <View />
+          </ReorderableItem>
+        ))}
+      </ReorderableContainer>
+    </>
   );
 }
 
@@ -325,6 +350,28 @@ const styles = StyleSheet.create({
   verticalCards: {
     gap: 6,
     width: '100%',
+  },
+  prototypeStatus: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  prototypeStatusText: {
+    color: '#D1D1D6',
+    flex: 1,
+    fontSize: 12,
+  },
+  prototypeReset: {
+    backgroundColor: '#3A3A3C',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  prototypeResetText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   card: {
     borderRadius: 10,

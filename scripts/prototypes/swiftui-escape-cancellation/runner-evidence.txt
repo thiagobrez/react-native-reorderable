@@ -1,0 +1,3 @@
+2026-08-05 19:39:19.322665+0100 AgentDeviceRunnerUITests-Runner[61112:17238243] AGENT_DEVICE_RUNNER_COMMAND_ACCEPTED command=gesture commandId=runner-73cbfa65-7e02-4547-9035-6c46f22e6455
+2026-08-05 19:39:19.780657+0100 AgentDeviceRunnerUITests-Runner[61112:17237005] ISSUE20_ESCAPE composite event includes XCTest Escape at offset=3.0s
+2026-08-05 19:39:28.730458+0100 AgentDeviceRunnerUITests-Runner[61112:17238243] AGENT_DEVICE_RUNNER_COMMAND_COMPLETED command=gesture commandId=runner-73cbfa65-7e02-4547-9035-6c46f22e6455 ok=1

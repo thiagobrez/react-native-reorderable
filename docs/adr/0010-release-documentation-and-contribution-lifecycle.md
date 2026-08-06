@@ -1,0 +1,5 @@
+# Ship v1 through a repository-owned release lifecycle
+
+The first stable release is `1.0.0`, not `0.x`, because the v1 effort freezes the exported API and portable behaviour and therefore makes a SemVer stability promise. Releases accumulate through Changesets and are cut on demand from an automated release PR; CI packs once, proves the exact tarball according to ADR-0006, and publishes that artifact through npm trusted publishing, while an optional `next` channel carries prereleases.
+
+Rspress on GitHub Pages is the canonical documentation surface, backed by repository-authored guides, generated TypeScript API reference, and type-checked examples; the README remains a quick start. Release-surface pull requests require a changeset and the relevant full CI matrix unless a maintainer records a commit-scoped `No changeset needed` override, while contributor-facing guidance stays separate from maintainer-only agent and triage conventions. The project publishes its compatibility matrix but makes no maintenance cadence, SLA, continuity, or backport promise and adds no separate security policy for v1.

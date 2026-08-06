@@ -113,3 +113,19 @@ _Avoid_: Reorder insertion, reorder removal
 The engine visually conforming to the latest application-owned order after a
 reorder commit, including when the application renders the prior order again.
 _Avoid_: Entry/exit, second reorder
+
+**Drag-and-drop scope**:
+The item identities and drop zones coordinated by one drag-and-drop interaction
+root. A move set cannot cross between scopes.
+_Avoid_: Global drag registry, drag group
+
+**Drop acceptance**:
+A drop zone's decision whether it can receive the active move set. Acceptance
+is fixed when a pointer drag activates and checked when an accessible drop is
+invoked.
+_Avoid_: Drop veto, post-drop validation
+
+**Drop commit**:
+The completed delivery of a move set to an accepting drop zone. It emits one
+drop callback and cannot be rejected by that callback.
+_Avoid_: Drop proposal, attempted drop

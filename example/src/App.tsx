@@ -1,391 +1,554 @@
-import { useMemo, useState } from 'react';
-import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+/**
+ * PROTOTYPE — issue #17. Throw this screen away after setting the v1 budget.
+ *
+ * Question: how close can the minimum credible windowed fallback scaffold stay
+ * to a plain FlatList while keeping destination lookup and auto-scroll off JS?
+ */
 import {
-  DragContainer,
-  DraggableItem,
-  DropZone,
-  ReorderableContainer,
-  ReorderableItem,
-  ReorderableSection,
-  type ReorderMove,
-} from 'react-native-reorderable';
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from 'react';
+import {
+  InteractionManager,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  runOnUI,
+  scrollTo,
+  useAnimatedRef,
+  useAnimatedStyle,
+  useSharedValue,
+  type AnimatedRef,
+  type SharedValue,
+} from 'react-native-reanimated';
 
-type Card = Readonly<{
-  color: string;
-  id: string;
-  label: string;
+type Mode = 'flatlist' | 'fallback';
+type Row = Readonly<{ height: number; id: string; label: string }>;
+type BenchmarkResult = Readonly<{
+  destination: number;
+  lookupSteps: number;
+  uiUpdates: number;
 }>;
 
-type CardSection = Readonly<{
-  cards: readonly Card[];
-  id: string;
-  title: string;
-}>;
+const DATASET_SIZES = [100, 1_000, 10_000] as const;
+const ESTIMATED_HEIGHT = 64;
+const SEPARATOR_HEIGHT = 1;
+const ESTIMATED_STRIDE = ESTIMATED_HEIGHT + SEPARATOR_HEIGHT;
+const EDGE_ZONE = 72;
+const AUTO_SCROLL_STEP = 9;
+const HEIGHT_PATTERN = [48, 64, 80, 56, 96, 72, 52, 88] as const;
 
-type Demo = 'single' | 'sections' | 'multi';
+let cellRenderCount = 0;
+let cellMountCount = 0;
 
-const initialCards: readonly Card[] = [
-  { id: 'blue', label: 'Blue', color: '#0A84FF' },
-  { id: 'green', label: 'Green', color: '#30D158' },
-  { id: 'yellow', label: 'Yellow', color: '#FFD60A' },
-  { id: 'orange', label: 'Orange', color: '#FF9F0A' },
-  { id: 'pink', label: 'Pink', color: '#FF375F' },
-];
-
-const initialSections: readonly CardSection[] = [
-  {
-    id: 'favorites',
-    title: 'Favorites',
-    cards: initialCards.slice(0, 3),
-  },
-  { id: 'others', title: 'Others', cards: initialCards.slice(3) },
-];
-
-function itemsInOrder<T extends { id: string }>(
-  items: readonly T[],
-  itemIds: readonly string[]
-): T[] {
-  const itemsById = new Map(items.map((item) => [item.id, item]));
-  return itemIds.flatMap((id) => {
-    const item = itemsById.get(id);
-    return item ? [item] : [];
-  });
+function makeRows(count: number): Row[] {
+  return Array.from({ length: count }, (_, index) => ({
+    height: HEIGHT_PATTERN[index % HEIGHT_PATTERN.length] ?? ESTIMATED_HEIGHT,
+    id: `row-${index}`,
+    label: `Row ${index}`,
+  }));
 }
 
-function DemoSelector({
-  demo,
-  onChange,
-}: {
-  demo: Demo;
-  onChange: (demo: Demo) => void;
-}) {
+function prefixCorrection(tree: readonly number[], itemCount: number) {
+  'worklet';
+  let cursor = itemCount;
+  let sum = 0;
+  while (cursor > 0) {
+    sum += tree[cursor] ?? 0;
+    // Fenwick-tree parent traversal.
+    // eslint-disable-next-line no-bitwise
+    cursor -= cursor & -cursor;
+  }
+  return sum;
+}
+
+function estimatedTop(tree: readonly number[], index: number) {
+  'worklet';
+  return index * ESTIMATED_STRIDE + prefixCorrection(tree, index);
+}
+
+function destinationForOffset(
+  tree: readonly number[],
+  itemCount: number,
+  offset: number
+) {
+  'worklet';
+  let low = 0;
+  let high = itemCount;
+  let steps = 0;
+  while (low < high) {
+    steps += 1;
+    const middle = Math.floor((low + high) / 2);
+    if (estimatedTop(tree, middle) < offset) low = middle + 1;
+    else high = middle;
+  }
+  return { index: Math.max(0, Math.min(itemCount, low)), steps };
+}
+
+function applyMeasurement(
+  index: number,
+  height: number,
+  measuredHeights: SharedValue<number[]>,
+  correctionTree: SharedValue<number[]>
+) {
+  'worklet';
+  const previous = measuredHeights.value[index] ?? ESTIMATED_HEIGHT;
+  if (Math.abs(previous - height) < 0.5) return;
+
+  const nextHeights = measuredHeights.value.slice();
+  nextHeights[index] = height;
+  measuredHeights.value = nextHeights;
+
+  const nextTree = correctionTree.value.slice();
+  const delta = height - previous;
+  let cursor = index + 1;
+  while (cursor < nextTree.length) {
+    nextTree[cursor] = (nextTree[cursor] ?? 0) + delta;
+    // Fenwick-tree child traversal.
+    // eslint-disable-next-line no-bitwise
+    cursor += cursor & -cursor;
+  }
+  correctionTree.value = nextTree;
+}
+
+function move<T>(values: readonly T[], from: number, to: number): T[] {
+  const next = [...values];
+  const [item] = next.splice(from, 1);
+  if (item !== undefined) {
+    const insertion = to > from ? to - 1 : to;
+    next.splice(Math.max(0, Math.min(next.length, insertion)), 0, item);
+  }
+  return next;
+}
+
+const PlainRow = memo(function PlainRowCell({ row }: { row: Row }) {
+  cellRenderCount += 1;
+  useEffect(() => {
+    cellMountCount += 1;
+  }, []);
+
   return (
-    <View accessibilityRole="tablist" style={styles.demoSelector}>
-      {(
-        [
-          ['single', 'Single'],
-          ['sections', 'Sections'],
-          ['multi', 'Multi-drag'],
-        ] as const
-      ).map(([value, label]) => {
-        const selected = value === demo;
-        return (
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            key={value}
-            onPress={() => onChange(value)}
-            style={[styles.demoTab, selected && styles.demoTabSelected]}
-            testID={`demo-${value}`}
-          >
-            <Text
-              style={[
-                styles.demoTabText,
-                selected && styles.demoTabTextSelected,
-              ]}
-            >
-              {label}
-            </Text>
-          </Pressable>
-        );
-      })}
+    <View
+      accessibilityLabel={row.label}
+      style={[styles.row, { height: row.height }]}
+      testID={row.id}
+    >
+      <Text style={styles.rowLabel}>{row.label}</Text>
+      <Text style={styles.rowHeight}>{row.height}pt</Text>
     </View>
   );
-}
+});
 
-function SingleCollectionExample() {
-  const [cards, setCards] = useState(initialCards);
+const FallbackRow = memo(function FallbackRowCell({
+  correctionTree,
+  index,
+  itemCount,
+  listRef,
+  measuredHeights,
+  onCommit,
+  onResult,
+  row,
+  scrollOffset,
+  viewportHeight,
+  viewportTop,
+}: {
+  correctionTree: SharedValue<number[]>;
+  index: number;
+  itemCount: number;
+  listRef: AnimatedRef<Animated.FlatList<Row>>;
+  measuredHeights: SharedValue<number[]>;
+  onCommit: (from: number, to: number) => void;
+  onResult: (result: BenchmarkResult) => void;
+  row: Row;
+  scrollOffset: SharedValue<number>;
+  viewportHeight: SharedValue<number>;
+  viewportTop: SharedValue<number>;
+}) {
+  cellRenderCount += 1;
+  useEffect(() => {
+    cellMountCount += 1;
+  }, []);
 
-  const handleMove = (move: ReorderMove) => {
-    const itemIds = move.nextOrder[0]?.itemIds;
-    if (itemIds) {
-      setCards((current) => itemsInOrder(current, itemIds));
-    }
-  };
+  const dragging = useSharedValue(false);
+  const translation = useSharedValue(0);
+  const destination = useSharedValue(index);
+  const uiUpdates = useSharedValue(0);
+  const lookupSteps = useSharedValue(0);
 
-  return (
-    <ReorderableContainer
-      accessibilityLabel="Single collection cards"
-      onMove={handleMove}
-      style={styles.verticalCards}
-      testID="single-container"
-    >
-      {cards.map((card, index) => (
-        <ReorderableItem
-          accessibilityLabel={`${card.label} card, position ${index + 1}`}
-          id={card.id}
-          key={card.id}
-          style={[styles.card, { backgroundColor: card.color }]}
-          testID={`single-card-${card.id}`}
-        >
-          <View />
-        </ReorderableItem>
-      ))}
-    </ReorderableContainer>
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activateAfterLongPress(220)
+        .onBegin(() => {
+          dragging.value = true;
+          translation.value = 0;
+          destination.value = index;
+          uiUpdates.value = 0;
+          lookupSteps.value = 0;
+        })
+        .onUpdate((event) => {
+          translation.value = event.translationY;
+          uiUpdates.value += 1;
+
+          const pointerOffset =
+            scrollOffset.value +
+            estimatedTop(correctionTree.value, index) +
+            event.translationY +
+            (measuredHeights.value[index] ?? ESTIMATED_HEIGHT) / 2;
+          const lookup = destinationForOffset(
+            correctionTree.value,
+            itemCount,
+            pointerOffset
+          );
+          destination.value = lookup.index;
+          lookupSteps.value = Math.max(lookupSteps.value, lookup.steps);
+
+          const localPointer = event.absoluteY - viewportTop.value;
+          if (localPointer < EDGE_ZONE) {
+            scrollOffset.value = Math.max(
+              0,
+              scrollOffset.value - AUTO_SCROLL_STEP
+            );
+            scrollTo(listRef, 0, scrollOffset.value, false);
+          } else if (localPointer > viewportHeight.value - EDGE_ZONE) {
+            scrollOffset.value += AUTO_SCROLL_STEP;
+            scrollTo(listRef, 0, scrollOffset.value, false);
+          }
+        })
+        .onFinalize(() => {
+          const target = destination.value;
+          dragging.value = false;
+          translation.value = 0;
+          runOnJS(onResult)({
+            destination: target,
+            lookupSteps: lookupSteps.value,
+            uiUpdates: uiUpdates.value,
+          });
+          if (target !== index && target !== index + 1) {
+            runOnJS(onCommit)(index, target);
+          }
+        }),
+    [
+      correctionTree,
+      destination,
+      dragging,
+      index,
+      itemCount,
+      listRef,
+      lookupSteps,
+      measuredHeights,
+      onCommit,
+      onResult,
+      scrollOffset,
+      translation,
+      uiUpdates,
+      viewportHeight,
+      viewportTop,
+    ]
   );
-}
 
-function SectionedCollectionExample() {
-  const [sections, setSections] = useState(initialSections);
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: dragging.value ? 0.82 : 1,
+    transform: [{ translateY: translation.value }],
+    zIndex: dragging.value ? 3 : 0,
+  }));
 
-  const handleMove = (move: ReorderMove) => {
-    setSections((current) => {
-      const cardsById = new Map(
-        current
-          .flatMap((section) => section.cards)
-          .map((card) => [card.id, card])
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      runOnUI(applyMeasurement)(
+        index,
+        event.nativeEvent.layout.height,
+        measuredHeights,
+        correctionTree
       );
-      const sectionsById = new Map(
-        current.map((section) => [section.id, section])
-      );
-      return move.nextOrder.flatMap((order) => {
-        if (order.sectionId == null) return [];
-        const section = sectionsById.get(order.sectionId);
-        if (!section) return [];
-        return [
-          {
-            ...section,
-            cards: order.itemIds.flatMap((id) => {
-              const card = cardsById.get(id);
-              return card ? [card] : [];
-            }),
-          },
-        ];
-      });
-    });
-  };
+    },
+    [correctionTree, index, measuredHeights]
+  );
 
   return (
-    <ReorderableContainer
-      accessibilityLabel="Sectioned cards"
-      onMove={handleMove}
-      style={styles.sectionedCards}
-      testID="sections-container"
-    >
-      {sections.map((section) => (
-        <ReorderableSection
-          header={<Text style={styles.sectionTitle}>{section.title}</Text>}
-          id={section.id}
-          key={section.id}
-          style={styles.cardSection}
-        >
-          {section.cards.map((card, index) => (
-            <ReorderableItem
-              accessibilityLabel={`${card.label} card, ${section.title} position ${index + 1}`}
-              id={card.id}
-              key={card.id}
-              style={[styles.card, { backgroundColor: card.color }]}
-              testID={`section-card-${card.id}`}
-            >
-              <View />
-            </ReorderableItem>
-          ))}
-        </ReorderableSection>
-      ))}
-    </ReorderableContainer>
-  );
-}
-
-function MultiItemDragExample() {
-  const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
-  const [droppedIds, setDroppedIds] = useState<readonly string[]>([]);
-  const cardsById = useMemo(
-    () => new Map(initialCards.map((card) => [card.id, card])),
-    []
-  );
-  const droppedCards = droppedIds.flatMap((id) => {
-    const card = cardsById.get(id);
-    return card ? [card] : [];
-  });
-  const toggleSelection = (id: string) => {
-    setSelectedIds((current) =>
-      current.includes(id)
-        ? current.filter((selectedId) => selectedId !== id)
-        : [...current, id]
-    );
-  };
-
-  return (
-    <DragContainer
-      accessibilityLabel="Draggable cards and drop zone"
-      onDrop={({ itemIds }) => {
-        setDroppedIds(itemIds);
-        setSelectedIds([]);
-      }}
-      selectedIds={selectedIds}
-      style={styles.dragLayout}
-      testID="multi-container"
-    >
-      {initialCards.map((card) => {
-        const selected = selectedIds.includes(card.id);
-        return (
-          <DraggableItem
-            id={card.id}
-            key={card.id}
-            style={styles.draggableItem}
-          >
-            <Pressable
-              accessibilityLabel={`${card.label} source card`}
-              accessibilityState={{ selected }}
-              onPress={() => toggleSelection(card.id)}
-              style={[
-                styles.gridCard,
-                { backgroundColor: card.color },
-                selected && styles.gridCardSelected,
-              ]}
-              testID={`source-card-${card.id}`}
-            />
-          </DraggableItem>
-        );
-      })}
-      <DropZone
-        accessibilityLabel="Drop cards here"
-        id="cards-drop-zone"
-        style={styles.dropZone}
-        testID="cards-drop-zone"
+    <GestureDetector gesture={gesture}>
+      <Animated.View
+        accessibilityLabel={row.label}
+        onLayout={handleLayout}
+        style={[styles.row, { height: row.height }, animatedStyle]}
+        testID={row.id}
       >
-        {droppedCards.length === 0 ? (
-          <Text style={styles.dropZoneLabel}>Drop cards here</Text>
-        ) : (
-          <View style={styles.droppedCards}>
-            {droppedCards.map((card) => (
-              <View
-                accessibilityLabel={`${card.label} dropped card`}
-                key={card.id}
-                style={[styles.droppedCard, { backgroundColor: card.color }]}
-                testID={`dropped-card-${card.id}`}
-              />
-            ))}
-          </View>
-        )}
-      </DropZone>
-    </DragContainer>
+        <Text style={styles.rowLabel}>{row.label}</Text>
+        <Text style={styles.rowHeight}>{row.height}pt</Text>
+      </Animated.View>
+    </GestureDetector>
   );
+});
+
+function RowSeparator() {
+  return <View style={styles.separator} />;
 }
 
-export default function App() {
-  const [demo, setDemo] = useState<Demo>('single');
+function BenchmarkList({ mode, size }: { mode: Mode; size: number }) {
+  const startedAt = useRef(Date.now());
+  const [rows, setRows] = useState(() => makeRows(size));
+  const [settleMs, setSettleMs] = useState<number | null>(null);
+  const [sampled, setSampled] = useState(false);
+  const [visibleRows, setVisibleRows] = useState(0);
+  const [lastResult, setLastResult] = useState<BenchmarkResult | null>(null);
+  const viewportRef = useRef<ComponentRef<typeof View>>(null);
+  const animatedRef = useAnimatedRef<Animated.FlatList<Row>>();
+  const correctionTree = useSharedValue(Array(size + 1).fill(0));
+  const measuredHeights = useSharedValue(Array(size).fill(ESTIMATED_HEIGHT));
+  const scrollOffset = useSharedValue(0);
+  const viewportHeight = useSharedValue(0);
+  const viewportTop = useSharedValue(0);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => setSettleMs(Date.now() - startedAt.current));
+    });
+    const timer = setTimeout(() => setSampled(true), 750);
+    return () => {
+      task.cancel();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const commit = useCallback((from: number, to: number) => {
+    setRows((current) => move(current, from, to));
+  }, []);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollOffset.value = event.nativeEvent.contentOffset.y;
+    },
+    [scrollOffset]
+  );
+
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { height, y } = event.nativeEvent.layout;
+      viewportHeight.value = height;
+      viewportTop.value = y;
+      requestAnimationFrame(() => {
+        viewportRef.current?.measure(
+          (_x, _y, _width, measuredHeight, _pageX, pageY) => {
+            viewportHeight.value = measuredHeight;
+            viewportTop.value = pageY;
+          }
+        );
+      });
+    },
+    [viewportHeight, viewportTop]
+  );
+
+  const renderItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<Row>) => {
+      if (mode === 'flatlist') return <PlainRow row={item} />;
+      return (
+        <FallbackRow
+          correctionTree={correctionTree}
+          index={index}
+          itemCount={rows.length}
+          listRef={animatedRef}
+          measuredHeights={measuredHeights}
+          onCommit={commit}
+          onResult={setLastResult}
+          row={item}
+          scrollOffset={scrollOffset}
+          viewportHeight={viewportHeight}
+          viewportTop={viewportTop}
+        />
+      );
+    },
+    [
+      commit,
+      correctionTree,
+      animatedRef,
+      measuredHeights,
+      mode,
+      rows.length,
+      scrollOffset,
+      viewportHeight,
+      viewportTop,
+    ]
+  );
+
+  const handleViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: readonly unknown[] }) => {
+      setVisibleRows(viewableItems.length);
+    }
+  ).current;
 
   return (
-    <View style={styles.screen}>
-      <StatusBar barStyle="light-content" />
-      <Text style={styles.title}>Cards</Text>
-      <DemoSelector demo={demo} onChange={setDemo} />
-      <View style={styles.example}>
-        {demo === 'single' && <SingleCollectionExample />}
-        {demo === 'sections' && <SectionedCollectionExample />}
-        {demo === 'multi' && <MultiItemDragExample />}
+    <View style={styles.listSection}>
+      <View style={styles.metrics} testID="benchmark-readout">
+        <Text style={styles.metricText}>
+          ready · {mode} · {size.toLocaleString()} rows
+        </Text>
+        <Text style={styles.metricDim}>
+          settle {settleMs ?? '…'}ms · {sampled ? 'sampled' : 'warming'} ·
+          visible {visibleRows} · mounts {cellMountCount} · renders{' '}
+          {cellRenderCount}
+        </Text>
+        <Text style={styles.metricDim} testID="drag-readout">
+          drag{' '}
+          {lastResult
+            ? `${lastResult.uiUpdates} UI updates · ≤${lastResult.lookupSteps} lookup steps · destination ${lastResult.destination}`
+            : 'not sampled'}
+        </Text>
+      </View>
+
+      <View ref={viewportRef} style={styles.listViewport}>
+        <Animated.FlatList
+          data={rows}
+          initialNumToRender={12}
+          ItemSeparatorComponent={RowSeparator}
+          keyExtractor={(item) => item.id}
+          maxToRenderPerBatch={10}
+          onLayout={handleLayout}
+          onScroll={handleScroll}
+          onViewableItemsChanged={handleViewableItemsChanged}
+          ref={animatedRef}
+          removeClippedSubviews
+          renderItem={renderItem}
+          scrollEventThrottle={16}
+          testID="benchmark-list"
+          windowSize={5}
+        />
       </View>
     </View>
   );
 }
 
+export default function App() {
+  const [mode, setMode] = useState<Mode>('flatlist');
+  const [size, setSize] = useState<number>(1_000);
+  const [run, setRun] = useState(0);
+
+  const choose = (nextMode: Mode, nextSize: number) => {
+    cellRenderCount = 0;
+    cellMountCount = 0;
+    setMode(nextMode);
+    setSize(nextSize);
+    setRun((current) => current + 1);
+  };
+
+  return (
+    <GestureHandlerRootView style={styles.root}>
+      <StatusBar barStyle="light-content" />
+      <View style={styles.header}>
+        <Text style={styles.eyebrow}>PROTOTYPE · ISSUE 17</Text>
+        <Text style={styles.title}>Fallback budget bench</Text>
+        <Text style={styles.subtitle}>
+          Plain FlatList vs minimum windowed reorder scaffolding
+        </Text>
+      </View>
+
+      <View style={styles.controls}>
+        {(['flatlist', 'fallback'] as const).map((candidate) => (
+          <Pressable
+            accessibilityState={{ selected: mode === candidate }}
+            key={candidate}
+            onPress={() => choose(candidate, size)}
+            style={[styles.control, mode === candidate && styles.controlActive]}
+            testID={`mode-${candidate}`}
+          >
+            <Text style={styles.controlText}>
+              {candidate === 'flatlist' ? 'FlatList' : 'Fallback'}
+            </Text>
+          </Pressable>
+        ))}
+        {DATASET_SIZES.map((candidate) => (
+          <Pressable
+            accessibilityState={{ selected: size === candidate }}
+            key={candidate}
+            onPress={() => choose(mode, candidate)}
+            style={[styles.control, size === candidate && styles.controlActive]}
+            testID={`size-${candidate}`}
+          >
+            <Text style={styles.controlText}>
+              {candidate >= 1_000 ? `${candidate / 1_000}k` : candidate}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <BenchmarkList key={`${mode}-${size}-${run}`} mode={mode} size={size} />
+    </GestureHandlerRootView>
+  );
+}
+
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#000000',
+  root: { backgroundColor: '#090B10', flex: 1, paddingTop: 54 },
+  header: { paddingHorizontal: 16 },
+  eyebrow: {
+    color: '#7D8BA1',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  title: { color: '#F4F7FB', fontSize: 25, fontWeight: '800' },
+  subtitle: { color: '#8B96A8', fontSize: 11, marginTop: 2 },
+  controls: {
+    flexDirection: 'row',
+    gap: 5,
     paddingHorizontal: 16,
-    paddingTop: 72,
+    paddingVertical: 10,
   },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  demoSelector: {
-    alignSelf: 'stretch',
-    backgroundColor: '#1C1C1E',
-    borderRadius: 10,
-    flexDirection: 'row',
-    marginBottom: 18,
-    padding: 3,
-  },
-  demoTab: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 34,
-  },
-  demoTabSelected: {
-    backgroundColor: '#3A3A3C',
-  },
-  demoTabText: {
-    color: '#8E8E93',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  demoTabTextSelected: {
-    color: '#FFFFFF',
-  },
-  example: {
-    flex: 1,
-  },
-  verticalCards: {
-    gap: 6,
-    width: '100%',
-  },
-  card: {
-    borderRadius: 10,
-    height: 54,
-    width: '100%',
-  },
-  sectionedCards: {
-    gap: 12,
-    width: '100%',
-  },
-  cardSection: {
-    gap: 6,
-    width: '100%',
-  },
-  sectionTitle: {
-    color: '#D1D1D6',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  dragLayout: {
-    alignContent: 'flex-start',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    width: '100%',
-  },
-  gridCard: {
-    borderRadius: 8,
-    flex: 1,
-  },
-  draggableItem: {
-    height: 54,
-    width: '31%',
-  },
-  gridCardSelected: {
-    borderColor: '#FFFFFF',
-    borderWidth: 3,
-  },
-  dropZone: {
-    alignItems: 'stretch',
-    borderColor: '#636366',
-    borderRadius: 10,
-    borderStyle: 'dashed',
+  control: {
+    backgroundColor: '#171B24',
+    borderColor: '#252B38',
+    borderRadius: 7,
     borderWidth: 1,
-    justifyContent: 'center',
-    marginTop: 8,
-    minHeight: 122,
-    padding: 8,
-    width: '100%',
+    flex: 1,
+    paddingVertical: 7,
   },
-  dropZoneLabel: {
-    color: '#8E8E93',
-    fontSize: 12,
+  controlActive: { borderColor: '#65D6AD' },
+  controlText: {
+    color: '#D8DEE9',
+    fontSize: 10,
+    fontWeight: '700',
     textAlign: 'center',
   },
-  droppedCards: {
-    gap: 6,
+  listSection: { flex: 1 },
+  listViewport: { flex: 1 },
+  metrics: {
+    backgroundColor: '#10141C',
+    borderBottomColor: '#252B38',
+    borderBottomWidth: 1,
+    borderTopColor: '#252B38',
+    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
   },
-  droppedCard: {
-    borderRadius: 8,
-    height: 48,
-    width: '100%',
+  metricText: { color: '#65D6AD', fontFamily: 'Menlo', fontSize: 10 },
+  metricDim: { color: '#8893A5', fontFamily: 'Menlo', fontSize: 9 },
+  row: {
+    alignItems: 'center',
+    backgroundColor: '#171D28',
+    borderLeftColor: '#65D6AD',
+    borderLeftWidth: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
+  rowLabel: { color: '#E7ECF4', fontSize: 13, fontWeight: '600' },
+  rowHeight: { color: '#68758A', fontFamily: 'Menlo', fontSize: 9 },
+  separator: { backgroundColor: '#090B10', height: SEPARATOR_HEIGHT },
 });

@@ -44,6 +44,9 @@ export interface NativeProps extends ViewProps {
 }
 
 interface NativeCommands {
+  cancelInteraction: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>
+  ) => void;
   debugBeginInteraction: (
     viewRef: React.ElementRef<HostComponent<NativeProps>>
   ) => void;
@@ -55,7 +58,7 @@ interface NativeCommands {
   ) => void;
   debugBeginDrop: (
     viewRef: React.ElementRef<HostComponent<NativeProps>>,
-    itemIdsJson: string
+    activatedId: string
   ) => void;
   debugTargetDrop: (
     viewRef: React.ElementRef<HostComponent<NativeProps>>,
@@ -69,6 +72,7 @@ interface NativeCommands {
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
   supportedCommands: [
+    'cancelInteraction',
     'debugBeginInteraction',
     'debugEmitTerminalReorder',
     'debugBeginDrop',

@@ -385,6 +385,11 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   RCTReorderableViewHandleCommand(self, commandName, args);
 }
 
+- (void)cancelInteraction
+{
+  [_hostingView cancelActiveInteraction];
+}
+
 - (void)debugBeginInteraction
 {
 #if DEBUG
@@ -416,16 +421,10 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
 #endif
 }
 
-- (void)debugBeginDrop:(NSString *)itemIdsJson
+- (void)debugBeginDrop:(NSString *)activatedId
 {
 #if DEBUG
-  NSData *data = [itemIdsJson dataUsingEncoding:NSUTF8StringEncoding];
-  id value = data == nil ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-  if (![value isKindOfClass:NSArray.class]) return;
-  for (id item in (NSArray *)value) {
-    if (![item isKindOfClass:NSString.class]) return;
-  }
-  [_hostingView debugBeginDropWithItemIds:(NSArray<NSString *> *)value];
+  [_hostingView debugBeginDropWithActivatedId:activatedId];
 #endif
 }
 
@@ -459,12 +458,23 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   NSArray<NSString *> *selectedIds = RNStringArray(props.selectedIds);
   NSArray<NSString *> *acceptedDropZoneIds = RNStringArray(props.acceptedDropZoneIds);
 
+  // Fabric can deliver child mutations and the matching prop update in
+  // separate passes. Never publish a transient prefix to SwiftUI: doing so
+  // would dismantle still-mounted draggable/zone hosts while a destination
+  // disappears. A later mount/unmount/layout pass retries the exact tree.
+  if (_childComponentViews.count != entryKinds.count
+      || entryIds.count != entryKinds.count
+      || collectionIds.count != entryKinds.count
+      || parentEntryIds.count != entryKinds.count) {
+    _needsSync = YES;
+    [self setNeedsLayout];
+    return;
+  }
+
   [_layoutCoordinator clearStyles];
   [_layoutCoordinator setYogaStyle:props.yogaStyle forScope:@"root"];
 
-  const NSUInteger count = MIN(
-      _childComponentViews.count,
-      MIN(entryKinds.count, MIN(entryIds.count, collectionIds.count)));
+  const NSUInteger count = entryKinds.count;
   NSMutableDictionary<NSString *, UIView<RCTComponentViewProtocol> *> *viewsByIdentifier =
       [NSMutableDictionary new];
   // Fabric mutation indices are transient while differently-shaped containers

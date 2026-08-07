@@ -35,6 +35,13 @@ private indirect enum RNHostedDragNode: Identifiable {
     case let .layout(entry, _), let .leaf(entry): entry.layoutID
     }
   }
+
+  var itemIDs: [String] {
+    switch self {
+    case let .layout(_, children): children.flatMap(\.itemIDs)
+    case let .leaf(entry): entry.kind == .item ? [entry.itemID] : []
+    }
+  }
 }
 
 private struct RNHostedSection: Identifiable {
@@ -334,6 +341,14 @@ private final class RNReorderableModel: ObservableObject {
     dragActivateHandler?(itemIDs)
   }
 
+  func dropMoveSet(activatedID: String) -> [String] {
+    let canonicalIDs = state.dragRoots.flatMap(\.itemIDs)
+    guard canonicalIDs.contains(activatedID) else { return [] }
+    let selected = Set(state.selectedIDs)
+    guard selected.contains(activatedID) else { return [activatedID] }
+    return canonicalIDs.filter { selected.contains($0) }
+  }
+
   func endDropInteraction() {
     state.acceptedDropZoneIDs = []
     state.dropAcceptanceReady = true
@@ -599,7 +614,8 @@ private final class RNItemDragDelegate: NSObject, UIDragInteractionDelegate,
     itemsForBeginning session: any UIDragSession
   ) -> [UIDragItem] {
     guard model.state.enabled else { return [] }
-    let itemIDs = [itemID]
+    let itemIDs = model.dropMoveSet(activatedID: itemID)
+    guard !itemIDs.isEmpty else { return [] }
     model.activateDrop(itemIDs)
     let item = UIDragItem(itemProvider: NSItemProvider(object: itemID as NSString))
     item.localObject = RNLocalDragPayload(itemIDs: itemIDs)
@@ -1076,7 +1092,7 @@ final class RNReorderableHostingView: UIView {
     fallbackContainer.subviews.forEach { $0.removeFromSuperview() }
   }
 
-  @objc private func cancelActiveInteraction() {
+  @objc func cancelActiveInteraction() {
     guard hostingController != nil else { return }
     model.cancelInteraction()
     if debugInteractionActive {
@@ -1099,8 +1115,10 @@ final class RNReorderableHostingView: UIView {
     interactionStateHandler?(true)
   }
 
-  @objc(debugBeginDropWithItemIds:)
-  func debugBeginDrop(itemIDs: [String]) {
+  @objc(debugBeginDropWithActivatedId:)
+  func debugBeginDrop(activatedID: String) {
+    let itemIDs = model.dropMoveSet(activatedID: activatedID)
+    guard !itemIDs.isEmpty else { return }
     debugInteractionActive = true
     model.debugBeginDrop(itemIDs)
   }

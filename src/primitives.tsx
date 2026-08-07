@@ -362,7 +362,7 @@ function DragDropContainerImplementation({
   enabled = true,
   engine = 'auto',
   onDrop,
-  selectedIds: _selectedIds = [],
+  selectedIds = [],
   debugAcceptanceMove,
   debugInteractionStateChange,
   ...viewProps
@@ -398,6 +398,11 @@ function DragDropContainerImplementation({
   const zoneIds = normalized.entryIds.filter(
     (_id, index) => normalized.entryKinds[index] === 'dropZone'
   );
+  const selectedSet = new Set(selectedIds);
+  const normalizedSelectedIds = itemIds.filter((id) => selectedSet.has(id));
+  const mountedAcceptedDropZoneIds = acceptedDropZoneIds.filter((id) =>
+    zoneIds.includes(id)
+  );
   const commitDrop = (
     terminalItemIds: readonly string[],
     destinationId: string,
@@ -429,6 +434,7 @@ function DragDropContainerImplementation({
         entryIds={normalized.entryIds}
         entryKinds={normalized.entryKinds}
         parentEntryIds={normalized.parentEntryIds}
+        selectedIds={selectedIds}
         onDropTerminal={(terminal) => {
           if (terminal != null) {
             commitDrop(
@@ -495,6 +501,9 @@ function DragDropContainerImplementation({
     } catch (error) {
       pendingNativeDropRef.current = null;
       nativeActivationPhaseRef.current = 'idle';
+      if (nativeRef.current != null) {
+        Commands.cancelInteraction(nativeRef.current);
+      }
       throw error;
     }
     activeAcceptanceRef.current = new Set(accepted);
@@ -528,7 +537,7 @@ function DragDropContainerImplementation({
               if (nativeRef.current != null) {
                 Commands.debugBeginDrop(
                   nativeRef.current,
-                  JSON.stringify([debugAcceptanceMove.sourceId])
+                  debugAcceptanceMove.sourceId
                 );
               }
             }}
@@ -568,7 +577,7 @@ function DragDropContainerImplementation({
       )}
       <NativeReorderableView
         {...viewProps}
-        acceptedDropZoneIds={acceptedDropZoneIds}
+        acceptedDropZoneIds={mountedAcceptedDropZoneIds}
         collectionIds={nativeEntries.collectionIds}
         enabled
         entryIds={nativeEntries.entryIds}
@@ -581,7 +590,7 @@ function DragDropContainerImplementation({
         orderedEntryIds={nativeEntries.orderedEntryIds}
         parentEntryIds={nativeEntries.parentEntryIds}
         ref={nativeRef}
-        selectedIds={[]}
+        selectedIds={normalizedSelectedIds}
       >
         {nativeEntries.children}
       </NativeReorderableView>

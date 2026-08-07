@@ -60,6 +60,8 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
   @ReactProp(name = "enabled")
   override fun setEnabled(view: ReorderableView?, value: Boolean) = Unit
 
+  override fun cancelInteraction(view: ReorderableView) = Unit
+
   override fun debugBeginInteraction(view: ReorderableView) = Unit
 
   override fun debugEmitTerminalReorder(
@@ -69,7 +71,7 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
     destinationBeforeId: String
   ) = Unit
 
-  override fun debugBeginDrop(view: ReorderableView, itemIdsJson: String) = Unit
+  override fun debugBeginDrop(view: ReorderableView, activatedId: String) = Unit
 
   override fun debugTargetDrop(view: ReorderableView, destinationId: String) = Unit
 

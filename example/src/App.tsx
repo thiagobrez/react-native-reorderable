@@ -381,14 +381,25 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
   const [lastEvent, setLastEvent] = useState('None');
   const [acceptingEnabled, setAcceptingEnabled] = useState(true);
   const [destinationId, setDestinationId] = useState('accepting');
+  const [sourceId, setSourceId] = useState('pink');
+  const [showAccepting, setShowAccepting] = useState(true);
+  const [predicateError, setPredicateError] = useState(false);
+  const [predicateCount, setPredicateCount] = useState(0);
+  const [lastPredicateIds, setLastPredicateIds] = useState('None');
   const [nativeInteraction, setNativeInteraction] = useState('inactive (0)');
   const nativeInteractionCount = useRef(0);
+  const selectedIds = ['pink', 'missing', 'blue', 'pink', 'yellow'] as const;
+  const recordPredicate = (ids: readonly string[]) => {
+    setPredicateCount((current) => current + 1);
+    setLastPredicateIds(ids.join(','));
+  };
   const containerProps = {
-    acceptanceMove: { sourceId: 'blue', destinationId },
+    acceptanceMove: { sourceId, destinationId },
     onDrop: (event: { itemIds: readonly string[]; destinationId: string }) => {
       setCallbackCount((current) => current + 1);
       setLastEvent(`${event.itemIds.join(',')} -> ${event.destinationId}`);
     },
+    selectedIds,
     style: styles.dragLayout,
     testID: 'drag-drop-container',
   } as const;
@@ -396,25 +407,57 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
     <>
       <View style={styles.dragSourcePanel}>
         <Text style={styles.sectionTitle}>Source</Text>
-        <DraggableItem id="blue" style={styles.draggableItem}>
-          <View
-            accessibilityLabel="Blue draggable card"
-            style={[styles.gridCard, styles.blueCard]}
-          />
-        </DraggableItem>
+        <View style={styles.dragItems}>
+          {initialCards
+            .filter((card) => card.id !== 'orange')
+            .map((card) => {
+              const selected = selectedIds.includes(
+                card.id as (typeof selectedIds)[number]
+              );
+              return (
+                <DraggableItem
+                  accessibilityLabel={`${card.label} draggable card${selected ? ', selected' : ''}`}
+                  id={card.id}
+                  key={card.id}
+                  style={styles.draggableItem}
+                >
+                  <View
+                    style={[
+                      styles.gridCard,
+                      { backgroundColor: card.color },
+                      selected && styles.gridCardSelected,
+                    ]}
+                  >
+                    <Text style={styles.cardLabel}>{card.label}</Text>
+                  </View>
+                </DraggableItem>
+              );
+            })}
+        </View>
       </View>
       <View style={styles.dropPanels}>
-        <DropZone
-          accessibilityLabel="Accepting drop zone"
-          canDrop={() => acceptingEnabled}
-          id="accepting"
-          style={[styles.dropZone, styles.dropPanel]}
-        >
-          <Text style={styles.dropZoneLabel}>Accepting</Text>
-        </DropZone>
+        {showAccepting ? (
+          <DropZone
+            accessibilityLabel="Accepting drop zone"
+            canDrop={(ids) => {
+              recordPredicate(ids);
+              if (predicateError) {
+                throw new Error('Scenario canDrop application error');
+              }
+              return acceptingEnabled;
+            }}
+            id="accepting"
+            style={[styles.dropZone, styles.dropPanel]}
+          >
+            <Text style={styles.dropZoneLabel}>Accepting</Text>
+          </DropZone>
+        ) : null}
         <DropZone
           accessibilityLabel="Rejecting drop zone"
-          canDrop={() => false}
+          canDrop={(ids) => {
+            recordPredicate(ids);
+            return false;
+          }}
           id="rejecting"
           style={[styles.dropZone, styles.dropPanel]}
         >
@@ -426,9 +469,15 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
 
   return (
     <>
-      <Text style={styles.outcome}>Data: Blue (unchanged)</Text>
+      <Text style={styles.outcome}>
+        Data: blue,green,yellow,pink (unchanged)
+      </Text>
+      <Text style={styles.outcome}>Selection: blue,yellow,pink</Text>
+      <Text style={styles.outcome}>Activation: {sourceId}</Text>
       <Text style={styles.outcome}>Drop callbacks: {callbackCount}</Text>
       <Text style={styles.outcome}>Last drop: {lastEvent}</Text>
+      <Text style={styles.outcome}>Predicate calls: {predicateCount}</Text>
+      <Text style={styles.outcome}>Predicate IDs: {lastPredicateIds}</Text>
       {__DEV__ && engine === 'auto' ? (
         <Text style={styles.outcome}>
           Native lifecycle: {nativeInteraction}
@@ -443,11 +492,43 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
           <Text style={styles.scenarioActionText}>Target accepting</Text>
         </Pressable>
         <Pressable
+          accessibilityLabel="Activate selected Pink card"
+          onPress={() => setSourceId('pink')}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Selected Pink</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Activate unselected Green card"
+          onPress={() => setSourceId('green')}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Unselected Green</Text>
+        </Pressable>
+        <Pressable
           accessibilityLabel="Target rejecting zone"
           onPress={() => setDestinationId('rejecting')}
           style={styles.scenarioAction}
         >
           <Text style={styles.scenarioActionText}>Target rejecting</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Toggle accepting zone visibility"
+          onPress={() => setShowAccepting((value) => !value)}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>
+            {showAccepting ? 'Hide accepting' : 'Show accepting'}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Toggle throwing acceptance predicate"
+          onPress={() => setPredicateError((value) => !value)}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>
+            {predicateError ? 'Disable error' : 'Throw predicate'}
+          </Text>
         </Pressable>
         <Pressable
           accessibilityLabel="Toggle accepting predicate"
@@ -619,6 +700,7 @@ const styles = StyleSheet.create({
   },
   scenarioActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 6,
   },
@@ -677,6 +759,11 @@ const styles = StyleSheet.create({
   },
   dragSourcePanel: {
     width: '100%',
+  },
+  dragItems: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   dropPanels: {
     flexDirection: 'row',

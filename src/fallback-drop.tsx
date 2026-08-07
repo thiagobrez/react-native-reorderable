@@ -27,6 +27,7 @@ import {
 } from 'react-native';
 
 import type { EntryKind } from './normalize';
+import { canonicalMoveSet } from './semantic';
 
 type Slot = Readonly<{ height: number; width: number; x: number; y: number }>;
 type Terminal = Readonly<{
@@ -128,6 +129,9 @@ function DragEntry({
   state: State;
 }>) {
   const ref = useAnimatedRef<HostInstance>();
+  const childStyle = StyleSheet.flatten(
+    (child.props as { style?: ViewProps['style'] }).style
+  );
   const gesture = useMemo(
     () =>
       Gesture.Pan()
@@ -207,9 +211,22 @@ function DragEntry({
           });
         }}
         ref={ref}
-        style={style}
+        style={[
+          {
+            flex: childStyle?.flex,
+            height: childStyle?.height,
+            minHeight: childStyle?.minHeight,
+            width: childStyle?.width,
+          },
+          style,
+        ]}
       >
-        {child}
+        {cloneElement(child as ReactElement<ViewProps>, {
+          style: [
+            (child.props as { style?: ViewProps['style'] }).style,
+            { height: '100%', width: '100%' },
+          ],
+        })}
       </Animated.View>
     </GestureDetector>
   );
@@ -286,6 +303,7 @@ export type FallbackDropContainerProps = ViewProps &
     entryIds: readonly string[];
     entryKinds: readonly EntryKind[];
     parentEntryIds: readonly string[];
+    selectedIds: readonly string[];
     onDropTerminal: (event: Terminal) => void;
   }>;
 
@@ -296,6 +314,7 @@ export function FallbackDropContainer({
   entryIds,
   entryKinds,
   parentEntryIds,
+  selectedIds,
   onDropTerminal,
   ...viewProps
 }: FallbackDropContainerProps) {
@@ -313,6 +332,7 @@ export function FallbackDropContainer({
   const activeRef = useRef(false);
   const pendingTerminalRef = useRef<TerminalCandidate | undefined>(undefined);
   const snapshotRef = useRef<readonly string[]>([]);
+  const itemIds = entryIds.filter((_id, index) => entryKinds[index] === 'item');
   const completeTerminal = useCallback(
     (event: TerminalCandidate) => {
       if (!activeRef.current) {
@@ -400,10 +420,16 @@ export function FallbackDropContainer({
 
   const activateDebug = () => {
     if (debugMove == null) return;
+    const moveSet = canonicalMoveSet(
+      [{ sectionId: null, itemIds }],
+      debugMove.sourceId,
+      selectedIds
+    );
+    if (moveSet.length === 0) return;
     state.active.value = true;
     state.terminalClaimed.value = false;
-    state.activeIds.value = [debugMove.sourceId];
-    onActivate([debugMove.sourceId]);
+    state.activeIds.value = moveSet;
+    onActivate(moveSet);
   };
   return (
     <Animated.View {...viewProps} style={[styles.container, viewProps.style]}>
@@ -477,7 +503,11 @@ export function FallbackDropContainer({
                 id={id}
                 index={entryIndex}
                 key={`item:${id}`}
-                moveSet={[id]}
+                moveSet={canonicalMoveSet(
+                  [{ sectionId: null, itemIds }],
+                  id,
+                  selectedIds
+                )}
                 onActivate={onActivate}
                 onTerminal={completeTerminal}
                 state={state}

@@ -32,12 +32,13 @@ typedef void (^RNReorderableInteractionStateHandler)(BOOL active);
                enabled:(BOOL)enabled;
 - (void)invalidate;
 - (void)invalidateHostedLayout;
+- (void)cancelActiveInteraction;
 #if DEBUG
 - (void)debugBeginInteraction;
 - (void)debugEmitTerminalReorderWithSourceIds:(NSArray<NSString *> *)sourceIds
                       destinationCollectionId:(NSString *)destinationCollectionId
                           destinationBeforeId:(NSString *)destinationBeforeId;
-- (void)debugBeginDropWithItemIds:(NSArray<NSString *> *)itemIds;
+- (void)debugBeginDropWithActivatedId:(NSString *)activatedId;
 - (void)debugTargetDropWithDestinationId:(NSString *)destinationId;
 - (void)debugEmitTerminalDropOutside:(BOOL)outside;
 #endif

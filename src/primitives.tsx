@@ -1,13 +1,13 @@
-import type { ReactElement } from 'react';
+import { createRef, type ReactElement, type RefAttributes } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
-import { Platform, View } from 'react-native';
+import { Button, Platform, View } from 'react-native';
 
 import NativeReorderableView, {
   type NativeDropEvent,
   type NativeMoveEvent,
 } from './ReorderableView';
+import { Commands } from './ReorderableViewNativeComponent';
 import {
-  applyMoveToOrder,
   fallbackSectionViewProps,
   mapNativeDropEvent,
   normalizeDragChildren,
@@ -15,14 +15,41 @@ import {
   parseNativeIds,
   prepareNativeEntries,
 } from './normalize';
+import { reconcileReorder } from './semantic';
 import type {
   DragContainerProps,
   DraggableItemProps,
   DropZoneProps,
   ReorderableContainerProps,
+  ReorderDestination,
   ReorderableItemProps,
   ReorderableSectionProps,
 } from './types';
+
+type AcceptanceMove = Readonly<{
+  sourceIds: readonly string[];
+  destination: ReorderDestination;
+}>;
+
+type HostViewRef = React.ElementRef<typeof View>;
+type ReorderableContainerComponentProps = ReorderableContainerProps &
+  RefAttributes<HostViewRef>;
+type ReorderableItemComponentProps = ReorderableItemProps &
+  RefAttributes<HostViewRef>;
+type ReorderableSectionComponentProps = ReorderableSectionProps &
+  RefAttributes<HostViewRef>;
+
+type InternalReorderableContainerProps = ReorderableContainerComponentProps & {
+  debugAcceptanceMove?: AcceptanceMove;
+};
+
+function assignHostRef(ref: unknown, value: unknown): void {
+  if (typeof ref === 'function') {
+    (ref as (instance: unknown) => void)(value);
+  } else if (ref != null && typeof ref === 'object' && 'current' in ref) {
+    (ref as { current: unknown }).current = value;
+  }
+}
 
 function platformMajorVersion(): number {
   const version =
@@ -32,8 +59,9 @@ function platformMajorVersion(): number {
   return Number.isFinite(version) ? version : 0;
 }
 
-export const isNativeReorderingAvailable =
-  Platform.OS === 'ios' && platformMajorVersion() >= 27;
+function isNativeReorderingAvailable(): boolean {
+  return Platform.OS === 'ios' && platformMajorVersion() >= 27;
+}
 
 function layoutRevision(
   containerStyle: unknown,
@@ -48,35 +76,67 @@ function layoutRevision(
 export function ReorderableItem({
   children,
   id: _id,
+  ref,
   ...viewProps
-}: ReorderableItemProps) {
-  return <View {...viewProps}>{children}</View>;
-}
-
-export function ReorderableSection(props: ReorderableSectionProps) {
+}: ReorderableItemComponentProps) {
   return (
-    <View {...fallbackSectionViewProps(props)}>
-      {props.header}
-      {props.children}
+    <View {...viewProps} ref={(value) => assignHostRef(ref, value)}>
+      {children}
     </View>
   );
 }
 
-export function ReorderableContainer({
+export function ReorderableSection(props: ReorderableSectionComponentProps) {
+  const { ref, ...sectionProps } = props;
+  return (
+    <View
+      {...fallbackSectionViewProps(sectionProps)}
+      ref={(value) => assignHostRef(ref, value)}
+    >
+      {props.header}
+      {props.children}
+      {props.footer}
+    </View>
+  );
+}
+
+function ReorderableContainerImplementation({
   children,
+  accessibilityStrings: _accessibilityStrings,
   enabled = true,
-  onMove,
+  engine = 'auto',
+  onReorder,
+  ref,
+  selectedIds = [],
+  debugAcceptanceMove,
   ...viewProps
-}: ReorderableContainerProps) {
+}: InternalReorderableContainerProps) {
+  const nativeRef = createRef<React.ElementRef<typeof NativeReorderableView>>();
   const normalized = normalizeReorderableChildren(children, {
     Item: ReorderableItem,
     Section: ReorderableSection,
   });
 
-  if (!isNativeReorderingAvailable) {
-    return <View {...viewProps}>{children}</View>;
+  if (!enabled) {
+    return (
+      <View {...viewProps} ref={(value) => assignHostRef(ref, value)}>
+        {children}
+      </View>
+    );
+  }
+  if (engine === 'fallback' || !isNativeReorderingAvailable()) {
+    throw new Error(
+      '[react-native-reorderable] No reorder engine can fulfill the portable contract for this enabled container.'
+    );
   }
   const nativeEntries = prepareNativeEntries(normalized);
+  const currentItemIds = normalized.order.flatMap(
+    (collection) => collection.itemIds
+  );
+  const selectedSet = new Set(selectedIds);
+  const normalizedSelectedIds = currentItemIds.filter((id) =>
+    selectedSet.has(id)
+  );
 
   const handleMove = (event: NativeSyntheticEvent<NativeMoveEvent>) => {
     const { destinationBeforeId, destinationCollectionId, sourceIdsJson } =
@@ -84,33 +144,70 @@ export function ReorderableContainer({
     const sourceIds = parseNativeIds(sourceIdsJson);
     const sectionId = destinationCollectionId || null;
     const beforeId = destinationBeforeId || null;
-    onMove({
-      sourceIds,
-      destination: { sectionId, beforeId },
-      nextOrder: applyMoveToOrder(
-        normalized.order,
-        sourceIds,
-        sectionId,
-        beforeId
-      ),
+    const committedEvent = reconcileReorder(normalized.order, sourceIds, {
+      sectionId,
+      beforeId,
     });
+    if (committedEvent != null) {
+      onReorder(committedEvent);
+    }
   };
 
   return (
-    <NativeReorderableView
-      {...viewProps}
-      collectionIds={nativeEntries.collectionIds}
-      enabled={enabled}
-      entryIds={nativeEntries.entryIds}
-      entryKinds={nativeEntries.entryKinds}
-      layoutRevision={layoutRevision(viewProps.style, nativeEntries.children)}
-      mode="reorder"
-      onMove={handleMove}
-      orderedEntryIds={nativeEntries.orderedEntryIds}
-      selectedIds={[]}
-    >
-      {nativeEntries.children}
-    </NativeReorderableView>
+    <>
+      {debugAcceptanceMove == null ? null : (
+        <Button
+          accessibilityLabel="Apply native reorder"
+          onPress={() => {
+            if (nativeRef.current == null) return;
+            Commands.debugEmitTerminalReorder(
+              nativeRef.current,
+              JSON.stringify(debugAcceptanceMove.sourceIds),
+              debugAcceptanceMove.destination.sectionId ?? '',
+              debugAcceptanceMove.destination.beforeId ?? ''
+            );
+          }}
+          title="Apply native reorder"
+        />
+      )}
+      <NativeReorderableView
+        {...viewProps}
+        collectionIds={nativeEntries.collectionIds}
+        enabled={enabled}
+        entryIds={nativeEntries.entryIds}
+        entryKinds={nativeEntries.entryKinds}
+        layoutRevision={layoutRevision(viewProps.style, nativeEntries.children)}
+        mode="reorder"
+        onMove={handleMove}
+        orderedEntryIds={nativeEntries.orderedEntryIds}
+        ref={(value) => {
+          nativeRef.current = value;
+          assignHostRef(ref, value);
+        }}
+        selectedIds={normalizedSelectedIds}
+      >
+        {nativeEntries.children}
+      </NativeReorderableView>
+    </>
+  );
+}
+
+export function ReorderableContainer(
+  props: ReorderableContainerComponentProps
+) {
+  return ReorderableContainerImplementation(props);
+}
+
+/** @internal Debug-only acceptance harness; deliberately absent from index.tsx. */
+export function NativeCommitAcceptanceContainer(
+  props: ReorderableContainerComponentProps & { acceptanceMove: AcceptanceMove }
+) {
+  const { acceptanceMove, ...containerProps } = props;
+  return (
+    <ReorderableContainerImplementation
+      {...containerProps}
+      debugAcceptanceMove={acceptanceMove}
+    />
   );
 }
 
@@ -137,7 +234,7 @@ export function DragContainer({
     Item: DraggableItem,
   });
 
-  if (!isNativeReorderingAvailable) {
+  if (!isNativeReorderingAvailable()) {
     return <View {...viewProps}>{children}</View>;
   }
   const nativeEntries = prepareNativeEntries(normalized);

@@ -12,6 +12,7 @@ private enum RNReorderableEntryKind: String {
   case item
   case section
   case header
+  case footer
   case dropZone
 }
 
@@ -28,6 +29,7 @@ private struct RNHostedSection: Identifiable {
   let id: String
   var header: RNHostedEntry?
   var items: [RNHostedEntry]
+  var footer: RNHostedEntry?
 }
 
 private struct RNReorderableRenderState {
@@ -78,7 +80,7 @@ private final class RNReorderableModel: ObservableObject {
       let sectionID = entryIDs[index]
       guard sectionIndices[sectionID] == nil else { continue }
       sectionIndices[sectionID] = sections.count
-      sections.append(RNHostedSection(id: sectionID, header: nil, items: []))
+      sections.append(RNHostedSection(id: sectionID, header: nil, items: [], footer: nil))
     }
 
     for index in 0..<count {
@@ -96,6 +98,16 @@ private final class RNReorderableModel: ObservableObject {
         sections[sectionIndex].header = RNHostedEntry(
           id: "header:\(collectionID)",
           layoutID: "header:\(collectionID)",
+          itemID: entryID,
+          collectionID: collectionID,
+          kind: kind,
+          view: childViews[index]
+        )
+      case .footer:
+        guard let sectionIndex = sectionIndices[collectionID] else { continue }
+        sections[sectionIndex].footer = RNHostedEntry(
+          id: "footer:\(collectionID)",
+          layoutID: "footer:\(collectionID)",
           itemID: entryID,
           collectionID: collectionID,
           kind: kind,
@@ -190,11 +202,10 @@ private final class RNReorderableModel: ObservableObject {
   @available(iOS 27.0, *)
   func applySectionMove(_ difference: ReorderDifference<String, String>) {
     var nextSections = state.sections
-    let entriesByID = Dictionary(
-      uniqueKeysWithValues: nextSections.flatMap(\.items).map { ($0.itemID, $0) }
-    )
-    let movedEntries = difference.sources.compactMap { entriesByID[$0] }
-    guard !movedEntries.isEmpty else { return }
+    guard let movedEntries = resolveMoveSet(
+      sourceIDs: difference.sources,
+      items: nextSections.flatMap(\.items)
+    ) else { return }
 
     for index in nextSections.indices {
       nextSections[index].items.removeAll { difference.sources.contains($0.itemID) }
@@ -231,15 +242,52 @@ private final class RNReorderableModel: ObservableObject {
     dropHandler?(itemIDs, destinationID)
   }
 
+  #if DEBUG
+  func debugEmitTerminalReorder(
+    sourceIDs: [String],
+    destinationCollectionID: String,
+    destinationBeforeID: String
+  ) {
+    guard state.enabled, state.mode == .reorder, !sourceIDs.isEmpty else { return }
+    let availableItems = state.sections.isEmpty
+      ? state.items
+      : state.sections.flatMap(\.items)
+    let availableIDs = Set(availableItems.map(\.itemID))
+    guard
+      sourceIDs.allSatisfy({ availableIDs.contains($0) }),
+      Set(sourceIDs).count == sourceIDs.count
+    else { return }
+
+    let destinationItems: [RNHostedEntry]
+    if state.sections.isEmpty {
+      guard destinationCollectionID.isEmpty else { return }
+      destinationItems = state.items
+    } else {
+      guard let section = state.sections.first(
+        where: { $0.id == destinationCollectionID }
+      ) else { return }
+      destinationItems = section.items
+    }
+    guard
+      destinationBeforeID.isEmpty
+        || destinationItems.contains(where: { $0.itemID == destinationBeforeID }),
+      !sourceIDs.contains(destinationBeforeID)
+    else { return }
+
+    moveHandler?(sourceIDs, destinationCollectionID, destinationBeforeID)
+  }
+  #endif
+
   @available(iOS 27.0, *)
   private func applyMove<CollectionID>(
     sourceIDs: [String],
     destination: ReorderDifference<String, CollectionID>.Destination.Position,
     items: inout [RNHostedEntry]
   ) -> Bool {
-    let entriesByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemID, $0) })
-    let movedEntries = sourceIDs.compactMap { entriesByID[$0] }
-    guard !movedEntries.isEmpty else { return false }
+    guard let movedEntries = resolveMoveSet(
+      sourceIDs: sourceIDs,
+      items: items
+    ) else { return false }
 
     items.removeAll { sourceIDs.contains($0.itemID) }
     let destinationIndex: Int
@@ -254,6 +302,19 @@ private final class RNReorderableModel: ObservableObject {
     }
     items.insert(contentsOf: movedEntries, at: destinationIndex)
     return true
+  }
+
+  private func resolveMoveSet(
+    sourceIDs: [String],
+    items: [RNHostedEntry]
+  ) -> [RNHostedEntry]? {
+    let entriesByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemID, $0) })
+    let movedEntries = sourceIDs.compactMap { entriesByID[$0] }
+    guard
+      !movedEntries.isEmpty,
+      movedEntries.count == Set(sourceIDs).count
+    else { return nil }
+    return movedEntries
   }
 
   @available(iOS 27.0, *)
@@ -425,6 +486,10 @@ private struct RNSectionedCollectionView: View {
               .layoutValue(key: RNLayoutIdentifierKey.self, value: entry.layoutID)
           }
           .reorderable(collectionID: section.id)
+          if let footer = section.footer {
+            RNHostedReactView(entry: footer)
+              .layoutValue(key: RNLayoutIdentifierKey.self, value: footer.layoutID)
+          }
         }
         .layoutValue(
           key: RNLayoutIdentifierKey.self,
@@ -473,7 +538,7 @@ private struct RNDragDropView: View {
           items, _ in
           model.emitDrop(items.map(\.id), destinationID: entry.itemID)
         }
-    case .section, .header:
+    case .section, .header, .footer:
       EmptyView()
     }
   }
@@ -586,6 +651,21 @@ final class RNReorderableHostingView: UIView {
     hostingController = nil
     fallbackContainer.subviews.forEach { $0.removeFromSuperview() }
   }
+
+  #if DEBUG
+  @objc(debugEmitTerminalReorderWithSourceIds:destinationCollectionId:destinationBeforeId:)
+  func debugEmitTerminalReorder(
+    sourceIDs: [String],
+    destinationCollectionID: String,
+    destinationBeforeID: String
+  ) {
+    model.debugEmitTerminalReorder(
+      sourceIDs: sourceIDs,
+      destinationCollectionID: destinationCollectionID,
+      destinationBeforeID: destinationBeforeID
+    )
+  }
+  #endif
 
   private func installNativeHostIfAvailable() {
     #if compiler(>=6.4)

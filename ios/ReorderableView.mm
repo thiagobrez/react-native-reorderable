@@ -27,6 +27,9 @@
 using namespace facebook;
 using namespace facebook::react;
 
+@interface ReorderableView () <RCTReorderableViewViewProtocol>
+@end
+
 namespace {
 
 struct RNMeasureContext {
@@ -98,6 +101,9 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   }
   if ([kind isEqualToString:@"header"]) {
     return RNStdString([@"header:" stringByAppendingString:collectionId]);
+  }
+  if ([kind isEqualToString:@"footer"]) {
+    return RNStdString([@"footer:" stringByAppendingString:collectionId]);
   }
   if ([kind isEqualToString:@"dropZone"]) {
     return RNStdString([@"drop:" stringByAppendingString:entryId]);
@@ -343,6 +349,37 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   [_hostingView invalidate];
   _reorderableEventEmitter.reset();
   [super invalidate];
+}
+
+#pragma mark - Native Commands
+
+- (void)handleCommand:(const NSString *)commandName args:(const NSArray *)args
+{
+  RCTReorderableViewHandleCommand(self, commandName, args);
+}
+
+- (void)debugEmitTerminalReorder:(NSString *)sourceIdsJson
+      destinationCollectionId:(NSString *)destinationCollectionId
+          destinationBeforeId:(NSString *)destinationBeforeId
+{
+#if DEBUG
+  NSData *data = [sourceIdsJson dataUsingEncoding:NSUTF8StringEncoding];
+  if (data == nil) {
+    return;
+  }
+  id value = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  if (![value isKindOfClass:NSArray.class]) {
+    return;
+  }
+  for (id item in (NSArray *)value) {
+    if (![item isKindOfClass:NSString.class]) {
+      return;
+    }
+  }
+  [_hostingView debugEmitTerminalReorderWithSourceIds:(NSArray<NSString *> *)value
+                              destinationCollectionId:destinationCollectionId
+                                  destinationBeforeId:destinationBeforeId];
+#endif
 }
 
 - (void)syncHostingViewIfNeeded

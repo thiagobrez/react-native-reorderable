@@ -6,13 +6,37 @@ export type CollectionOrder = Readonly<{
   itemIds: readonly string[];
 }>;
 
-export type ReorderMove = Readonly<{
+export type EnginePolicy = 'auto' | 'fallback';
+
+export type ReorderDestination = Readonly<{
+  sectionId: string | null;
+  beforeId: string | null;
+}>;
+
+export type ReorderEvent = Readonly<{
   sourceIds: readonly string[];
-  destination: Readonly<{
-    sectionId: string | null;
-    beforeId: string | null;
-  }>;
+  destination: ReorderDestination;
   nextOrder: readonly CollectionOrder[];
+}>;
+
+export type ReorderAnnouncementContext = Readonly<{
+  event: ReorderEvent;
+  position: number;
+  collectionSize: number;
+}>;
+
+export type DropAnnouncementContext = Readonly<{
+  event: DropEvent;
+}>;
+
+export type AccessibilityStrings = Readonly<{
+  moveEarlierAction: string;
+  moveLaterAction: string;
+  dropSelectedItemsAction: string;
+  reorderAnnouncement: (context: ReorderAnnouncementContext) => string;
+  dropAnnouncement: (context: DropAnnouncementContext) => string;
+  unavailableAnnouncement: string;
+  orderCorrectedAnnouncement: string;
 }>;
 
 export type DropEvent = Readonly<{
@@ -22,8 +46,11 @@ export type DropEvent = Readonly<{
 
 export type ReorderableContainerProps = ViewProps & {
   children: ReactNode;
+  accessibilityStrings?: Partial<AccessibilityStrings>;
   enabled?: boolean;
-  onMove: (move: ReorderMove) => void;
+  engine?: EnginePolicy;
+  onReorder: (event: ReorderEvent) => void;
+  selectedIds?: readonly string[];
 };
 
 export type ReorderableItemProps = ViewProps & {
@@ -33,6 +60,7 @@ export type ReorderableItemProps = ViewProps & {
 
 export type ReorderableSectionProps = ViewProps & {
   children: ReactNode;
+  footer?: ReactNode;
   header?: ReactNode;
   id: string;
 };

@@ -1,4 +1,5 @@
 import {
+  codegenNativeCommands,
   codegenNativeComponent,
   type HostComponent,
   type ViewProps,
@@ -31,6 +32,19 @@ export interface NativeProps extends ViewProps {
   onMove?: DirectEventHandler<NativeMoveEvent>;
   onDrop?: DirectEventHandler<NativeDropEvent>;
 }
+
+interface NativeCommands {
+  debugEmitTerminalReorder: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>,
+    sourceIdsJson: string,
+    destinationCollectionId: string,
+    destinationBeforeId: string
+  ) => void;
+}
+
+export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
+  supportedCommands: ['debugEmitTerminalReorder'],
+});
 
 export default codegenNativeComponent<NativeProps>(
   'ReorderableView'

@@ -1,6 +1,8 @@
-import { describe, expect, it } from '@jest/globals';
-import type { ReactElement } from 'react';
-import { Text, View, type ViewProps } from 'react-native';
+import { describe, expect, it, jest } from '@jest/globals';
+import { fireEvent, render } from '@testing-library/react-native';
+import { createRef, type ReactElement } from 'react';
+import { Platform, Text, View, type ViewProps } from 'react-native';
+import * as publicApi from '..';
 
 import {
   DragContainer,
@@ -9,10 +11,9 @@ import {
   ReorderableContainer,
   ReorderableItem,
   ReorderableSection,
-  isNativeReorderingAvailable,
+  type ReorderEvent,
 } from '..';
 import {
-  applyMoveToOrder,
   mapNativeDropEvent,
   normalizeDragChildren,
   normalizeReorderableChildren,
@@ -49,8 +50,14 @@ describe('compound child normalization', () => {
 
   it('flattens structural section entries without owning presentation', () => {
     const header = <Text>Favorites</Text>;
+    const footer = <Text>2 cards</Text>;
     const normalized = normalizeReorderableChildren(
-      <ReorderableSection id="favorites" header={header} style={{ gap: 8 }}>
+      <ReorderableSection
+        footer={footer}
+        id="favorites"
+        header={header}
+        style={{ gap: 8 }}
+      >
         <ReorderableItem id="blue">
           <View />
         </ReorderableItem>
@@ -66,14 +73,17 @@ describe('compound child normalization', () => {
       'header',
       'item',
       'item',
+      'footer',
     ]);
     expect(normalized.entryIds).toEqual([
       'favorites',
       'favorites',
       'blue',
       'green',
+      'favorites',
     ]);
     expect(normalized.collectionIds).toEqual([
+      'favorites',
       'favorites',
       'favorites',
       'favorites',
@@ -93,6 +103,7 @@ describe('compound child normalization', () => {
       'header:favorites',
       'item:blue',
       'item:green',
+      'footer:favorites',
     ]);
   });
 
@@ -129,16 +140,18 @@ describe('compound child normalization', () => {
       )
     ).toThrow('may only contain ReorderableItem');
 
-    expect(() =>
+    expect(
       normalizeReorderableChildren(
-        <ReorderableSection id="collision">
-          <ReorderableItem id="collision">
+        <ReorderableSection id="separate-namespace">
+          <ReorderableItem id="separate-namespace">
             <View />
           </ReorderableItem>
         </ReorderableSection>,
         reorderMarkers
-      )
-    ).toThrow('Duplicate item id');
+      ).order
+    ).toEqual([
+      { sectionId: 'separate-namespace', itemIds: ['separate-namespace'] },
+    ]);
   });
 
   it('normalizes draggable items and user-authored drop zones', () => {
@@ -184,44 +197,14 @@ describe('compound child normalization', () => {
   });
 });
 
-describe('controlled move calculation', () => {
-  it('moves an item before another item and to the end', () => {
-    const initial = [{ sectionId: null, itemIds: ['blue', 'green', 'yellow'] }];
-
-    expect(applyMoveToOrder(initial, ['yellow'], null, 'green')).toEqual([
-      { sectionId: null, itemIds: ['blue', 'yellow', 'green'] },
-    ]);
-    expect(applyMoveToOrder(initial, ['blue'], null, null)).toEqual([
-      { sectionId: null, itemIds: ['green', 'yellow', 'blue'] },
-    ]);
-  });
-
-  it('moves multiple ids between sections while preserving source order', () => {
-    const initial = [
-      { sectionId: 'favorites', itemIds: ['blue', 'green', 'yellow'] },
-      { sectionId: 'others', itemIds: ['orange', 'pink'] },
-    ];
-
-    expect(
-      applyMoveToOrder(initial, ['blue', 'green'], 'others', 'pink')
-    ).toEqual([
-      { sectionId: 'favorites', itemIds: ['yellow'] },
-      { sectionId: 'others', itemIds: ['orange', 'blue', 'green', 'pink'] },
-    ]);
-  });
-
-  it('returns the original order for an invalid destination', () => {
-    const initial = [{ sectionId: null, itemIds: ['blue', 'green'] }];
-    expect(applyMoveToOrder(initial, ['blue'], 'missing', null)).toEqual(
-      initial
-    );
-  });
-});
-
 describe('drop event mapping', () => {
-  it('maps ID-only native payloads and rejects malformed values', () => {
-    expect(mapNativeDropEvent('["blue",4,"green"]', 'archive')).toEqual({
+  it('maps ID-only native payloads and rejects malformed values atomically', () => {
+    expect(mapNativeDropEvent('["blue","green"]', 'archive')).toEqual({
       itemIds: ['blue', 'green'],
+      destinationId: 'archive',
+    });
+    expect(mapNativeDropEvent('["blue",4,"green"]', 'archive')).toEqual({
+      itemIds: [],
       destinationId: 'archive',
     });
     expect(mapNativeDropEvent('not-json', 'archive')).toEqual({
@@ -231,30 +214,201 @@ describe('drop event mapping', () => {
   });
 });
 
-describe('unsupported platform fallback', () => {
-  it('renders ordinary React Native views without changing child content', () => {
-    expect(isNativeReorderingAvailable).toBe(false);
+describe('public reorder component', () => {
+  it('does not retain provisional reorder aliases or native availability', () => {
+    expect(publicApi).not.toHaveProperty('isNativeReorderingAvailable');
+    expect(publicApi).not.toHaveProperty('ReorderMove');
+  });
+
+  it('renders disabled content without requiring an interaction engine', async () => {
     const child = (
       <ReorderableItem id="one">
         <Text>One</Text>
       </ReorderableItem>
     );
-    const reorderable = ReorderableContainer({
-      children: child,
-      onMove: () => undefined,
-    });
-    const drag = DragContainer({
-      children: (
-        <DropZone id="drop">
-          <Text>Drop</Text>
-        </DropZone>
-      ),
-      onDrop: () => undefined,
-      selectedIds: [],
-    });
+    const rendered = await render(
+      <ReorderableContainer enabled={false} onReorder={() => undefined}>
+        {child}
+      </ReorderableContainer>
+    );
 
-    expect(reorderable.type).toBe(View);
-    expect(reorderable.props.children).toBe(child);
-    expect(drag.type).toBe(View);
+    expect(rendered.getByText('One')).toBeOnTheScreen();
+  });
+
+  it('forwards host-view refs through the complete children surface', async () => {
+    const containerRef = createRef<React.ElementRef<typeof View>>();
+    const sectionRef = createRef<React.ElementRef<typeof View>>();
+    const itemRef = createRef<React.ElementRef<typeof View>>();
+
+    await render(
+      <ReorderableContainer
+        enabled={false}
+        onReorder={() => undefined}
+        ref={containerRef}
+      >
+        <ReorderableSection id="section" ref={sectionRef}>
+          <ReorderableItem id="one" ref={itemRef}>
+            <Text>One</Text>
+          </ReorderableItem>
+        </ReorderableSection>
+      </ReorderableContainer>
+    );
+
+    expect(containerRef.current).not.toBeNull();
+    expect(sectionRef.current).not.toBeNull();
+    expect(itemRef.current).not.toBeNull();
+  });
+
+  it('never leaves an enabled unsupported container inert', () => {
+    const originalOS = Platform.OS;
+    Object.defineProperty(Platform, 'OS', {
+      configurable: true,
+      value: 'android',
+    });
+    try {
+      expect(() =>
+        ReorderableContainer({
+          children: (
+            <ReorderableItem id="one">
+              <Text>One</Text>
+            </ReorderableItem>
+          ),
+          onReorder: () => undefined,
+        })
+      ).toThrow('No reorder engine can fulfill the portable contract');
+    } finally {
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: originalOS,
+      });
+    }
+  });
+
+  it('routes one native terminal identity outcome through reconciliation', async () => {
+    const originalOS = Platform.OS;
+    const originalVersion = Platform.Version;
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+    Object.defineProperty(Platform, 'Version', {
+      configurable: true,
+      value: 27,
+    });
+    const onReorder = jest.fn<(event: ReorderEvent) => void>();
+
+    try {
+      const children = (
+        <>
+          <ReorderableItem id="blue">
+            <View />
+          </ReorderableItem>
+          <ReorderableItem id="green">
+            <View />
+          </ReorderableItem>
+          <ReorderableItem id="yellow">
+            <View />
+          </ReorderableItem>
+        </>
+      );
+      const rendered = await render(
+        <ReorderableContainer onReorder={onReorder} testID="reorderable">
+          {children}
+        </ReorderableContainer>
+      );
+
+      await fireEvent(rendered.getByTestId('reorderable'), 'move', {
+        nativeEvent: {
+          sourceIdsJson: '["yellow"]',
+          destinationCollectionId: '',
+          destinationBeforeId: 'green',
+        },
+      });
+      expect(onReorder).toHaveBeenCalledTimes(1);
+      expect(onReorder).toHaveBeenLastCalledWith({
+        sourceIds: ['yellow'],
+        destination: { sectionId: null, beforeId: 'green' },
+        nextOrder: [{ sectionId: null, itemIds: ['blue', 'yellow', 'green'] }],
+      });
+
+      await fireEvent(rendered.getByTestId('reorderable'), 'move', {
+        nativeEvent: {
+          sourceIdsJson: '["blue",4]',
+          destinationCollectionId: '',
+          destinationBeforeId: '',
+        },
+      });
+      expect(onReorder).toHaveBeenCalledTimes(1);
+
+      await rendered.rerender(
+        <ReorderableContainer onReorder={onReorder} testID="reorderable">
+          {children}
+        </ReorderableContainer>
+      );
+      await rendered.rerender(
+        <ReorderableContainer onReorder={onReorder} testID="reorderable">
+          <ReorderableItem id="blue">
+            <View />
+          </ReorderableItem>
+          <ReorderableItem id="yellow">
+            <View />
+          </ReorderableItem>
+          <ReorderableItem id="green">
+            <View />
+          </ReorderableItem>
+        </ReorderableContainer>
+      );
+      await rendered.rerender(
+        <ReorderableContainer onReorder={onReorder} testID="reorderable">
+          {children}
+        </ReorderableContainer>
+      );
+      expect(onReorder).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: originalOS,
+      });
+      Object.defineProperty(Platform, 'Version', {
+        configurable: true,
+        value: originalVersion,
+      });
+    }
+  });
+
+  it('rejects a forced fallback policy until that engine is implemented', () => {
+    expect(() =>
+      ReorderableContainer({
+        children: (
+          <ReorderableItem id="one">
+            <View />
+          </ReorderableItem>
+        ),
+        engine: 'fallback',
+        onReorder: () => undefined,
+      })
+    ).toThrow('No reorder engine can fulfill the portable contract');
+  });
+
+  it('preserves the existing drag fallback until its frozen replacement lands', () => {
+    const originalOS = Platform.OS;
+    Object.defineProperty(Platform, 'OS', {
+      configurable: true,
+      value: 'android',
+    });
+    try {
+      const drag = DragContainer({
+        children: (
+          <DropZone id="drop">
+            <Text>Drop</Text>
+          </DropZone>
+        ),
+        onDrop: () => undefined,
+        selectedIds: [],
+      });
+      expect(drag.type).toBe(View);
+    } finally {
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: originalOS,
+      });
+    }
   });
 });

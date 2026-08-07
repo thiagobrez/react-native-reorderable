@@ -18,7 +18,7 @@ import type {
   ReorderableSectionProps,
 } from './types';
 
-export type EntryKind = 'item' | 'section' | 'header' | 'dropZone';
+export type EntryKind = 'item' | 'section' | 'header' | 'footer' | 'dropZone';
 
 export type NormalizedChildren = Readonly<{
   children: ReactElement[];
@@ -132,6 +132,8 @@ export function nativeLayoutIdentifier(
       return `section:${id}`;
     case 'header':
       return `header:${collectionId}`;
+    case 'footer':
+      return `footer:${collectionId}`;
     case 'dropZone':
       return `drop:${id}`;
     case 'item':
@@ -142,8 +144,9 @@ export function nativeLayoutIdentifier(
 export function parseNativeIds(json: string): string[] {
   try {
     const value: unknown = JSON.parse(json);
-    return Array.isArray(value)
-      ? value.filter((id): id is string => typeof id === 'string')
+    return Array.isArray(value) &&
+      value.every((id): id is string => typeof id === 'string')
+      ? value
       : [];
   } catch {
     return [];
@@ -242,15 +245,14 @@ export function normalizeReorderableChildren(
   for (const section of sections) {
     const {
       children: sectionChildren,
+      footer,
       header,
       id,
       ...sectionViewProps
     } = section.props;
     validateId(id, 'ReorderableSection');
     invariant(!seenSectionIds.has(id), `Duplicate section id "${id}".`);
-    invariant(!seenIds.has(id), `Duplicate container id "${id}".`);
     seenSectionIds.add(id);
-    seenIds.add(id);
 
     appendEntry(normalized, {
       child: (
@@ -307,6 +309,23 @@ export function normalizeReorderableChildren(
         kind: 'item',
       });
     }
+    if (footer != null) {
+      appendEntry(normalized, {
+        child: (
+          <ReorderableContentView
+            collapsable={false}
+            entryIdentifier={`footer:${id}`}
+            id={`footer:${id}`}
+            key={`footer:${id}`}
+          >
+            {footer}
+          </ReorderableContentView>
+        ),
+        collectionId: id,
+        id,
+        kind: 'footer',
+      });
+    }
     order.push({ sectionId: id, itemIds });
   }
 
@@ -348,64 +367,17 @@ export function normalizeDragChildren(
   return normalized;
 }
 
-export function applyMoveToOrder(
-  order: readonly CollectionOrder[],
-  sourceIds: readonly string[],
-  destinationSectionId: string | null,
-  destinationBeforeId: string | null
-): CollectionOrder[] {
-  const sourceSet = new Set(sourceIds);
-  const knownItems = new Set(order.flatMap((collection) => collection.itemIds));
-  const movedIds = sourceIds.filter(
-    (id, index) => knownItems.has(id) && sourceIds.indexOf(id) === index
-  );
-
-  if (movedIds.length === 0) {
-    return order.map((collection) => ({
-      ...collection,
-      itemIds: [...collection.itemIds],
-    }));
-  }
-
-  const nextOrder = order.map((collection) => ({
-    sectionId: collection.sectionId,
-    itemIds: collection.itemIds.filter((id) => !sourceSet.has(id)),
-  }));
-  const destination = nextOrder.find(
-    (collection) => collection.sectionId === destinationSectionId
-  );
-
-  if (!destination) {
-    return order.map((collection) => ({
-      ...collection,
-      itemIds: [...collection.itemIds],
-    }));
-  }
-
-  let destinationIndex = destination.itemIds.length;
-  if (destinationBeforeId != null) {
-    destinationIndex = destination.itemIds.indexOf(destinationBeforeId);
-    if (destinationIndex < 0) {
-      return order.map((collection) => ({
-        ...collection,
-        itemIds: [...collection.itemIds],
-      }));
-    }
-  }
-
-  destination.itemIds.splice(destinationIndex, 0, ...movedIds);
-  return nextOrder;
-}
-
 export function fallbackSectionViewProps(
   props: ReorderableSectionProps
 ): ViewProps {
   const viewProps = { ...props } as ViewProps & {
     children?: ReactNode;
+    footer?: ReactNode;
     header?: ReactNode;
     id?: string;
   };
   delete viewProps.children;
+  delete viewProps.footer;
   delete viewProps.header;
   delete viewProps.id;
   return viewProps;

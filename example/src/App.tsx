@@ -7,8 +7,9 @@ import {
   ReorderableContainer,
   ReorderableItem,
   ReorderableSection,
-  type ReorderMove,
+  type ReorderEvent,
 } from 'react-native-reorderable';
+import { NativeCommitAcceptanceContainer } from '../../src/issue25-acceptance';
 
 type Card = Readonly<{
   color: string;
@@ -95,40 +96,67 @@ function DemoSelector({
 
 function SingleCollectionExample() {
   const [cards, setCards] = useState(initialCards);
+  const [callbackCount, setCallbackCount] = useState(0);
 
-  const handleMove = (move: ReorderMove) => {
-    const itemIds = move.nextOrder[0]?.itemIds;
+  const handleReorder = (event: ReorderEvent) => {
+    const itemIds = event.nextOrder[0]?.itemIds;
     if (itemIds) {
       setCards((current) => itemsInOrder(current, itemIds));
+      setCallbackCount((current) => current + 1);
     }
   };
 
-  return (
-    <ReorderableContainer
-      accessibilityLabel="Single collection cards"
-      onMove={handleMove}
-      style={styles.verticalCards}
-      testID="single-container"
+  const renderedCards = cards.map((card, index) => (
+    <ReorderableItem
+      accessibilityLabel={`${card.label} card, position ${index + 1}`}
+      id={card.id}
+      key={card.id}
+      style={[styles.card, { backgroundColor: card.color }]}
+      testID={`single-card-${card.id}`}
     >
-      {cards.map((card, index) => (
-        <ReorderableItem
-          accessibilityLabel={`${card.label} card, position ${index + 1}`}
-          id={card.id}
-          key={card.id}
-          style={[styles.card, { backgroundColor: card.color }]}
-          testID={`single-card-${card.id}`}
+      <Text style={styles.cardLabel}>{card.label}</Text>
+    </ReorderableItem>
+  ));
+
+  return (
+    <>
+      <Text style={styles.outcome} testID="single-order">
+        Order: {cards.map((card) => card.label).join(', ')}
+      </Text>
+      <Text style={styles.outcome} testID="single-callback-count">
+        Reorder callbacks: {callbackCount}
+      </Text>
+      {__DEV__ ? (
+        <NativeCommitAcceptanceContainer
+          acceptanceMove={{
+            sourceIds: ['yellow'],
+            destination: { sectionId: null, beforeId: 'green' },
+          }}
+          accessibilityLabel="Single collection cards"
+          onReorder={handleReorder}
+          style={styles.verticalCards}
+          testID="single-container"
         >
-          <View />
-        </ReorderableItem>
-      ))}
-    </ReorderableContainer>
+          {renderedCards}
+        </NativeCommitAcceptanceContainer>
+      ) : (
+        <ReorderableContainer
+          accessibilityLabel="Single collection cards"
+          onReorder={handleReorder}
+          style={styles.verticalCards}
+          testID="single-container"
+        >
+          {renderedCards}
+        </ReorderableContainer>
+      )}
+    </>
   );
 }
 
 function SectionedCollectionExample() {
   const [sections, setSections] = useState(initialSections);
 
-  const handleMove = (move: ReorderMove) => {
+  const handleReorder = (event: ReorderEvent) => {
     setSections((current) => {
       const cardsById = new Map(
         current
@@ -138,7 +166,7 @@ function SectionedCollectionExample() {
       const sectionsById = new Map(
         current.map((section) => [section.id, section])
       );
-      return move.nextOrder.flatMap((order) => {
+      return event.nextOrder.flatMap((order) => {
         if (order.sectionId == null) return [];
         const section = sectionsById.get(order.sectionId);
         if (!section) return [];
@@ -158,13 +186,18 @@ function SectionedCollectionExample() {
   return (
     <ReorderableContainer
       accessibilityLabel="Sectioned cards"
-      onMove={handleMove}
+      onReorder={handleReorder}
       style={styles.sectionedCards}
       testID="sections-container"
     >
       {sections.map((section) => (
         <ReorderableSection
           header={<Text style={styles.sectionTitle}>{section.title}</Text>}
+          footer={
+            <Text style={styles.sectionFooter}>
+              {section.cards.length} cards
+            </Text>
+          }
           id={section.id}
           key={section.id}
           style={styles.cardSection}
@@ -177,7 +210,7 @@ function SectionedCollectionExample() {
               style={[styles.card, { backgroundColor: card.color }]}
               testID={`section-card-${card.id}`}
             >
-              <View />
+              <Text style={styles.cardLabel}>{card.label}</Text>
             </ReorderableItem>
           ))}
         </ReorderableSection>
@@ -327,9 +360,21 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   card: {
+    alignItems: 'center',
     borderRadius: 10,
     height: 54,
+    justifyContent: 'center',
     width: '100%',
+  },
+  cardLabel: {
+    color: '#000000',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  outcome: {
+    color: '#D1D1D6',
+    fontSize: 12,
+    marginBottom: 6,
   },
   sectionedCards: {
     gap: 12,
@@ -342,6 +387,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: '#D1D1D6',
     fontSize: 12,
+    textAlign: 'center',
+  },
+  sectionFooter: {
+    color: '#8E8E93',
+    fontSize: 11,
     textAlign: 'center',
   },
   dragLayout: {

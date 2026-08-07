@@ -1,5 +1,5 @@
 export {
-  DragContainer,
+  DragDropContainer,
   DraggableItem,
   DropZone,
   ReorderableContainer,
@@ -9,7 +9,7 @@ export {
 export type {
   AccessibilityStrings,
   CollectionOrder,
-  DragContainerProps,
+  DragDropContainerProps,
   DraggableItemProps,
   DropAnnouncementContext,
   DropEvent,

@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as publicApi from '..';
 
 import {
-  DragContainer,
+  DragDropContainer,
   DraggableItem,
   DropZone,
   ReorderableContainer,
@@ -395,23 +395,27 @@ describe('public reorder component', () => {
     ).toBeOnTheScreen();
   });
 
-  it('preserves the existing drag fallback until its frozen replacement lands', () => {
+  it('uses the supported drag-and-drop fallback on Android', async () => {
     const originalOS = Platform.OS;
     Object.defineProperty(Platform, 'OS', {
       configurable: true,
       value: 'android',
     });
     try {
-      const drag = DragContainer({
-        children: (
-          <DropZone id="drop">
-            <Text>Drop</Text>
-          </DropZone>
-        ),
-        onDrop: () => undefined,
-        selectedIds: [],
-      });
-      expect(drag.type).toBe(View);
+      const drag = await render(
+        <GestureHandlerRootView>
+          <DragDropContainer
+            children={
+              <DropZone id="drop">
+                <Text>Drop</Text>
+              </DropZone>
+            }
+            onDrop={() => undefined}
+            selectedIds={[]}
+          />
+        </GestureHandlerRootView>
+      );
+      expect(drag.getByTestId('fallback-drop-zone-drop')).toBeOnTheScreen();
     } finally {
       Object.defineProperty(Platform, 'OS', {
         configurable: true,

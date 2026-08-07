@@ -1,8 +1,34 @@
 import type {
   CollectionOrder,
+  DropEvent,
   ReorderDestination,
   ReorderEvent,
 } from './types';
+
+export function reconcileDrop(
+  knownItemIds: readonly string[],
+  sourceIds: readonly string[],
+  knownDestinationIds: readonly string[],
+  destinationId: string,
+  accepted: boolean
+): DropEvent | null {
+  const knownItems = new Set(knownItemIds);
+  const requested = new Set(sourceIds);
+  if (
+    !accepted ||
+    sourceIds.length === 0 ||
+    sourceIds.some(
+      (id) => typeof id !== 'string' || id.length === 0 || !knownItems.has(id)
+    ) ||
+    !knownDestinationIds.includes(destinationId)
+  ) {
+    return null;
+  }
+  return {
+    itemIds: knownItemIds.filter((id) => requested.has(id)),
+    destinationId,
+  };
+}
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {

@@ -65,10 +65,13 @@ export type ReorderableSectionProps = ViewProps & {
   id: string;
 };
 
-export type DragContainerProps = ViewProps & {
+export type DragDropContainerProps = ViewProps & {
   children: ReactNode;
+  accessibilityStrings?: Partial<AccessibilityStrings>;
+  enabled?: boolean;
+  engine?: EnginePolicy;
   onDrop: (event: DropEvent) => void;
-  selectedIds: readonly string[];
+  selectedIds?: readonly string[];
 };
 
 export type DraggableItemProps = ViewProps & {
@@ -79,4 +82,5 @@ export type DraggableItemProps = ViewProps & {
 export type DropZoneProps = ViewProps & {
   children: ReactNode;
   id: string;
+  canDrop?: (itemIds: readonly string[]) => boolean;
 };

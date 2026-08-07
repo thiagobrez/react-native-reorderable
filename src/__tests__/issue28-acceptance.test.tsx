@@ -191,7 +191,7 @@ describe('issue 28 visible fallback lifecycle contract', () => {
       await render(<LifecycleScenario />);
       expect(keyboardListener).not.toHaveBeenCalled();
       expect(Object.keys(await import('..')).sort()).toEqual([
-        'DragContainer',
+        'DragDropContainer',
         'DraggableItem',
         'DropZone',
         'ReorderableContainer',

@@ -1,8 +1,12 @@
 import {
+  Children,
   createRef,
+  isValidElement,
   useEffect,
   useRef,
+  useState,
   type ReactElement,
+  type ReactNode,
   type RefAttributes,
 } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
@@ -28,14 +32,17 @@ import {
   type FallbackTerminalEvent,
 } from './fallback';
 import type {
-  DragContainerProps,
+  DragDropContainerProps,
   DraggableItemProps,
+  DropEvent,
   DropZoneProps,
   ReorderableContainerProps,
   ReorderDestination,
   ReorderableItemProps,
   ReorderableSectionProps,
 } from './types';
+import { FallbackDropContainer } from './fallback-drop';
+import { reconcileDrop } from './semantic';
 
 type AcceptanceMove = Readonly<{
   sourceIds: readonly string[];
@@ -61,6 +68,19 @@ function assignHostRef(ref: unknown, value: unknown): void {
   } else if (ref != null && typeof ref === 'object' && 'current' in ref) {
     (ref as { current: unknown }).current = value;
   }
+}
+
+function containsComponent(
+  children: ReactNode,
+  types: readonly unknown[]
+): boolean {
+  return Children.toArray(children).some((child) => {
+    if (!isValidElement<{ children?: ReactNode }>(child)) return false;
+    return (
+      types.includes(child.type) ||
+      containsComponent(child.props.children, types)
+    );
+  });
 }
 
 function platformMajorVersion(): number {
@@ -124,6 +144,13 @@ function ReorderableContainerImplementation({
   debugInteractionStateChange,
   ...viewProps
 }: InternalReorderableContainerProps) {
+  if (
+    containsComponent(children, [DragDropContainer, DraggableItem, DropZone])
+  ) {
+    throw new Error(
+      '[react-native-reorderable] Reorderable and drag-and-drop interfaces cannot nest or interoperate.'
+    );
+  }
   const fallbackLifecycle = useRef(new InteractionLifecycle()).current;
   useEffect(() => {
     if (!enabled) debugInteractionStateChange?.(false);
@@ -237,6 +264,7 @@ function ReorderableContainerImplementation({
       )}
       <NativeReorderableView
         {...viewProps}
+        acceptedDropZoneIds={[]}
         collectionIds={nativeEntries.collectionIds}
         enabled={enabled}
         entryIds={nativeEntries.entryIds}
@@ -248,6 +276,7 @@ function ReorderableContainerImplementation({
           debugInteractionStateChange?.(event.nativeEvent.active)
         }
         orderedEntryIds={nativeEntries.orderedEntryIds}
+        parentEntryIds={nativeEntries.parentEntryIds}
         ref={(value) => {
           nativeRef.current = value;
           assignHostRef(ref, value);
@@ -322,29 +351,122 @@ export function DropZone({ children, id: _id, ...viewProps }: DropZoneProps) {
   return <View {...viewProps}>{children}</View>;
 }
 
-export function DragContainer({
+type InternalDragDropContainerProps = DragDropContainerProps & {
+  debugAcceptanceMove?: Readonly<{ sourceId: string; destinationId: string }>;
+  debugInteractionStateChange?: (active: boolean) => void;
+};
+
+function DragDropContainerImplementation({
   children,
+  accessibilityStrings: _accessibilityStrings,
+  enabled = true,
+  engine = 'auto',
   onDrop,
-  selectedIds,
+  selectedIds: _selectedIds = [],
+  debugAcceptanceMove,
+  debugInteractionStateChange,
   ...viewProps
-}: DragContainerProps) {
+}: InternalDragDropContainerProps) {
+  if (
+    containsComponent(children, [
+      DragDropContainer,
+      ReorderableContainer,
+      ReorderableItem,
+      ReorderableSection,
+    ])
+  ) {
+    throw new Error(
+      '[react-native-reorderable] Drag-and-drop roots cannot nest, and reorderable and draggable interfaces cannot interoperate.'
+    );
+  }
+  const [acceptedDropZoneIds, setAcceptedDropZoneIds] = useState<
+    readonly string[]
+  >([]);
+  const activeAcceptanceRef = useRef<ReadonlySet<string> | null>(null);
+  const pendingNativeDropRef = useRef<DropEvent | null>(null);
+  const nativeActivationPhaseRef = useRef<'idle' | 'evaluating' | 'ready'>(
+    'idle'
+  );
+  const nativeRef = createRef<React.ElementRef<typeof NativeReorderableView>>();
   const normalized = normalizeDragChildren(children, {
     DropZone,
     Item: DraggableItem,
   });
+  const itemIds = normalized.entryIds.filter(
+    (_id, index) => normalized.entryKinds[index] === 'item'
+  );
+  const zoneIds = normalized.entryIds.filter(
+    (_id, index) => normalized.entryKinds[index] === 'dropZone'
+  );
+  const commitDrop = (
+    terminalItemIds: readonly string[],
+    destinationId: string,
+    accepted: boolean
+  ) => {
+    const event = reconcileDrop(
+      itemIds,
+      terminalItemIds,
+      zoneIds,
+      destinationId,
+      accepted
+    );
+    if (event != null) onDrop(event);
+  };
 
-  if (!isNativeReorderingAvailable()) {
-    return <View {...viewProps}>{children}</View>;
+  if (!enabled) return <View {...viewProps}>{children}</View>;
+
+  if (engine === 'fallback' || !isNativeReorderingAvailable()) {
+    if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+      throw new Error(
+        `[react-native-reorderable] No drag-and-drop engine can fulfill the portable contract for this enabled ${Platform.OS} container.`
+      );
+    }
+    return (
+      <FallbackDropContainer
+        {...viewProps}
+        canDropById={normalized.canDropById}
+        debugMove={debugAcceptanceMove}
+        entryIds={normalized.entryIds}
+        entryKinds={normalized.entryKinds}
+        parentEntryIds={normalized.parentEntryIds}
+        onDropTerminal={(terminal) => {
+          if (terminal != null) {
+            commitDrop(
+              terminal.itemIds,
+              terminal.destinationId,
+              terminal.accepted
+            );
+          }
+        }}
+      >
+        {normalized.children}
+      </FallbackDropContainer>
+    );
   }
   const nativeEntries = prepareNativeEntries(normalized);
-  const itemIds = new Set(
-    normalized.entryIds.filter(
-      (_id, index) => normalized.entryKinds[index] === 'item'
-    )
-  );
+  const finishNativeDrop = (mapped: DropEvent) => {
+    if (nativeActivationPhaseRef.current === 'idle') return;
+    const acceptance = activeAcceptanceRef.current;
+    if (
+      nativeActivationPhaseRef.current === 'evaluating' ||
+      acceptance == null
+    ) {
+      pendingNativeDropRef.current = mapped;
+      return;
+    }
+    commitDrop(
+      mapped.itemIds,
+      mapped.destinationId,
+      acceptance.has(mapped.destinationId)
+    );
+    pendingNativeDropRef.current = null;
+    activeAcceptanceRef.current = null;
+    nativeActivationPhaseRef.current = 'idle';
+    setAcceptedDropZoneIds([]);
+  };
 
   const handleDrop = (event: NativeSyntheticEvent<NativeDropEvent>) => {
-    onDrop(
+    finishNativeDrop(
       mapNativeDropEvent(
         event.nativeEvent.itemIdsJson,
         event.nativeEvent.destinationId
@@ -352,20 +474,154 @@ export function DragContainer({
     );
   };
 
+  const handleDragActivate = (
+    event: NativeSyntheticEvent<{ itemIdsJson: string }>
+  ) => {
+    nativeActivationPhaseRef.current = 'evaluating';
+    activeAcceptanceRef.current = null;
+    setAcceptedDropZoneIds([]);
+    const activeIds = mapNativeDropEvent(
+      event.nativeEvent.itemIdsJson,
+      ''
+    ).itemIds;
+    let accepted: readonly string[];
+    try {
+      accepted = zoneIds.filter((zoneId) => {
+        const predicate = normalized.canDropById.get(zoneId);
+        return (predicate ?? ((ids: readonly string[]) => ids.length > 0))(
+          activeIds
+        );
+      });
+    } catch (error) {
+      pendingNativeDropRef.current = null;
+      nativeActivationPhaseRef.current = 'idle';
+      throw error;
+    }
+    activeAcceptanceRef.current = new Set(accepted);
+    nativeActivationPhaseRef.current = 'ready';
+    setAcceptedDropZoneIds(accepted);
+    if (pendingNativeDropRef.current != null) {
+      const pendingDrop = pendingNativeDropRef.current;
+      pendingNativeDropRef.current = null;
+      finishNativeDrop(pendingDrop);
+    }
+  };
+
+  const handleNativeInteractionState = (
+    event: NativeSyntheticEvent<{ active: boolean }>
+  ) => {
+    debugInteractionStateChange?.(event.nativeEvent.active);
+    if (event.nativeEvent.active) return;
+    pendingNativeDropRef.current = null;
+    activeAcceptanceRef.current = null;
+    nativeActivationPhaseRef.current = 'idle';
+    setAcceptedDropZoneIds([]);
+  };
+
   return (
-    <NativeReorderableView
-      {...viewProps}
-      collectionIds={nativeEntries.collectionIds}
-      enabled
-      entryIds={nativeEntries.entryIds}
-      entryKinds={nativeEntries.entryKinds}
-      layoutRevision={layoutRevision(viewProps.style, nativeEntries.children)}
-      mode="dragDrop"
-      onDrop={handleDrop}
-      orderedEntryIds={nativeEntries.orderedEntryIds}
-      selectedIds={selectedIds.filter((id) => itemIds.has(id))}
-    >
-      {nativeEntries.children}
-    </NativeReorderableView>
+    <>
+      {debugAcceptanceMove == null ? null : (
+        <>
+          <Button
+            accessibilityLabel="Activate native drop"
+            onPress={() => {
+              if (nativeRef.current != null) {
+                Commands.debugBeginDrop(
+                  nativeRef.current,
+                  JSON.stringify([debugAcceptanceMove.sourceId])
+                );
+              }
+            }}
+            title="Activate native drop"
+          />
+          <Button
+            accessibilityLabel="Move native drop destination"
+            onPress={() => {
+              if (nativeRef.current != null) {
+                Commands.debugTargetDrop(
+                  nativeRef.current,
+                  debugAcceptanceMove.destinationId
+                );
+              }
+            }}
+            title="Move native drop destination"
+          />
+          <Button
+            accessibilityLabel="Commit native drop"
+            onPress={() => {
+              if (nativeRef.current != null) {
+                Commands.debugEmitTerminalDrop(nativeRef.current, false);
+              }
+            }}
+            title="Commit native drop"
+          />
+          <Button
+            accessibilityLabel="Release native drop outside"
+            onPress={() => {
+              if (nativeRef.current != null) {
+                Commands.debugEmitTerminalDrop(nativeRef.current, true);
+              }
+            }}
+            title="Release native drop outside"
+          />
+        </>
+      )}
+      <NativeReorderableView
+        {...viewProps}
+        acceptedDropZoneIds={acceptedDropZoneIds}
+        collectionIds={nativeEntries.collectionIds}
+        enabled
+        entryIds={nativeEntries.entryIds}
+        entryKinds={nativeEntries.entryKinds}
+        layoutRevision={layoutRevision(viewProps.style, nativeEntries.children)}
+        mode="dragDrop"
+        onDragActivate={handleDragActivate}
+        onDebugInteractionStateChange={handleNativeInteractionState}
+        onDrop={handleDrop}
+        orderedEntryIds={nativeEntries.orderedEntryIds}
+        parentEntryIds={nativeEntries.parentEntryIds}
+        ref={nativeRef}
+        selectedIds={[]}
+      >
+        {nativeEntries.children}
+      </NativeReorderableView>
+    </>
+  );
+}
+
+export function DragDropContainer(props: DragDropContainerProps) {
+  return DragDropContainerImplementation(props);
+}
+
+/** @internal Device acceptance harness; deliberately absent from index.tsx. */
+export function FallbackDropAcceptanceContainer(
+  props: DragDropContainerProps & {
+    acceptanceMove: Readonly<{ sourceId: string; destinationId: string }>;
+  }
+) {
+  const { acceptanceMove, ...containerProps } = props;
+  return (
+    <DragDropContainerImplementation
+      {...containerProps}
+      debugAcceptanceMove={acceptanceMove}
+      engine="fallback"
+    />
+  );
+}
+
+/** @internal Device acceptance harness; deliberately absent from index.tsx. */
+export function NativeDropAcceptanceContainer(
+  props: DragDropContainerProps & {
+    acceptanceMove: Readonly<{ sourceId: string; destinationId: string }>;
+    interactionStateChange?: (active: boolean) => void;
+  }
+) {
+  const { acceptanceMove, interactionStateChange, ...containerProps } = props;
+  return (
+    <DragDropContainerImplementation
+      {...containerProps}
+      debugAcceptanceMove={acceptanceMove}
+      debugInteractionStateChange={interactionStateChange}
+    />
   );
 }

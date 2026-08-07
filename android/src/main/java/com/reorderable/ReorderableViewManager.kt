@@ -42,11 +42,17 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
   @ReactProp(name = "collectionIds")
   override fun setCollectionIds(view: ReorderableView?, value: ReadableArray?) = Unit
 
+  @ReactProp(name = "parentEntryIds")
+  override fun setParentEntryIds(view: ReorderableView?, value: ReadableArray?) = Unit
+
   @ReactProp(name = "orderedEntryIds")
   override fun setOrderedEntryIds(view: ReorderableView?, value: ReadableArray?) = Unit
 
   @ReactProp(name = "selectedIds")
   override fun setSelectedIds(view: ReorderableView?, value: ReadableArray?) = Unit
+
+  @ReactProp(name = "acceptedDropZoneIds")
+  override fun setAcceptedDropZoneIds(view: ReorderableView?, value: ReadableArray?) = Unit
 
   @ReactProp(name = "layoutRevision")
   override fun setLayoutRevision(view: ReorderableView?, value: String?) = Unit
@@ -62,6 +68,12 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
     destinationCollectionId: String,
     destinationBeforeId: String
   ) = Unit
+
+  override fun debugBeginDrop(view: ReorderableView, itemIdsJson: String) = Unit
+
+  override fun debugTargetDrop(view: ReorderableView, destinationId: String) = Unit
+
+  override fun debugEmitTerminalDrop(view: ReorderableView, outside: Boolean) = Unit
 
   companion object {
     const val NAME = "ReorderableView"

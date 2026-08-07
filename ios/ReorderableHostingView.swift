@@ -1,7 +1,5 @@
-import CoreTransferable
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 private enum RNReorderableMode: String {
   case reorder
@@ -14,6 +12,8 @@ private enum RNReorderableEntryKind: String {
   case header
   case footer
   case dropZone
+  case layout
+  case content
 }
 
 private struct RNHostedEntry: Identifiable {
@@ -22,7 +22,19 @@ private struct RNHostedEntry: Identifiable {
   let itemID: String
   let collectionID: String
   let kind: RNReorderableEntryKind
+  let parentID: String
   let view: UIView
+}
+
+private indirect enum RNHostedDragNode: Identifiable {
+  case layout(RNHostedEntry, [RNHostedDragNode])
+  case leaf(RNHostedEntry)
+
+  var id: String {
+    switch self {
+    case let .layout(entry, _), let .leaf(entry): entry.layoutID
+    }
+  }
 }
 
 private struct RNHostedSection: Identifiable {
@@ -37,9 +49,13 @@ private struct RNReorderableRenderState {
   var enabled = true
   var hostGeneration = 0
   var selectedIDs: [String] = []
+  var acceptedDropZoneIDs: Set<String> = []
+  var dropAcceptanceReady = true
+  var debugTargetDropID: String?
+  var debugActiveDropIDs: [String] = []
   var items: [RNHostedEntry] = []
   var sections: [RNHostedSection] = []
-  var dragEntries: [RNHostedEntry] = []
+  var dragRoots: [RNHostedDragNode] = []
 }
 
 @MainActor
@@ -49,6 +65,8 @@ private final class RNReorderableModel: ObservableObject {
   let layoutCoordinator: RNReorderableLayoutCoordinator
   var moveHandler: (([String], String, String) -> Void)?
   var dropHandler: (([String], String) -> Void)?
+  var dragActivateHandler: (([String]) -> Void)?
+  var interactionStateHandler: ((Bool) -> Void)?
 
   init(layoutCoordinator: RNReorderableLayoutCoordinator) {
     self.layoutCoordinator = layoutCoordinator
@@ -59,15 +77,18 @@ private final class RNReorderableModel: ObservableObject {
     entryKinds: [String],
     entryIDs: [String],
     collectionIDs: [String],
+    parentEntryIDs: [String],
     orderedEntryIDs: [String],
     childViews: [UIView],
     selectedIDs: [String],
+    acceptedDropZoneIDs: [String],
     enabled: Bool
   ) {
     let count = [
       entryKinds.count,
       entryIDs.count,
       collectionIDs.count,
+      parentEntryIDs.count,
       childViews.count,
     ].min() ?? 0
     let resolvedMode = RNReorderableMode(rawValue: mode) ?? .reorder
@@ -101,6 +122,7 @@ private final class RNReorderableModel: ObservableObject {
           itemID: entryID,
           collectionID: collectionID,
           kind: kind,
+          parentID: parentEntryIDs[index],
           view: childViews[index]
         )
       case .footer:
@@ -111,6 +133,7 @@ private final class RNReorderableModel: ObservableObject {
           itemID: entryID,
           collectionID: collectionID,
           kind: kind,
+          parentID: parentEntryIDs[index],
           view: childViews[index]
         )
       case .item:
@@ -120,6 +143,7 @@ private final class RNReorderableModel: ObservableObject {
           itemID: entryID,
           collectionID: collectionID,
           kind: kind,
+          parentID: parentEntryIDs[index],
           view: childViews[index]
         )
         if resolvedMode == .dragDrop {
@@ -137,6 +161,31 @@ private final class RNReorderableModel: ObservableObject {
             itemID: entryID,
             collectionID: collectionID,
             kind: kind,
+            parentID: parentEntryIDs[index],
+            view: childViews[index]
+          )
+        )
+      case .layout:
+        dragEntries.append(
+          RNHostedEntry(
+            id: entryID,
+            layoutID: entryID,
+            itemID: entryID,
+            collectionID: collectionID,
+            kind: kind,
+            parentID: parentEntryIDs[index],
+            view: childViews[index]
+          )
+        )
+      case .content:
+        dragEntries.append(
+          RNHostedEntry(
+            id: entryID,
+            layoutID: entryID,
+            itemID: entryID,
+            collectionID: collectionID,
+            kind: kind,
+            parentID: parentEntryIDs[index],
             view: childViews[index]
           )
         )
@@ -159,6 +208,14 @@ private final class RNReorderableModel: ObservableObject {
       }
     }
     dragEntries.sort { orderIndex($0.layoutID) < orderIndex($1.layoutID) }
+    func dragNodes(parentID: String) -> [RNHostedDragNode] {
+      dragEntries.compactMap { entry in
+        guard entry.parentID == parentID else { return nil }
+        return entry.kind == .layout
+          ? .layout(entry, dragNodes(parentID: entry.id))
+          : .leaf(entry)
+      }
+    }
 
     // A section layout owns nested representable containers while the other
     // modes are flat. Do not let SwiftUI reuse those containers across modes.
@@ -176,9 +233,13 @@ private final class RNReorderableModel: ObservableObject {
       enabled: enabled,
       hostGeneration: hostGeneration,
       selectedIDs: selectedIDs,
+      acceptedDropZoneIDs: Set(acceptedDropZoneIDs),
+      dropAcceptanceReady: true,
+      debugTargetDropID: state.debugTargetDropID,
+      debugActiveDropIDs: state.debugActiveDropIDs,
       items: items,
       sections: sections,
-      dragEntries: dragEntries
+      dragRoots: dragNodes(parentID: "")
     )
   }
 
@@ -190,6 +251,9 @@ private final class RNReorderableModel: ObservableObject {
     // Replacing the SwiftUI reorder container ends any in-flight native drag
     // and rebuilds presentation from the latest application-owned entries.
     state.hostGeneration += 1
+    state.acceptedDropZoneIDs = []
+    state.dropAcceptanceReady = true
+    interactionStateHandler?(false)
   }
 
   #if compiler(>=6.4)
@@ -260,6 +324,49 @@ private final class RNReorderableModel: ObservableObject {
   func emitDrop(_ itemIDs: [String], destinationID: String) {
     dropHandler?(itemIDs, destinationID)
   }
+
+  func activateDrop(_ itemIDs: [String]) {
+    // Do not let acceptance from a previous activation leak into this one.
+    // React will publish the immutable activation snapshot back through props.
+    state.acceptedDropZoneIDs = []
+    state.dropAcceptanceReady = false
+    interactionStateHandler?(true)
+    dragActivateHandler?(itemIDs)
+  }
+
+  func endDropInteraction() {
+    state.acceptedDropZoneIDs = []
+    state.dropAcceptanceReady = true
+    interactionStateHandler?(false)
+  }
+
+  #if DEBUG
+  func debugBeginDrop(_ itemIDs: [String]) {
+    guard state.enabled, state.mode == .dragDrop, !itemIDs.isEmpty else { return }
+    state.debugActiveDropIDs = itemIDs
+    state.acceptedDropZoneIDs = []
+    state.dropAcceptanceReady = false
+    interactionStateHandler?(true)
+    dragActivateHandler?(itemIDs)
+  }
+
+  func debugTargetDrop(_ destinationID: String) {
+    guard state.enabled, state.mode == .dragDrop else { return }
+    state.debugTargetDropID = destinationID
+  }
+
+  func debugEmitTerminalDrop(outside: Bool) {
+    defer { state.debugTargetDropID = nil }
+    guard
+      !outside,
+      let destinationID = state.debugTargetDropID
+    else { return }
+    let itemIDs = state.debugActiveDropIDs
+    state.debugActiveDropIDs = []
+    guard !itemIDs.isEmpty else { return }
+    dropHandler?(itemIDs, destinationID)
+  }
+  #endif
 
   #if DEBUG
   func debugEmitTerminalReorder(
@@ -467,11 +574,229 @@ private struct RNHostedReactView: UIViewRepresentable {
 }
 
 @available(iOS 27.0, *)
-private struct RNLocalDragItem: Codable, Identifiable, Transferable {
-  let id: String
+private final class RNLocalDragPayload: NSObject {
+  let itemIDs: [String]
 
-  static var transferRepresentation: some TransferRepresentation {
-    CodableRepresentation(contentType: .json)
+  init(itemIDs: [String]) {
+    self.itemIDs = itemIDs
+  }
+}
+
+@available(iOS 27.0, *)
+private final class RNItemDragDelegate: NSObject, UIDragInteractionDelegate,
+  UIGestureRecognizerDelegate
+{
+  let itemID: String
+  let model: RNReorderableModel
+
+  init(itemID: String, model: RNReorderableModel) {
+    self.itemID = itemID
+    self.model = model
+  }
+
+  func dragInteraction(
+    _ interaction: UIDragInteraction,
+    itemsForBeginning session: any UIDragSession
+  ) -> [UIDragItem] {
+    guard model.state.enabled else { return [] }
+    let itemIDs = [itemID]
+    model.activateDrop(itemIDs)
+    let item = UIDragItem(itemProvider: NSItemProvider(object: itemID as NSString))
+    item.localObject = RNLocalDragPayload(itemIDs: itemIDs)
+    return [item]
+  }
+
+  func dragInteraction(
+    _ interaction: UIDragInteraction,
+    session: any UIDragSession,
+    didEndWith operation: UIDropOperation
+  ) {
+    model.endDropInteraction()
+  }
+
+  @objc func pointerGestureChanged(_ recognizer: UILongPressGestureRecognizer) {
+    guard
+      recognizer.state == .ended || recognizer.state == .cancelled
+        || recognizer.state == .failed
+    else { return }
+    // A source-pointer end is observable even when no destination accepts the
+    // session. Defer one turn so a successful drop event is delivered first.
+    DispatchQueue.main.async { [model] in
+      model.endDropInteraction()
+    }
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+  ) -> Bool {
+    true
+  }
+}
+
+@available(iOS 27.0, *)
+private final class RNZoneDropDelegate: NSObject, UIDropInteractionDelegate {
+  let destinationID: String
+  let model: RNReorderableModel
+  weak var view: UIView?
+  private var targeted = false
+
+  init(destinationID: String, model: RNReorderableModel) {
+    self.destinationID = destinationID
+    self.model = model
+  }
+
+  private func payload(_ session: any UIDropSession) -> RNLocalDragPayload? {
+    session.items.lazy.compactMap { $0.localObject as? RNLocalDragPayload }.first
+  }
+
+  private var accepted: Bool {
+    model.state.acceptedDropZoneIDs.contains(destinationID)
+  }
+
+  private var acceptanceReady: Bool {
+    model.state.dropAcceptanceReady
+  }
+
+  private func updateFeedback() {
+    guard let layer = view?.layer else { return }
+    layer.borderWidth = targeted ? 3 : 0
+    layer.borderColor = targeted
+      ? (
+        acceptanceReady
+          ? (accepted ? UIColor.systemGreen : UIColor.systemRed)
+          : UIColor.systemYellow
+      ).cgColor
+      : UIColor.clear.cgColor
+    layer.cornerRadius = 10
+  }
+
+  func refreshFeedback() {
+    updateFeedback()
+  }
+
+  func dropInteraction(
+    _ interaction: UIDropInteraction,
+    canHandle session: any UIDropSession
+  ) -> Bool {
+    model.state.enabled && payload(session) != nil
+  }
+
+  func dropInteraction(
+    _ interaction: UIDropInteraction,
+    sessionDidEnter session: any UIDropSession
+  ) {
+    targeted = true
+    updateFeedback()
+  }
+
+  func dropInteraction(
+    _ interaction: UIDropInteraction,
+    sessionDidUpdate session: any UIDropSession
+  ) -> UIDropProposal {
+    updateFeedback()
+    // While JS evaluates the activation snapshot, keep UIKit's drop path open
+    // so a quick release still yields a terminal candidate. Yellow feedback
+    // represents this pending state; ready acceptance remains green or red.
+    return UIDropProposal(operation: !acceptanceReady || accepted ? .move : .cancel)
+  }
+
+  func dropInteraction(
+    _ interaction: UIDropInteraction,
+    performDrop session: any UIDropSession
+  ) {
+    // A pending candidate is reconciled against the activation snapshot in JS.
+    // Once ready, a known rejection must never cross the native boundary.
+    guard !acceptanceReady || accepted, let payload = payload(session) else { return }
+    model.emitDrop(payload.itemIDs, destinationID: destinationID)
+  }
+
+  func dropInteraction(
+    _ interaction: UIDropInteraction,
+    sessionDidExit session: any UIDropSession
+  ) {
+    targeted = false
+    updateFeedback()
+  }
+
+  func dropInteraction(
+    _ interaction: UIDropInteraction,
+    sessionDidEnd session: any UIDropSession
+  ) {
+    targeted = false
+    updateFeedback()
+  }
+}
+
+@available(iOS 27.0, *)
+private struct RNHostedDraggableReactView: UIViewRepresentable {
+  let entry: RNHostedEntry
+  @ObservedObject var model: RNReorderableModel
+
+  func makeCoordinator() -> RNItemDragDelegate {
+    RNItemDragDelegate(itemID: entry.itemID, model: model)
+  }
+
+  func makeUIView(context: Context) -> RNHostedReactContainer {
+    let container = RNHostedReactContainer()
+    container.backgroundColor = .clear
+    container.host(entry.view)
+    container.addInteraction(UIDragInteraction(delegate: context.coordinator))
+    let pointerEndMonitor = UILongPressGestureRecognizer(
+      target: context.coordinator,
+      action: #selector(RNItemDragDelegate.pointerGestureChanged(_:))
+    )
+    pointerEndMonitor.minimumPressDuration = 0.35
+    pointerEndMonitor.cancelsTouchesInView = false
+    pointerEndMonitor.delegate = context.coordinator
+    container.addGestureRecognizer(pointerEndMonitor)
+    return container
+  }
+
+  func updateUIView(_ uiView: RNHostedReactContainer, context: Context) {
+    uiView.host(entry.view)
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    uiView: RNHostedReactContainer,
+    context: Context
+  ) -> CGSize? {
+    let size = entry.view.bounds.size
+    return size.width > 0 || size.height > 0 ? size : nil
+  }
+}
+
+@available(iOS 27.0, *)
+private struct RNHostedDropZoneReactView: UIViewRepresentable {
+  let entry: RNHostedEntry
+  @ObservedObject var model: RNReorderableModel
+
+  func makeCoordinator() -> RNZoneDropDelegate {
+    RNZoneDropDelegate(destinationID: entry.itemID, model: model)
+  }
+
+  func makeUIView(context: Context) -> RNHostedReactContainer {
+    let container = RNHostedReactContainer()
+    container.backgroundColor = .clear
+    container.host(entry.view)
+    context.coordinator.view = container
+    container.addInteraction(UIDropInteraction(delegate: context.coordinator))
+    return container
+  }
+
+  func updateUIView(_ uiView: RNHostedReactContainer, context: Context) {
+    uiView.host(entry.view)
+    context.coordinator.refreshFeedback()
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    uiView: RNHostedReactContainer,
+    context: Context
+  ) -> CGSize? {
+    let size = entry.view.bounds.size
+    return size.width > 0 || size.height > 0 ? size : nil
   }
 }
 
@@ -549,33 +874,66 @@ private struct RNDragDropView: View {
 
   var body: some View {
     RNYogaLayout(scope: "root", coordinator: model.layoutCoordinator) {
-      ForEach(model.state.dragEntries) { entry in
-        entryView(entry)
-          .layoutValue(key: RNLayoutIdentifierKey.self, value: entry.layoutID)
+      ForEach(model.state.dragRoots) { node in
+        RNDragNodeView(node: node, model: model)
       }
     }
-    .dragContainer(for: RNLocalDragItem.self) { (ids: [String]) in
-      ids.map { RNLocalDragItem(id: $0) }
-    }
-    .dragContainerSelection(model.state.selectedIDs)
   }
 
-  @ViewBuilder
-  private func entryView(_ entry: RNHostedEntry) -> some View {
-    switch entry.kind {
-    case .item:
-      RNHostedReactView(entry: entry)
-        .contentShape(Rectangle())
-        .draggable(containerItemID: entry.itemID)
-    case .dropZone:
-      RNHostedReactView(entry: entry)
-        .contentShape(Rectangle())
-        .dropDestination(for: RNLocalDragItem.self, isEnabled: model.state.enabled) {
-          items, _ in
-          model.emitDrop(items.map(\.id), destinationID: entry.itemID)
+}
+
+@available(iOS 27.0, *)
+private struct RNDragNodeView: View {
+  let node: RNHostedDragNode
+  @ObservedObject var model: RNReorderableModel
+
+  var body: AnyView {
+    switch node {
+    case let .layout(entry, children):
+      return AnyView(
+        ZStack {
+          RNHostedReactView(entry: entry)
+          RNYogaLayout(scope: entry.layoutID, coordinator: model.layoutCoordinator) {
+            ForEach(children) { child in
+              RNDragNodeView(node: child, model: model)
+            }
+          }
         }
-    case .section, .header, .footer:
-      EmptyView()
+        .layoutValue(key: RNLayoutIdentifierKey.self, value: entry.layoutID)
+      )
+    case let .leaf(entry) where entry.kind == .item:
+      return AnyView(
+        RNHostedDraggableReactView(entry: entry, model: model)
+          .contentShape(Rectangle())
+          .layoutValue(key: RNLayoutIdentifierKey.self, value: entry.layoutID)
+      )
+    case let .leaf(entry) where entry.kind == .dropZone:
+      return AnyView(
+        RNHostedDropZoneReactView(entry: entry, model: model)
+          .contentShape(Rectangle())
+          .overlay {
+            RoundedRectangle(cornerRadius: 10)
+              .stroke(
+                model.state.debugTargetDropID == entry.itemID
+                  ? (
+                    model.state.dropAcceptanceReady
+                      ? (model.state.acceptedDropZoneIDs.contains(entry.itemID)
+                        ? Color.green : Color.red)
+                      : Color.yellow
+                  )
+                  : Color.clear,
+                lineWidth: 3
+              )
+          }
+          .layoutValue(key: RNLayoutIdentifierKey.self, value: entry.layoutID)
+      )
+    case let .leaf(entry) where entry.kind == .content:
+      return AnyView(
+        RNHostedReactView(entry: entry)
+          .layoutValue(key: RNLayoutIdentifierKey.self, value: entry.layoutID)
+      )
+    case .leaf:
+      return AnyView(EmptyView())
     }
   }
 }
@@ -609,8 +967,13 @@ final class RNReorderableHostingView: UIView {
   @objc var dropHandler: (([String], String) -> Void)? {
     didSet { model.dropHandler = dropHandler }
   }
+  @objc var dragActivateHandler: (([String]) -> Void)? {
+    didSet { model.dragActivateHandler = dragActivateHandler }
+  }
 
-  @objc var interactionStateHandler: ((Bool) -> Void)?
+  @objc var interactionStateHandler: ((Bool) -> Void)? {
+    didSet { model.interactionStateHandler = interactionStateHandler }
+  }
 
   private let model: RNReorderableModel
   private var hostingController: UIViewController?
@@ -646,15 +1009,17 @@ final class RNReorderableHostingView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  @objc(updateWithMode:entryKinds:entryIds:collectionIds:orderedEntryIds:childViews:selectedIds:enabled:)
+  @objc(updateWithMode:entryKinds:entryIds:collectionIds:parentEntryIds:orderedEntryIds:childViews:selectedIds:acceptedDropZoneIds:enabled:)
   func update(
     mode: String,
     entryKinds: [String],
     entryIDs: [String],
     collectionIDs: [String],
+    parentEntryIDs: [String],
     orderedEntryIDs: [String],
     childViews: [UIView],
     selectedIDs: [String],
+    acceptedDropZoneIDs: [String],
     enabled: Bool
   ) {
     if hostingController != nil {
@@ -663,9 +1028,11 @@ final class RNReorderableHostingView: UIView {
         entryKinds: entryKinds,
         entryIDs: entryIDs,
         collectionIDs: collectionIDs,
+        parentEntryIDs: parentEntryIDs,
         orderedEntryIDs: orderedEntryIDs,
         childViews: childViews,
         selectedIDs: selectedIDs,
+        acceptedDropZoneIDs: acceptedDropZoneIDs,
         enabled: enabled
       )
       return
@@ -701,6 +1068,7 @@ final class RNReorderableHostingView: UIView {
     NotificationCenter.default.removeObserver(self)
     moveHandler = nil
     dropHandler = nil
+    dragActivateHandler = nil
     interactionStateHandler = nil
     detachHostingController()
     hostingController?.view.removeFromSuperview()
@@ -713,7 +1081,6 @@ final class RNReorderableHostingView: UIView {
     model.cancelInteraction()
     if debugInteractionActive {
       debugInteractionActive = false
-      interactionStateHandler?(false)
     }
   }
 
@@ -730,6 +1097,26 @@ final class RNReorderableHostingView: UIView {
     debugInteractionActive = true
     debugInteractionGeneration = model.state.hostGeneration
     interactionStateHandler?(true)
+  }
+
+  @objc(debugBeginDropWithItemIds:)
+  func debugBeginDrop(itemIDs: [String]) {
+    debugInteractionActive = true
+    model.debugBeginDrop(itemIDs)
+  }
+
+  @objc(debugTargetDropWithDestinationId:)
+  func debugTargetDrop(destinationID: String) {
+    model.debugTargetDrop(destinationID)
+  }
+
+  @objc(debugEmitTerminalDropOutside:)
+  func debugEmitTerminalDrop(outside: Bool) {
+    model.debugEmitTerminalDrop(outside: outside)
+    if debugInteractionActive {
+      debugInteractionActive = false
+      interactionStateHandler?(false)
+    }
   }
 
   @objc(debugEmitTerminalReorderWithSourceIds:destinationCollectionId:destinationBeforeId:)

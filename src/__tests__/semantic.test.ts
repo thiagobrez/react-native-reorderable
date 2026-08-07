@@ -1,6 +1,31 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { canonicalMoveSet, reconcileReorder } from '../semantic';
+import { canonicalMoveSet, reconcileDrop, reconcileReorder } from '../semantic';
+
+describe('reconcileDrop', () => {
+  it('emits only canonical known identities and the known destination', () => {
+    expect(
+      reconcileDrop(
+        ['blue', 'green', 'yellow'],
+        ['yellow', 'blue', 'yellow'],
+        ['archive'],
+        'archive',
+        true
+      )
+    ).toEqual({ itemIds: ['blue', 'yellow'], destinationId: 'archive' });
+  });
+
+  it.each<readonly [readonly string[], string, boolean]>([
+    [[], 'archive', true],
+    [['missing'], 'archive', true],
+    [['blue'], 'missing', true],
+    [['blue'], 'archive', false],
+  ])('cancels an invalid or rejected terminal', (ids, zone, accepted) => {
+    expect(
+      reconcileDrop(['blue'], ids, ['archive'], zone, accepted)
+    ).toBeNull();
+  });
+});
 
 describe('canonicalMoveSet', () => {
   const sectionedOrder = [

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
-  DragContainer,
+  DragDropContainer,
   DraggableItem,
   DropZone,
   ReorderableContainer,
@@ -13,6 +13,10 @@ import {
 } from 'react-native-reorderable';
 import { NativeCommitAcceptanceContainer } from '../../src/issue25-acceptance';
 import { FallbackCommitAcceptanceContainer } from '../../src/issue26-acceptance';
+import {
+  FallbackDropAcceptanceContainer,
+  NativeDropAcceptanceContainer,
+} from '../../src/issue29-acceptance';
 
 type Card = Readonly<{
   color: string;
@@ -26,7 +30,7 @@ type CardSection = Readonly<{
   title: string;
 }>;
 
-type Demo = 'single' | 'sections' | 'multi';
+type Demo = 'single' | 'sections' | 'drop';
 
 const initialCards: readonly Card[] = [
   { id: 'blue', label: 'Blue', color: '#0A84FF' },
@@ -72,7 +76,7 @@ function DemoSelector({
         [
           ['single', 'Single'],
           ['sections', 'Sections'],
-          ['multi', 'Multi-drag'],
+          ['drop', 'Drop'],
         ] as const
       ).map(([value, label]) => {
         const selected = value === demo;
@@ -372,80 +376,113 @@ function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
   );
 }
 
-function MultiItemDragExample() {
-  const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
-  const [droppedIds, setDroppedIds] = useState<readonly string[]>([]);
-  const cardsById = useMemo(
-    () => new Map(initialCards.map((card) => [card.id, card])),
-    []
+function DragDropExample({ engine }: { engine: EnginePolicy }) {
+  const [callbackCount, setCallbackCount] = useState(0);
+  const [lastEvent, setLastEvent] = useState('None');
+  const [acceptingEnabled, setAcceptingEnabled] = useState(true);
+  const [destinationId, setDestinationId] = useState('accepting');
+  const [nativeInteraction, setNativeInteraction] = useState('inactive (0)');
+  const nativeInteractionCount = useRef(0);
+  const containerProps = {
+    acceptanceMove: { sourceId: 'blue', destinationId },
+    onDrop: (event: { itemIds: readonly string[]; destinationId: string }) => {
+      setCallbackCount((current) => current + 1);
+      setLastEvent(`${event.itemIds.join(',')} -> ${event.destinationId}`);
+    },
+    style: styles.dragLayout,
+    testID: 'drag-drop-container',
+  } as const;
+  const content = (
+    <>
+      <View style={styles.dragSourcePanel}>
+        <Text style={styles.sectionTitle}>Source</Text>
+        <DraggableItem id="blue" style={styles.draggableItem}>
+          <View
+            accessibilityLabel="Blue draggable card"
+            style={[styles.gridCard, styles.blueCard]}
+          />
+        </DraggableItem>
+      </View>
+      <View style={styles.dropPanels}>
+        <DropZone
+          accessibilityLabel="Accepting drop zone"
+          canDrop={() => acceptingEnabled}
+          id="accepting"
+          style={[styles.dropZone, styles.dropPanel]}
+        >
+          <Text style={styles.dropZoneLabel}>Accepting</Text>
+        </DropZone>
+        <DropZone
+          accessibilityLabel="Rejecting drop zone"
+          canDrop={() => false}
+          id="rejecting"
+          style={[styles.dropZone, styles.dropPanel]}
+        >
+          <Text style={styles.dropZoneLabel}>Rejecting</Text>
+        </DropZone>
+      </View>
+    </>
   );
-  const droppedCards = droppedIds.flatMap((id) => {
-    const card = cardsById.get(id);
-    return card ? [card] : [];
-  });
-  const toggleSelection = (id: string) => {
-    setSelectedIds((current) =>
-      current.includes(id)
-        ? current.filter((selectedId) => selectedId !== id)
-        : [...current, id]
-    );
-  };
 
   return (
-    <DragContainer
-      accessibilityLabel="Draggable cards and drop zone"
-      onDrop={({ itemIds }) => {
-        setDroppedIds(itemIds);
-        setSelectedIds([]);
-      }}
-      selectedIds={selectedIds}
-      style={styles.dragLayout}
-      testID="multi-container"
-    >
-      {initialCards.map((card) => {
-        const selected = selectedIds.includes(card.id);
-        return (
-          <DraggableItem
-            id={card.id}
-            key={card.id}
-            style={styles.draggableItem}
-          >
-            <Pressable
-              accessibilityLabel={`${card.label} source card`}
-              accessibilityState={{ selected }}
-              onPress={() => toggleSelection(card.id)}
-              style={[
-                styles.gridCard,
-                { backgroundColor: card.color },
-                selected && styles.gridCardSelected,
-              ]}
-              testID={`source-card-${card.id}`}
-            />
-          </DraggableItem>
-        );
-      })}
-      <DropZone
-        accessibilityLabel="Drop cards here"
-        id="cards-drop-zone"
-        style={styles.dropZone}
-        testID="cards-drop-zone"
-      >
-        {droppedCards.length === 0 ? (
-          <Text style={styles.dropZoneLabel}>Drop cards here</Text>
+    <>
+      <Text style={styles.outcome}>Data: Blue (unchanged)</Text>
+      <Text style={styles.outcome}>Drop callbacks: {callbackCount}</Text>
+      <Text style={styles.outcome}>Last drop: {lastEvent}</Text>
+      {__DEV__ && engine === 'auto' ? (
+        <Text style={styles.outcome}>
+          Native lifecycle: {nativeInteraction}
+        </Text>
+      ) : null}
+      <View style={styles.scenarioActions}>
+        <Pressable
+          accessibilityLabel="Target accepting zone"
+          onPress={() => setDestinationId('accepting')}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Target accepting</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Target rejecting zone"
+          onPress={() => setDestinationId('rejecting')}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Target rejecting</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Toggle accepting predicate"
+          onPress={() => setAcceptingEnabled((value) => !value)}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>
+            {acceptingEnabled ? 'Make reject' : 'Make accept'}
+          </Text>
+        </Pressable>
+      </View>
+      {__DEV__ ? (
+        engine === 'fallback' ? (
+          <FallbackDropAcceptanceContainer {...containerProps}>
+            {content}
+          </FallbackDropAcceptanceContainer>
         ) : (
-          <View style={styles.droppedCards}>
-            {droppedCards.map((card) => (
-              <View
-                accessibilityLabel={`${card.label} dropped card`}
-                key={card.id}
-                style={[styles.droppedCard, { backgroundColor: card.color }]}
-                testID={`dropped-card-${card.id}`}
-              />
-            ))}
-          </View>
-        )}
-      </DropZone>
-    </DragContainer>
+          <NativeDropAcceptanceContainer
+            {...containerProps}
+            interactionStateChange={(active) => {
+              nativeInteractionCount.current += 1;
+              setNativeInteraction(
+                `${active ? 'active' : 'inactive'} (${nativeInteractionCount.current})`
+              );
+            }}
+          >
+            {content}
+          </NativeDropAcceptanceContainer>
+        )
+      ) : (
+        <DragDropContainer {...containerProps} engine={engine}>
+          {content}
+        </DragDropContainer>
+      )}
+    </>
   );
 }
 
@@ -488,7 +525,7 @@ export default function App() {
           {demo === 'sections' && (
             <SectionedCollectionExample engine={engine} key={engine} />
           )}
-          {demo === 'multi' && <MultiItemDragExample />}
+          {demo === 'drop' && <DragDropExample engine={engine} key={engine} />}
         </View>
       </View>
     </GestureHandlerRootView>
@@ -638,9 +675,24 @@ const styles = StyleSheet.create({
     gap: 6,
     width: '100%',
   },
+  dragSourcePanel: {
+    width: '100%',
+  },
+  dropPanels: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+  },
+  dropPanel: {
+    flex: 1,
+    width: undefined,
+  },
   gridCard: {
     borderRadius: 8,
     flex: 1,
+  },
+  blueCard: {
+    backgroundColor: '#0A84FF',
   },
   draggableItem: {
     height: 54,

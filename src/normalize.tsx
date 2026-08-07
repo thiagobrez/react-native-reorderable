@@ -6,7 +6,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { type ViewProps } from 'react-native';
+import { Animated, Pressable, View, type ViewProps } from 'react-native';
 
 import ReorderableContentView from './ReorderableContentView';
 import type {
@@ -18,21 +18,32 @@ import type {
   ReorderableSectionProps,
 } from './types';
 
-export type EntryKind = 'item' | 'section' | 'header' | 'footer' | 'dropZone';
+export type EntryKind =
+  'item' | 'section' | 'header' | 'footer' | 'dropZone' | 'layout' | 'content';
 
 export type NormalizedChildren = Readonly<{
   children: ReactElement[];
   collectionIds: string[];
   entryIds: string[];
   entryKinds: EntryKind[];
+  parentEntryIds: string[];
   order: CollectionOrder[];
 }>;
+
+export type NormalizedDragChildren = Omit<NormalizedChildren, 'order'> &
+  Readonly<{
+    canDropById: ReadonlyMap<
+      string,
+      ((itemIds: readonly string[]) => boolean) | undefined
+    >;
+  }>;
 
 export type NativeEntries = Readonly<{
   children: ReactElement[];
   collectionIds: string[];
   entryIds: string[];
   entryKinds: EntryKind[];
+  parentEntryIds: string[];
   orderedEntryIds: string[];
 }>;
 
@@ -83,12 +94,14 @@ function itemView(
   props: ReorderableItemProps | DraggableItemProps | DropZoneProps
 ): ReactElement {
   const viewProps = { ...props } as ViewProps & {
+    canDrop?: (itemIds: readonly string[]) => boolean;
     children?: ReactNode;
     id?: string;
   };
   const { children } = props;
   delete viewProps.children;
   delete viewProps.id;
+  delete viewProps.canDrop;
   return (
     <ReorderableContentView
       {...viewProps}
@@ -102,24 +115,40 @@ function itemView(
   );
 }
 
+function contentView(key: string, child: ReactElement): ReactElement {
+  return (
+    <ReorderableContentView
+      collapsable={false}
+      entryIdentifier={key}
+      id={key}
+      key={key}
+    >
+      {child}
+    </ReorderableContentView>
+  );
+}
+
 function appendEntry(
   normalized: {
     children: ReactElement[];
     collectionIds: string[];
     entryIds: string[];
     entryKinds: EntryKind[];
+    parentEntryIds: string[];
   },
   entry: {
     child: ReactElement;
     collectionId: string;
     id: string;
     kind: EntryKind;
+    parentEntryId?: string;
   }
 ): void {
   normalized.children.push(entry.child);
   normalized.collectionIds.push(entry.collectionId);
   normalized.entryIds.push(entry.id);
   normalized.entryKinds.push(entry.kind);
+  normalized.parentEntryIds.push(entry.parentEntryId ?? '');
 }
 
 export function nativeLayoutIdentifier(
@@ -136,6 +165,9 @@ export function nativeLayoutIdentifier(
       return `footer:${collectionId}`;
     case 'dropZone':
       return `drop:${id}`;
+    case 'layout':
+    case 'content':
+      return id;
     case 'item':
       return `item:${id}`;
   }
@@ -190,6 +222,7 @@ export function prepareNativeEntries(
     collectionIds: indices.map((index) => normalized.collectionIds[index]!),
     entryIds: indices.map((index) => normalized.entryIds[index]!),
     entryKinds: indices.map((index) => normalized.entryKinds[index]!),
+    parentEntryIds: indices.map((index) => normalized.parentEntryIds[index]!),
     orderedEntryIds,
   };
 }
@@ -204,6 +237,7 @@ export function normalizeReorderableChildren(
     collectionIds: [] as string[],
     entryIds: [] as string[],
     entryKinds: [] as EntryKind[],
+    parentEntryIds: [] as string[],
   };
   const seenIds = new Set<string>();
   const directItems = nodes.filter((node) =>
@@ -335,36 +369,80 @@ export function normalizeReorderableChildren(
 export function normalizeDragChildren(
   children: ReactNode,
   markers: DragMarkerTypes
-): Omit<NormalizedChildren, 'order'> {
+): NormalizedDragChildren {
   const normalized = {
     children: [] as ReactElement[],
     collectionIds: [] as string[],
     entryIds: [] as string[],
     entryKinds: [] as EntryKind[],
+    parentEntryIds: [] as string[],
   };
   const seenIds = new Set<string>();
+  const canDropById = new Map<
+    string,
+    ((itemIds: readonly string[]) => boolean) | undefined
+  >();
 
-  for (const node of flattenChildren(children)) {
+  let nextLayoutId = 0;
+  const visit = (node: ReactNode, parentEntryId = ''): void => {
+    if (!isValidElement<{ children?: ReactNode }>(node)) return;
     const isItem = isElementOfType(node, markers.Item);
     const isDropZone = isElementOfType(node, markers.DropZone);
-    invariant(
-      isItem || isDropZone,
-      'DragContainer children must be DraggableItem or DropZone elements.'
-    );
+    if (!isItem && !isDropZone) {
+      const layoutId = `layout:${nextLayoutId++}`;
+      const isLayoutDescendant =
+        node.type === View ||
+        node.type === Pressable ||
+        node.type === Animated.View;
+      if (!isLayoutDescendant && node.type !== Fragment) {
+        appendEntry(normalized, {
+          child: contentView(layoutId, node),
+          collectionId: '',
+          id: layoutId,
+          kind: 'content',
+          parentEntryId,
+        });
+        return;
+      }
+      if (node.type === Fragment) {
+        for (const descendant of flattenChildren(node.props.children)) {
+          visit(descendant, parentEntryId);
+        }
+        return;
+      }
+      appendEntry(normalized, {
+        child: itemView(layoutId, {
+          ...(node.props as DraggableItemProps),
+          children: null,
+          id: layoutId,
+        }),
+        collectionId: '',
+        id: layoutId,
+        kind: 'layout',
+        parentEntryId,
+      });
+      for (const descendant of flattenChildren(node.props.children)) {
+        visit(descendant, layoutId);
+      }
+      return;
+    }
 
     const { id } = node.props;
     validateId(id, isItem ? 'DraggableItem' : 'DropZone');
     invariant(!seenIds.has(id), `Duplicate drag container id "${id}".`);
     seenIds.add(id);
+    if (isDropZone) canDropById.set(id, node.props.canDrop);
     appendEntry(normalized, {
       child: itemView(`${isItem ? 'item' : 'drop'}:${id}`, node.props),
       collectionId: '',
       id,
       kind: isItem ? 'item' : 'dropZone',
+      parentEntryId,
     });
-  }
+  };
+  for (const node of flattenChildren(children)) visit(node);
 
-  return normalized;
+  return { ...normalized, canDropById };
 }
 
 export function fallbackSectionViewProps(

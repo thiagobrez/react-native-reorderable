@@ -108,6 +108,9 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   if ([kind isEqualToString:@"dropZone"]) {
     return RNStdString([@"drop:" stringByAppendingString:entryId]);
   }
+  if ([kind isEqualToString:@"layout"] || [kind isEqualToString:@"content"]) {
+    return RNStdString(entryId);
+  }
   return RNStdString([@"item:" stringByAppendingString:entryId]);
 }
 
@@ -274,6 +277,17 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
       event.destinationId = RNStdString(destinationId);
       emitter->onDrop(event);
     };
+    _hostingView.dragActivateHandler = ^(NSArray<NSString *> *itemIds) {
+      ReorderableView *strongSelf = weakSelf;
+      if (strongSelf == nil || strongSelf->_reorderableEventEmitter == nullptr) {
+        return;
+      }
+      auto emitter = std::static_pointer_cast<const ReorderableViewEventEmitter>(
+          strongSelf->_reorderableEventEmitter);
+      ReorderableViewEventEmitter::OnDragActivate event;
+      event.itemIdsJson = RNStdString(RNJSONString(itemIds));
+      emitter->onDragActivate(event);
+    };
     _hostingView.interactionStateHandler = ^(BOOL active) {
       ReorderableView *strongSelf = weakSelf;
       if (strongSelf == nil || strongSelf->_reorderableEventEmitter == nullptr) {
@@ -348,9 +362,11 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
                     entryKinds:@[]
                       entryIds:@[]
                  collectionIds:@[]
+                parentEntryIds:@[]
                orderedEntryIds:@[]
-                    childViews:@[]
+                   childViews:@[]
                    selectedIds:@[]
+           acceptedDropZoneIds:@[]
                        enabled:NO];
   [super prepareForRecycle];
 }
@@ -400,6 +416,33 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
 #endif
 }
 
+- (void)debugBeginDrop:(NSString *)itemIdsJson
+{
+#if DEBUG
+  NSData *data = [itemIdsJson dataUsingEncoding:NSUTF8StringEncoding];
+  id value = data == nil ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  if (![value isKindOfClass:NSArray.class]) return;
+  for (id item in (NSArray *)value) {
+    if (![item isKindOfClass:NSString.class]) return;
+  }
+  [_hostingView debugBeginDropWithItemIds:(NSArray<NSString *> *)value];
+#endif
+}
+
+- (void)debugTargetDrop:(NSString *)destinationId
+{
+#if DEBUG
+  [_hostingView debugTargetDropWithDestinationId:destinationId];
+#endif
+}
+
+- (void)debugEmitTerminalDrop:(BOOL)outside
+{
+#if DEBUG
+  [_hostingView debugEmitTerminalDropOutside:outside];
+#endif
+}
+
 - (void)syncHostingViewIfNeeded
 {
   if (!_needsSync) {
@@ -411,8 +454,10 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   NSArray<NSString *> *entryKinds = RNStringArray(props.entryKinds);
   NSArray<NSString *> *entryIds = RNStringArray(props.entryIds);
   NSArray<NSString *> *collectionIds = RNStringArray(props.collectionIds);
+  NSArray<NSString *> *parentEntryIds = RNStringArray(props.parentEntryIds);
   NSArray<NSString *> *orderedEntryIds = RNStringArray(props.orderedEntryIds);
   NSArray<NSString *> *selectedIds = RNStringArray(props.selectedIds);
+  NSArray<NSString *> *acceptedDropZoneIds = RNStringArray(props.acceptedDropZoneIds);
 
   [_layoutCoordinator clearStyles];
   [_layoutCoordinator setYogaStyle:props.yogaStyle forScope:@"root"];
@@ -452,7 +497,8 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
         [componentView props]);
     NSString *identifier = identifiers[index];
     [_layoutCoordinator setYogaStyle:childProps->yogaStyle forIdentifier:identifier];
-    if ([entryKinds[index] isEqualToString:@"section"]) {
+    if ([entryKinds[index] isEqualToString:@"section"]
+        || [entryKinds[index] isEqualToString:@"layout"]) {
       [_layoutCoordinator setYogaStyle:childProps->yogaStyle forScope:identifier];
     }
   }
@@ -462,9 +508,11 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
                     entryKinds:entryKinds
                       entryIds:entryIds
                  collectionIds:collectionIds
+                parentEntryIds:parentEntryIds
                orderedEntryIds:orderedEntryIds
-                    childViews:orderedChildViews
+                   childViews:orderedChildViews
                    selectedIds:selectedIds
+           acceptedDropZoneIds:acceptedDropZoneIds
                        enabled:props.enabled];
 }
 

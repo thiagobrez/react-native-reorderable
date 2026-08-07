@@ -179,13 +179,17 @@ private final class RNReorderableModel: ObservableObject {
     )
   }
 
+  func invalidateHostedLayout() {
+    state.hostGeneration += 1
+  }
+
   #if compiler(>=6.4)
   @available(iOS 27.0, *)
   func applySingleCollectionMove(
     _ difference: ReorderDifference<String, ReorderableSingleCollectionIdentifier>
   ) {
     var nextItems = state.items
-    guard applyMove(
+    guard let sourceIDs = applyMove(
       sourceIDs: difference.sources,
       destination: difference.destination.position,
       items: &nextItems
@@ -193,7 +197,7 @@ private final class RNReorderableModel: ObservableObject {
 
     state.items = nextItems
     moveHandler?(
-      difference.sources,
+      sourceIDs,
       "",
       destinationID(from: difference.destination.position)
     )
@@ -232,7 +236,7 @@ private final class RNReorderableModel: ObservableObject {
     )
     state.sections = nextSections
     moveHandler?(
-      difference.sources,
+      movedEntries.map(\.itemID),
       difference.destination.collectionID,
       destinationID(from: difference.destination.position)
     )
@@ -252,11 +256,10 @@ private final class RNReorderableModel: ObservableObject {
     let availableItems = state.sections.isEmpty
       ? state.items
       : state.sections.flatMap(\.items)
-    let availableIDs = Set(availableItems.map(\.itemID))
-    guard
-      sourceIDs.allSatisfy({ availableIDs.contains($0) }),
-      Set(sourceIDs).count == sourceIDs.count
-    else { return }
+    guard let movedEntries = resolveMoveSet(
+      sourceIDs: sourceIDs,
+      items: availableItems
+    ) else { return }
 
     let destinationItems: [RNHostedEntry]
     if state.sections.isEmpty {
@@ -274,7 +277,11 @@ private final class RNReorderableModel: ObservableObject {
       !sourceIDs.contains(destinationBeforeID)
     else { return }
 
-    moveHandler?(sourceIDs, destinationCollectionID, destinationBeforeID)
+    moveHandler?(
+      movedEntries.map(\.itemID),
+      destinationCollectionID,
+      destinationBeforeID
+    )
   }
   #endif
 
@@ -283,36 +290,37 @@ private final class RNReorderableModel: ObservableObject {
     sourceIDs: [String],
     destination: ReorderDifference<String, CollectionID>.Destination.Position,
     items: inout [RNHostedEntry]
-  ) -> Bool {
+  ) -> [String]? {
     guard let movedEntries = resolveMoveSet(
       sourceIDs: sourceIDs,
       items: items
-    ) else { return false }
+    ) else { return nil }
 
     items.removeAll { sourceIDs.contains($0.itemID) }
     let destinationIndex: Int
     switch destination {
     case let .before(itemID):
       guard let index = items.firstIndex(where: { $0.itemID == itemID }) else {
-        return false
+        return nil
       }
       destinationIndex = index
     case .end:
       destinationIndex = items.endIndex
     }
     items.insert(contentsOf: movedEntries, at: destinationIndex)
-    return true
+    return movedEntries.map(\.itemID)
   }
 
   private func resolveMoveSet(
     sourceIDs: [String],
     items: [RNHostedEntry]
   ) -> [RNHostedEntry]? {
-    let entriesByID = Dictionary(uniqueKeysWithValues: items.map { ($0.itemID, $0) })
-    let movedEntries = sourceIDs.compactMap { entriesByID[$0] }
+    let sourceSet = Set(sourceIDs)
+    let movedEntries = items.filter { sourceSet.contains($0.itemID) }
     guard
       !movedEntries.isEmpty,
-      movedEntries.count == Set(sourceIDs).count
+      movedEntries.count == sourceSet.count,
+      sourceSet.count == sourceIDs.count
     else { return nil }
     return movedEntries
   }
@@ -462,6 +470,7 @@ private struct RNSingleCollectionView: View {
     .reorderContainer(for: RNHostedEntry.self, isEnabled: model.state.enabled) {
       model.applySingleCollectionMove($0)
     }
+    .dragContainerSelection(model.state.selectedIDs)
   }
 }
 
@@ -504,6 +513,7 @@ private struct RNSectionedCollectionView: View {
     ) {
       model.applySectionMove($0)
     }
+    .dragContainerSelection(model.state.selectedIDs)
   }
 }
 
@@ -650,6 +660,13 @@ final class RNReorderableHostingView: UIView {
     hostingController?.view.removeFromSuperview()
     hostingController = nil
     fallbackContainer.subviews.forEach { $0.removeFromSuperview() }
+  }
+
+  @objc func invalidateHostedLayout() {
+    guard hostingController != nil else { return }
+    model.invalidateHostedLayout()
+    hostingController?.view.invalidateIntrinsicContentSize()
+    hostingController?.view.setNeedsLayout()
   }
 
   #if DEBUG

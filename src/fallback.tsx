@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   type ReactElement,
@@ -25,6 +26,8 @@ import {
 } from 'react-native';
 
 import type { EntryKind } from './normalize';
+import { canonicalMoveSet } from './semantic';
+import type { CollectionOrder } from './types';
 
 export type FallbackTerminalEvent = Readonly<{
   sourceIdsJson: string;
@@ -41,151 +44,252 @@ export type FallbackAcceptanceMove = Readonly<{
 }>;
 
 type LayoutSlot = Readonly<{ height: number; y: number }>;
+type DragState = Readonly<{
+  activatedEntryIndex: SharedValue<number>;
+  activeSourceIds: SharedValue<string[]>;
+  debugDestinationLocked: SharedValue<boolean>;
+  destinationBeforeId: SharedValue<string>;
+  destinationCollectionId: SharedValue<string>;
+  destinationFeedbackY: SharedValue<number>;
+  layouts: SharedValue<LayoutSlot[]>;
+  measurementRevision: SharedValue<number>;
+  pointerCorrection: SharedValue<number>;
+  pointerTranslation: SharedValue<number>;
+}>;
 
 type FallbackItemProps = Readonly<{
   child: ReactElement;
+  collectionIds: readonly string[];
+  containerRef: ReturnType<typeof useAnimatedRef<HostInstance>>;
+  dragState: DragState;
+  entryIds: readonly string[];
+  entryKinds: readonly EntryKind[];
   id: string;
   index: number;
-  itemIds: readonly string[];
-  itemIndices: readonly number[];
-  layouts: SharedValue<LayoutSlot[]>;
-  activeIndex: SharedValue<number>;
-  destinationItemIndex: SharedValue<number>;
-  pointerTranslation: SharedValue<number>;
-  containerRef: ReturnType<typeof useAnimatedRef<HostInstance>>;
+  moveSet: readonly string[];
   onTerminal: (event: FallbackTerminalEvent | null) => void;
 }>;
 
-type DestinationFeedbackProps = Readonly<{
-  activeIndex: SharedValue<number>;
-  destinationItemIndex: SharedValue<number>;
-  itemIndices: readonly number[];
-  layouts: SharedValue<LayoutSlot[]>;
-}>;
-
-function DestinationFeedback({
-  activeIndex,
-  destinationItemIndex,
-  itemIndices,
-  layouts,
-}: DestinationFeedbackProps) {
-  const animatedStyle = useAnimatedStyle(() => {
-    if (activeIndex.value < 0 || destinationItemIndex.value < 0) {
-      return { opacity: 0, top: 0 };
-    }
-    const destinationEntryIndex =
-      itemIndices[destinationItemIndex.value] ??
-      itemIndices[itemIndices.length - 1];
-    const destinationLayout = layouts.value[destinationEntryIndex ?? -1];
-    const top =
-      destinationLayout == null
-        ? 0
-        : destinationLayout.y + destinationLayout.height + 2;
-    return { opacity: 1, top: withTiming(top, { duration: 120 }) };
-  });
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[styles.destination, animatedStyle]}
-      testID="fallback-destination-feedback"
-    />
-  );
-}
-
-function destinationBeforeId(
-  itemIds: readonly string[],
-  sourceIndex: number,
-  destinationIndex: number
-): string {
-  'worklet';
-  const remaining = itemIds.filter((_id, index) => index !== sourceIndex);
-  return remaining[destinationIndex] ?? '';
-}
-
 function emitFallbackTerminal(
-  itemIds: readonly string[],
-  sourceItemIndex: number,
-  destinationItemIndex: number,
-  id: string,
+  sourceIds: readonly string[],
+  destinationCollectionId: string,
+  destinationBeforeId: string,
   valid: boolean,
   onTerminal: (event: FallbackTerminalEvent | null) => void
 ) {
   'worklet';
-  if (!valid) {
+  if (!valid || sourceIds.length === 0) {
     scheduleOnRN(onTerminal, null);
     return;
   }
   scheduleOnRN(onTerminal, {
-    sourceIdsJson: JSON.stringify([id]),
-    destinationCollectionId: '',
-    destinationBeforeId: destinationBeforeId(
-      itemIds,
-      sourceItemIndex,
-      destinationItemIndex
-    ),
+    sourceIdsJson: JSON.stringify(sourceIds),
+    destinationCollectionId,
+    destinationBeforeId,
   });
 }
 
+function clearDragState(dragState: DragState) {
+  'worklet';
+  dragState.activatedEntryIndex.value = -1;
+  dragState.activeSourceIds.value = [];
+  dragState.debugDestinationLocked.value = false;
+  dragState.destinationBeforeId.value = '';
+  dragState.destinationCollectionId.value = '';
+  dragState.destinationFeedbackY.value = -1;
+  dragState.pointerCorrection.value = 0;
+  dragState.pointerTranslation.value = 0;
+}
+
+function updateDestination(
+  activeCenter: number,
+  activeSourceIds: readonly string[],
+  entryIds: readonly string[],
+  entryKinds: readonly EntryKind[],
+  collectionIds: readonly string[],
+  layouts: readonly LayoutSlot[],
+  dragState: DragState
+) {
+  'worklet';
+  const sourceSet = new Set(activeSourceIds);
+  const collectionOrder: string[] = [];
+  for (let index = 0; index < entryKinds.length; index++) {
+    const collectionId = collectionIds[index] ?? '';
+    if (!collectionOrder.includes(collectionId))
+      collectionOrder.push(collectionId);
+  }
+
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestCollectionId = '';
+  let bestBeforeId = '';
+  let bestY = 0;
+  for (const collectionId of collectionOrder) {
+    let collectionStart = Number.POSITIVE_INFINITY;
+    let collectionEnd = Number.NEGATIVE_INFINITY;
+    for (let index = 0; index < entryKinds.length; index++) {
+      if ((collectionIds[index] ?? '') !== collectionId) continue;
+      const slot = layouts[index];
+      if (slot == null) continue;
+      collectionStart = Math.min(collectionStart, slot.y);
+      collectionEnd = Math.max(collectionEnd, slot.y + slot.height);
+      if (entryKinds[index] !== 'item') continue;
+      const itemId = entryIds[index] ?? '';
+      if (sourceSet.has(itemId)) continue;
+      const distance = Math.abs(activeCenter - slot.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestCollectionId = collectionId;
+        bestBeforeId = itemId;
+        bestY = slot.y;
+      }
+    }
+
+    if (Number.isFinite(collectionStart) && Number.isFinite(collectionEnd)) {
+      const endDistance = Math.abs(activeCenter - collectionEnd);
+      if (endDistance < bestDistance) {
+        bestDistance = endDistance;
+        bestCollectionId = collectionId;
+        bestBeforeId = '';
+        bestY = collectionEnd;
+      }
+    }
+  }
+
+  if (Number.isFinite(bestDistance)) {
+    dragState.destinationCollectionId.value = bestCollectionId;
+    dragState.destinationBeforeId.value = bestBeforeId;
+    dragState.destinationFeedbackY.value = bestY;
+  }
+}
+
+function refreshDestination(
+  collectionIds: readonly string[],
+  dragState: DragState,
+  entryIds: readonly string[],
+  entryKinds: readonly EntryKind[]
+) {
+  'worklet';
+  if (dragState.debugDestinationLocked.value) return;
+  const activeIndex = dragState.activatedEntryIndex.value;
+  if (activeIndex < 0) return;
+  const activeLayout = dragState.layouts.value[activeIndex];
+  if (activeLayout == null) return;
+  updateDestination(
+    activeLayout.y +
+      activeLayout.height / 2 +
+      dragState.pointerTranslation.value +
+      dragState.pointerCorrection.value,
+    dragState.activeSourceIds.value,
+    entryIds,
+    entryKinds,
+    collectionIds,
+    dragState.layouts.value,
+    dragState
+  );
+}
+
+function useMeasuredEntry(
+  collectionIds: readonly string[],
+  containerRef: ReturnType<typeof useAnimatedRef<HostInstance>>,
+  dragState: DragState,
+  entryIds: readonly string[],
+  entryKinds: readonly EntryKind[],
+  index: number
+) {
+  const entryRef = useAnimatedRef<HostInstance>();
+  useAnimatedReaction(
+    () =>
+      `${dragState.activatedEntryIndex.value}:${dragState.pointerTranslation.value}:${dragState.measurementRevision.value}`,
+    () => {
+      const entryFrame = measure(entryRef);
+      const containerFrame = measure(containerRef);
+      if (entryFrame == null || containerFrame == null) return;
+      const nextSlot = {
+        height: entryFrame.height,
+        y: entryFrame.pageY - containerFrame.pageY,
+      };
+      const previousSlot = dragState.layouts.value[index];
+      if (
+        previousSlot?.height === nextSlot.height &&
+        previousSlot.y === nextSlot.y
+      ) {
+        return;
+      }
+      dragState.layouts.modify((current) => {
+        current[index] = nextSlot;
+        return current;
+      });
+      if (
+        dragState.activatedEntryIndex.value === index &&
+        previousSlot != null
+      ) {
+        dragState.pointerCorrection.value += previousSlot.y - nextSlot.y;
+      }
+      refreshDestination(collectionIds, dragState, entryIds, entryKinds);
+    }
+  );
+  return entryRef;
+}
+
 function FallbackItem({
-  activeIndex,
   child,
+  collectionIds,
   containerRef,
-  destinationItemIndex,
+  dragState,
+  entryIds,
+  entryKinds,
   id,
   index,
-  itemIds,
-  itemIndices,
-  layouts,
+  moveSet,
   onTerminal,
-  pointerTranslation,
 }: FallbackItemProps) {
-  const itemIndex = itemIndices.indexOf(index);
-  const itemRef = useAnimatedRef<HostInstance>();
-
-  useAnimatedReaction(
-    () => activeIndex.value,
-    (current, previous) => {
-      if (current < 0 || previous === current) return;
-      const itemFrame = measure(itemRef);
-      const containerFrame = measure(containerRef);
-      if (itemFrame == null || containerFrame == null) return;
-      layouts.modify((currentLayouts) => {
-        'worklet';
-        currentLayouts[index] = {
-          height: itemFrame.height,
-          y: itemFrame.pageY - containerFrame.pageY,
-        };
-        return currentLayouts;
-      });
-    },
-    [index]
+  const itemRef = useMeasuredEntry(
+    collectionIds,
+    containerRef,
+    dragState,
+    entryIds,
+    entryKinds,
+    index
   );
-
   const gesture = useMemo(
     () =>
       Gesture.Pan()
         .withTestId(`fallback-item-${id}`)
         .activateAfterLongPress(350)
         .onStart(() => {
-          activeIndex.value = index;
-          destinationItemIndex.value = itemIndex;
-          pointerTranslation.value = 0;
+          dragState.activatedEntryIndex.value = index;
+          dragState.activeSourceIds.value = [...moveSet];
+          dragState.pointerCorrection.value = 0;
+          dragState.pointerTranslation.value = 0;
+          const slot = dragState.layouts.value[index];
+          if (slot != null) {
+            updateDestination(
+              slot.y + slot.height / 2,
+              moveSet,
+              entryIds,
+              entryKinds,
+              collectionIds,
+              dragState.layouts.value,
+              dragState
+            );
+          }
         })
         .onUpdate((event) => {
-          pointerTranslation.value = event.translationY;
-          const activeLayout = layouts.value[index];
+          dragState.pointerTranslation.value = event.translationY;
+          const activeLayout = dragState.layouts.value[index];
           if (activeLayout == null) return;
-          const activeCenter =
-            activeLayout.y + activeLayout.height / 2 + event.translationY;
-          let insertion = 0;
-          for (let candidate = 0; candidate < itemIndices.length; candidate++) {
-            if (candidate === itemIndex) continue;
-            const slot = layouts.value[itemIndices[candidate] ?? -1];
-            if (slot == null) continue;
-            if (activeCenter >= slot.y + slot.height / 2) insertion += 1;
-          }
-          destinationItemIndex.value = insertion;
+          updateDestination(
+            activeLayout.y +
+              activeLayout.height / 2 +
+              event.translationY +
+              dragState.pointerCorrection.value,
+            moveSet,
+            entryIds,
+            entryKinds,
+            collectionIds,
+            dragState.layouts.value,
+            dragState
+          );
         })
         .onEnd((event) => {
           const frame = measure(containerRef);
@@ -196,67 +300,45 @@ function FallbackItem({
             event.absoluteY >= frame.pageY &&
             event.absoluteY <= frame.pageY + frame.height;
           emitFallbackTerminal(
-            itemIds,
-            itemIndex,
-            destinationItemIndex.value,
-            id,
-            withinContainer,
+            moveSet,
+            dragState.destinationCollectionId.value,
+            dragState.destinationBeforeId.value,
+            withinContainer && dragState.destinationFeedbackY.value >= 0,
             onTerminal
           );
         })
         .onFinalize((_event, success) => {
           if (!success) scheduleOnRN(onTerminal, null);
-          activeIndex.value = -1;
-          destinationItemIndex.value = -1;
-          pointerTranslation.value = 0;
+          clearDragState(dragState);
         }),
     [
-      activeIndex,
+      collectionIds,
       containerRef,
-      destinationItemIndex,
+      dragState,
+      entryIds,
+      entryKinds,
       id,
       index,
-      itemIds,
-      itemIndex,
-      itemIndices,
-      layouts,
+      moveSet,
       onTerminal,
-      pointerTranslation,
     ]
   );
 
   const animatedStyle = useAnimatedStyle(() => {
-    if (activeIndex.value < 0) return { transform: [{ translateY: 0 }] };
-    if (activeIndex.value === index) {
-      return {
-        elevation: 8,
-        opacity: 0.94,
-        transform: [
-          { translateY: pointerTranslation.value },
-          { scale: withTiming(1.03, { duration: 100 }) },
-        ],
-        zIndex: 2,
-      };
-    }
-
-    const activeItemIndex = itemIndices.indexOf(activeIndex.value);
-    const ownItemIndex = itemIndices.indexOf(index);
-    if (activeItemIndex < 0 || ownItemIndex < 0) {
-      return { transform: [{ translateY: 0 }] };
-    }
-    const orderWithoutActive = itemIndices.filter(
-      (entryIndex) => entryIndex !== activeIndex.value
-    );
-    orderWithoutActive.splice(destinationItemIndex.value, 0, activeIndex.value);
-    const targetItemIndex = orderWithoutActive.indexOf(index);
-    const ownLayout = layouts.value[index];
-    const targetLayout = layouts.value[itemIndices[targetItemIndex] ?? -1];
-    const translation =
-      ownLayout == null || targetLayout == null
-        ? 0
-        : targetLayout.y - ownLayout.y;
+    const isMoved = dragState.activeSourceIds.value.includes(id);
+    if (!isMoved) return { transform: [{ translateY: 0 }] };
     return {
-      transform: [{ translateY: withTiming(translation, { duration: 120 }) }],
+      elevation: 8,
+      opacity: 0.94,
+      transform: [
+        {
+          translateY:
+            dragState.pointerTranslation.value +
+            dragState.pointerCorrection.value,
+        },
+        { scale: withTiming(1.03, { duration: 100 }) },
+      ],
+      zIndex: 2,
     };
   });
 
@@ -273,38 +355,79 @@ function FallbackItem({
   );
 }
 
+function MeasuredStructuralEntry({
+  child,
+  collectionIds,
+  containerRef,
+  dragState,
+  entryIds,
+  entryKinds,
+  index,
+}: Readonly<{
+  child: ReactElement;
+  collectionIds: readonly string[];
+  containerRef: ReturnType<typeof useAnimatedRef<HostInstance>>;
+  dragState: DragState;
+  entryIds: readonly string[];
+  entryKinds: readonly EntryKind[];
+  index: number;
+}>) {
+  const entryRef = useMeasuredEntry(
+    collectionIds,
+    containerRef,
+    dragState,
+    entryIds,
+    entryKinds,
+    index
+  );
+  return <Animated.View ref={entryRef}>{child}</Animated.View>;
+}
+
+function DestinationFeedback({ dragState }: { dragState: DragState }) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: dragState.activatedEntryIndex.value < 0 ? 0 : 1,
+    top: withTiming(Math.max(0, dragState.destinationFeedbackY.value), {
+      duration: 120,
+    }),
+  }));
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.destination, animatedStyle]}
+      testID="fallback-destination-feedback"
+    />
+  );
+}
+
 type FallbackAcceptanceControlsProps = Readonly<{
   acceptanceMove: FallbackAcceptanceMove;
-  activeIndex: SharedValue<number>;
-  destinationItemIndex: SharedValue<number>;
-  itemIds: readonly string[];
-  itemIndices: readonly number[];
-  layouts: SharedValue<LayoutSlot[]>;
+  collectionIds: readonly string[];
+  dragState: DragState;
+  entryIds: readonly string[];
+  entryKinds: readonly EntryKind[];
   onTerminal: (event: FallbackTerminalEvent | null) => void;
-  pointerTranslation: SharedValue<number>;
 }>;
 
 function FallbackAcceptanceControls({
   acceptanceMove,
-  activeIndex,
-  destinationItemIndex,
-  itemIds,
-  itemIndices,
-  layouts,
+  collectionIds,
+  dragState,
+  entryIds,
+  entryKinds,
   onTerminal,
-  pointerTranslation,
 }: FallbackAcceptanceControlsProps) {
-  const sourceId = acceptanceMove.sourceIds[0] ?? '';
-  const sourceItemIndex = itemIds.indexOf(sourceId);
-  const sourceEntryIndex = itemIndices[sourceItemIndex] ?? -1;
-  const remainingIds = itemIds.filter(
-    (_id, index) => index !== sourceItemIndex
+  const sourceEntryIndex = entryIds.findIndex(
+    (id, index) =>
+      entryKinds[index] === 'item' && id === acceptanceMove.sourceIds[0]
   );
-  const destinationItemIndexValue =
+  const destinationEntryIndex =
     acceptanceMove.destination.beforeId == null
-      ? remainingIds.length
-      : remainingIds.indexOf(acceptanceMove.destination.beforeId);
-
+      ? -1
+      : entryIds.findIndex(
+          (id, index) =>
+            entryKinds[index] === 'item' &&
+            id === acceptanceMove.destination.beforeId
+        );
   return (
     <>
       <Button
@@ -312,15 +435,22 @@ function FallbackAcceptanceControls({
         onPress={() => {
           scheduleOnUI(() => {
             'worklet';
-            if (layouts.value.length === 0) {
-              layouts.value = itemIndices.map((_entryIndex, index) => ({
+            if (dragState.layouts.value.length === 0) {
+              dragState.layouts.value = entryIds.map((_id, index) => ({
                 height: 64,
                 y: index * 72,
               }));
             }
-            activeIndex.value = sourceEntryIndex;
-            destinationItemIndex.value = sourceItemIndex;
-            pointerTranslation.value = 0;
+            dragState.activatedEntryIndex.value = sourceEntryIndex;
+            dragState.activeSourceIds.value = [...acceptanceMove.sourceIds];
+            dragState.debugDestinationLocked.value = false;
+            dragState.measurementRevision.value += 1;
+            dragState.pointerCorrection.value = 0;
+            const sourceLayout = dragState.layouts.value[sourceEntryIndex];
+            dragState.destinationFeedbackY.value =
+              sourceLayout == null
+                ? 0
+                : sourceLayout.y + sourceLayout.height + 2;
           });
         }}
         title="Activate fallback reorder"
@@ -330,15 +460,24 @@ function FallbackAcceptanceControls({
         onPress={() => {
           scheduleOnUI(() => {
             'worklet';
-            const sourceLayout = layouts.value[sourceEntryIndex];
-            const targetEntryIndex =
-              itemIndices[destinationItemIndexValue] ??
-              itemIndices[itemIndices.length - 1];
-            const targetLayout = layouts.value[targetEntryIndex ?? -1];
-            destinationItemIndex.value = destinationItemIndexValue;
-            if (sourceLayout != null && targetLayout != null) {
-              pointerTranslation.value = targetLayout.y - sourceLayout.y;
-            }
+            dragState.debugDestinationLocked.value = true;
+            dragState.destinationCollectionId.value =
+              acceptanceMove.destination.sectionId ?? '';
+            dragState.destinationBeforeId.value =
+              acceptanceMove.destination.beforeId ?? '';
+            const targetLayout = dragState.layouts.value[destinationEntryIndex];
+            dragState.destinationFeedbackY.value =
+              targetLayout == null
+                ? Math.max(
+                    0,
+                    ...dragState.layouts.value.flatMap((slot, index) =>
+                      collectionIds[index] ===
+                      (acceptanceMove.destination.sectionId ?? '')
+                        ? [slot.y + slot.height]
+                        : []
+                    )
+                  )
+                : targetLayout.y + targetLayout.height + 2;
           });
         }}
         title="Move fallback destination"
@@ -349,16 +488,13 @@ function FallbackAcceptanceControls({
           scheduleOnUI(() => {
             'worklet';
             emitFallbackTerminal(
-              itemIds,
-              sourceItemIndex,
-              destinationItemIndex.value,
-              sourceId,
-              destinationItemIndex.value >= 0,
+              acceptanceMove.sourceIds,
+              dragState.destinationCollectionId.value,
+              dragState.destinationBeforeId.value,
+              dragState.destinationFeedbackY.value >= 0,
               onTerminal
             );
-            activeIndex.value = -1;
-            destinationItemIndex.value = -1;
-            pointerTranslation.value = 0;
+            clearDragState(dragState);
           });
         }}
         title="Commit fallback reorder"
@@ -369,9 +505,7 @@ function FallbackAcceptanceControls({
           scheduleOnUI(() => {
             'worklet';
             scheduleOnRN(onTerminal, null);
-            activeIndex.value = -1;
-            destinationItemIndex.value = -1;
-            pointerTranslation.value = 0;
+            clearDragState(dragState);
           });
         }}
         title="Cancel fallback reorder"
@@ -382,16 +516,13 @@ function FallbackAcceptanceControls({
           scheduleOnUI(() => {
             'worklet';
             emitFallbackTerminal(
-              itemIds,
-              sourceItemIndex,
-              destinationItemIndex.value,
-              sourceId,
+              acceptanceMove.sourceIds,
+              dragState.destinationCollectionId.value,
+              dragState.destinationBeforeId.value,
               false,
               onTerminal
             );
-            activeIndex.value = -1;
-            destinationItemIndex.value = -1;
-            pointerTranslation.value = 0;
+            clearDragState(dragState);
           });
         }}
         title="Release fallback outside"
@@ -403,31 +534,48 @@ function FallbackAcceptanceControls({
 export type FallbackReorderContainerProps = ViewProps &
   Readonly<{
     children: readonly ReactElement[];
+    collectionIds: readonly string[];
+    debugAcceptanceMove?: FallbackAcceptanceMove;
     entryIds: readonly string[];
     entryKinds: readonly EntryKind[];
     forwardedRef: Ref<HostInstance> | undefined;
     onTerminal: (event: FallbackTerminalEvent | null) => void;
-    debugAcceptanceMove?: FallbackAcceptanceMove;
+    order: readonly CollectionOrder[];
+    selectedIds: readonly string[];
   }>;
 
 export function FallbackReorderContainer({
   children,
+  collectionIds,
+  debugAcceptanceMove,
   entryIds,
   entryKinds,
   forwardedRef,
   onTerminal,
-  debugAcceptanceMove,
+  order,
+  selectedIds,
   ...viewProps
 }: FallbackReorderContainerProps) {
   const containerRef = useAnimatedRef<HostInstance>();
-  const activeIndex = useSharedValue(-1);
-  const destinationItemIndex = useSharedValue(-1);
-  const pointerTranslation = useSharedValue(0);
-  const layouts = useSharedValue<LayoutSlot[]>([]);
-  const itemIndices = entryKinds.flatMap((kind, index) =>
-    kind === 'item' ? [index] : []
-  );
-  const itemIds = itemIndices.map((index) => entryIds[index] ?? '');
+  const dragState: DragState = {
+    activatedEntryIndex: useSharedValue(-1),
+    activeSourceIds: useSharedValue<string[]>([]),
+    debugDestinationLocked: useSharedValue(false),
+    destinationBeforeId: useSharedValue(''),
+    destinationCollectionId: useSharedValue(''),
+    destinationFeedbackY: useSharedValue(-1),
+    layouts: useSharedValue<LayoutSlot[]>([]),
+    measurementRevision: useSharedValue(0),
+    pointerCorrection: useSharedValue(0),
+    pointerTranslation: useSharedValue(0),
+  };
+
+  useEffect(() => {
+    scheduleOnUI(() => {
+      'worklet';
+      dragState.measurementRevision.value += 1;
+    });
+  }, [children, dragState.measurementRevision]);
 
   useImperativeHandle(
     forwardedRef,
@@ -454,41 +602,46 @@ export function FallbackReorderContainer({
       {debugAcceptanceMove == null ? null : (
         <FallbackAcceptanceControls
           acceptanceMove={debugAcceptanceMove}
-          activeIndex={activeIndex}
-          destinationItemIndex={destinationItemIndex}
-          itemIds={itemIds}
-          itemIndices={itemIndices}
-          layouts={layouts}
+          collectionIds={collectionIds}
+          dragState={dragState}
+          entryIds={entryIds}
+          entryKinds={entryKinds}
           onTerminal={onTerminal}
-          pointerTranslation={pointerTranslation}
         />
       )}
       {children.map((child, index) =>
         entryKinds[index] === 'item' ? (
           <FallbackItem
-            activeIndex={activeIndex}
             child={child}
+            collectionIds={collectionIds}
             containerRef={containerRef}
-            destinationItemIndex={destinationItemIndex}
+            dragState={dragState}
+            entryIds={entryIds}
+            entryKinds={entryKinds}
             id={entryIds[index] ?? ''}
             index={index}
-            itemIds={itemIds}
-            itemIndices={itemIndices}
             key={child.key ?? `fallback:${index}`}
-            layouts={layouts}
+            moveSet={canonicalMoveSet(
+              order,
+              entryIds[index] ?? '',
+              selectedIds
+            )}
             onTerminal={onTerminal}
-            pointerTranslation={pointerTranslation}
           />
         ) : (
-          child
+          <MeasuredStructuralEntry
+            child={child}
+            collectionIds={collectionIds}
+            containerRef={containerRef}
+            dragState={dragState}
+            entryIds={entryIds}
+            entryKinds={entryKinds}
+            index={index}
+            key={child.key ?? `fallback:${index}`}
+          />
         )
       )}
-      <DestinationFeedback
-        activeIndex={activeIndex}
-        destinationItemIndex={destinationItemIndex}
-        itemIndices={itemIndices}
-        layouts={layouts}
-      />
+      <DestinationFeedback dragState={dragState} />
     </Animated.View>
   );
 }

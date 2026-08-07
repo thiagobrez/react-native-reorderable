@@ -1,6 +1,38 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { reconcileReorder } from '../semantic';
+import { canonicalMoveSet, reconcileReorder } from '../semantic';
+
+describe('canonicalMoveSet', () => {
+  const sectionedOrder = [
+    { sectionId: 'beginning-empty', itemIds: [] },
+    { sectionId: 'favorites', itemIds: ['blue', 'green', 'yellow'] },
+    { sectionId: 'middle-empty', itemIds: [] },
+    { sectionId: 'others', itemIds: ['orange', 'pink'] },
+    { sectionId: 'end-empty', itemIds: [] },
+  ] as const;
+
+  it('moves a selected activation as one filtered canonical move set', () => {
+    expect(
+      canonicalMoveSet(sectionedOrder, 'pink', [
+        'pink',
+        'missing',
+        'green',
+        'pink',
+        'blue',
+      ])
+    ).toEqual(['blue', 'green', 'pink']);
+  });
+
+  it('moves only an unselected activation when another selection exists', () => {
+    expect(
+      canonicalMoveSet(sectionedOrder, 'yellow', ['blue', 'pink', 'missing'])
+    ).toEqual(['yellow']);
+  });
+
+  it('returns no move set for an absent activation', () => {
+    expect(canonicalMoveSet(sectionedOrder, 'missing', ['blue'])).toEqual([]);
+  });
+});
 
 describe('reconcileReorder', () => {
   const sectionedOrder = [
@@ -62,6 +94,38 @@ describe('reconcileReorder', () => {
       })
     ).toBeNull();
   });
+
+  it.each(['beginning-empty', 'middle-empty', 'end-empty'])(
+    'moves a cross-section selection contiguously into the %s section',
+    (sectionId) => {
+      const order = [
+        { sectionId: 'beginning-empty', itemIds: [] },
+        { sectionId: 'favorites', itemIds: ['blue', 'green', 'yellow'] },
+        { sectionId: 'middle-empty', itemIds: [] },
+        { sectionId: 'others', itemIds: ['orange', 'pink'] },
+        { sectionId: 'end-empty', itemIds: [] },
+      ] as const;
+
+      expect(
+        reconcileReorder(order, ['blue', 'yellow', 'pink'], {
+          sectionId,
+          beforeId: null,
+        })
+      ).toEqual({
+        sourceIds: ['blue', 'yellow', 'pink'],
+        destination: { sectionId, beforeId: null },
+        nextOrder: order.map((collection) => ({
+          sectionId: collection.sectionId,
+          itemIds:
+            collection.sectionId === sectionId
+              ? ['blue', 'yellow', 'pink']
+              : collection.itemIds.filter(
+                  (id) => !['blue', 'yellow', 'pink'].includes(id)
+                ),
+        })),
+      });
+    }
+  );
 
   it('throws for empty and duplicate identities in current application order', () => {
     expect(() =>

@@ -58,6 +58,23 @@ function ordersEqual(
   );
 }
 
+/** Resolves the atomic move set at activation from application-owned selection. */
+export function canonicalMoveSet(
+  currentOrder: readonly CollectionOrder[],
+  activatedId: string,
+  selectedIds: readonly string[]
+): string[] {
+  validateCurrentOrder(currentOrder);
+  const currentItemIds = currentOrder.flatMap(
+    (collection) => collection.itemIds
+  );
+  if (!currentItemIds.includes(activatedId)) return [];
+
+  const selectedSet = new Set(selectedIds);
+  if (!selectedSet.has(activatedId)) return [activatedId];
+  return currentItemIds.filter((id) => selectedSet.has(id));
+}
+
 /**
  * Reconciles one engine terminal outcome against application-owned order.
  * Invalid interaction-time identities cancel atomically; invalid current

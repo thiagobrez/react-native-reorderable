@@ -157,11 +157,14 @@ function ReorderableContainerImplementation({
     return (
       <FallbackReorderContainer
         {...viewProps}
+        collectionIds={normalized.collectionIds}
         debugAcceptanceMove={debugAcceptanceMove}
         entryIds={normalized.entryIds}
         entryKinds={normalized.entryKinds}
         forwardedRef={ref}
         onTerminal={handleTerminal}
+        order={normalized.order}
+        selectedIds={selectedIds}
       >
         {normalized.children}
       </FallbackReorderContainer>

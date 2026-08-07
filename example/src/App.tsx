@@ -37,12 +37,15 @@ const initialCards: readonly Card[] = [
 ];
 
 const initialSections: readonly CardSection[] = [
+  { id: 'beginning-empty', title: 'Beginning empty', cards: [] },
   {
     id: 'favorites',
     title: 'Favorites',
     cards: initialCards.slice(0, 3),
   },
+  { id: 'middle-empty', title: 'Middle empty', cards: [] },
   { id: 'others', title: 'Others', cards: initialCards.slice(3) },
+  { id: 'end-empty', title: 'End empty', cards: [] },
 ];
 
 function itemsInOrder<T extends { id: string }>(
@@ -180,10 +183,18 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
   );
 }
 
-function SectionedCollectionExample() {
+function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
   const [sections, setSections] = useState(initialSections);
+  const [callbackCount, setCallbackCount] = useState(0);
+  const [lastEvent, setLastEvent] = useState('None');
+  const [greenExpanded, setGreenExpanded] = useState(false);
+  const selectedIds = ['pink', 'missing', 'blue', 'pink', 'yellow'] as const;
 
   const handleReorder = (event: ReorderEvent) => {
+    setCallbackCount((current) => current + 1);
+    setLastEvent(
+      `${event.sourceIds.join('+')} -> ${event.destination.sectionId ?? 'root'}:${event.destination.beforeId ?? 'end'}`
+    );
     setSections((current) => {
       const cardsById = new Map(
         current
@@ -210,39 +221,121 @@ function SectionedCollectionExample() {
     });
   };
 
-  return (
-    <ReorderableContainer
-      accessibilityLabel="Sectioned cards"
-      onReorder={handleReorder}
-      style={styles.sectionedCards}
-      testID="sections-container"
+  const renderedSections = sections.map((section) => (
+    <ReorderableSection
+      header={<Text style={styles.sectionTitle}>{section.title}</Text>}
+      footer={
+        <Text style={styles.sectionFooter}>
+          {section.cards.length === 0
+            ? 'Empty destination'
+            : `${section.cards.length} cards`}
+        </Text>
+      }
+      id={section.id}
+      key={section.id}
+      style={styles.cardSection}
     >
-      {sections.map((section) => (
-        <ReorderableSection
-          header={<Text style={styles.sectionTitle}>{section.title}</Text>}
-          footer={
-            <Text style={styles.sectionFooter}>
-              {section.cards.length} cards
-            </Text>
-          }
-          id={section.id}
-          key={section.id}
-          style={styles.cardSection}
+      {section.cards.map((card, index) => {
+        const selected = ['blue', 'yellow', 'pink'].includes(card.id);
+        return (
+          <ReorderableItem
+            accessibilityLabel={`${card.label} card, ${section.title} position ${index + 1}`}
+            accessibilityState={{ selected }}
+            id={card.id}
+            key={card.id}
+            style={[
+              styles.card,
+              { backgroundColor: card.color },
+              card.id === 'green' && greenExpanded && styles.expandedCard,
+              selected && styles.reorderSelected,
+            ]}
+            testID={`section-card-${card.id}`}
+          >
+            <Text style={styles.cardLabel}>{card.label}</Text>
+          </ReorderableItem>
+        );
+      })}
+    </ReorderableSection>
+  ));
+
+  const containerProps = {
+    acceptanceMove: {
+      sourceIds: ['blue', 'yellow', 'pink'],
+      destination: { sectionId: 'middle-empty', beforeId: null },
+    },
+    accessibilityLabel: 'Section and selection scenario',
+    onReorder: handleReorder,
+    selectedIds,
+    style: styles.sectionedCards,
+    testID: 'sections-container',
+  } as const;
+
+  return (
+    <>
+      <Text style={styles.outcome} testID="sections-selection">
+        Selected: Blue, Yellow, Pink
+      </Text>
+      <Text style={styles.outcome} testID="sections-order">
+        Order:{' '}
+        {sections
+          .map(
+            (section) =>
+              `${section.title}=[${section.cards.map((card) => card.label).join(',')}]`
+          )
+          .join(' | ')}
+      </Text>
+      <Text style={styles.outcome} testID="sections-callback-count">
+        Reorder callbacks: {callbackCount}
+      </Text>
+      <Text style={styles.outcome} testID="sections-last-event">
+        Last event: {lastEvent}
+      </Text>
+      <View style={styles.scenarioActions}>
+        <Pressable
+          accessibilityLabel="Toggle Green card size"
+          accessibilityRole="button"
+          onPress={() => setGreenExpanded((current) => !current)}
+          style={styles.scenarioAction}
         >
-          {section.cards.map((card, index) => (
-            <ReorderableItem
-              accessibilityLabel={`${card.label} card, ${section.title} position ${index + 1}`}
-              id={card.id}
-              key={card.id}
-              style={[styles.card, { backgroundColor: card.color }]}
-              testID={`section-card-${card.id}`}
-            >
-              <Text style={styles.cardLabel}>{card.label}</Text>
-            </ReorderableItem>
-          ))}
-        </ReorderableSection>
-      ))}
-    </ReorderableContainer>
+          <Text style={styles.scenarioActionText}>
+            {greenExpanded ? 'Shrink Green' : 'Expand Green'}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Reset section scenario"
+          accessibilityRole="button"
+          onPress={() => {
+            setSections(initialSections);
+            setCallbackCount(0);
+            setLastEvent('None');
+            setGreenExpanded(false);
+          }}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Reset</Text>
+        </Pressable>
+      </View>
+      {__DEV__ && engine === 'fallback' ? (
+        <FallbackCommitAcceptanceContainer {...containerProps}>
+          {renderedSections}
+        </FallbackCommitAcceptanceContainer>
+      ) : __DEV__ ? (
+        <NativeCommitAcceptanceContainer {...containerProps}>
+          {renderedSections}
+        </NativeCommitAcceptanceContainer>
+      ) : (
+        <ReorderableContainer
+          accessibilityLabel={containerProps.accessibilityLabel}
+          engine={engine}
+          onReorder={handleReorder}
+          selectedIds={selectedIds}
+          style={styles.sectionedCards}
+          testID="sections-container"
+        >
+          {renderedSections}
+        </ReorderableContainer>
+      )}
+    </>
   );
 }
 
@@ -359,7 +452,9 @@ export default function App() {
           {demo === 'single' && (
             <SingleCollectionExample engine={engine} key={engine} />
           )}
-          {demo === 'sections' && <SectionedCollectionExample />}
+          {demo === 'sections' && (
+            <SectionedCollectionExample engine={engine} key={engine} />
+          )}
           {demo === 'multi' && <MultiItemDragExample />}
         </View>
       </View>
@@ -444,6 +539,30 @@ const styles = StyleSheet.create({
     height: 54,
     justifyContent: 'center',
     width: '100%',
+  },
+  expandedCard: {
+    height: 96,
+  },
+  reorderSelected: {
+    borderColor: '#FFFFFF',
+    borderWidth: 3,
+  },
+  scenarioActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  scenarioAction: {
+    borderColor: '#636366',
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  scenarioActionText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
   },
   cardLabel: {
     color: '#000000',

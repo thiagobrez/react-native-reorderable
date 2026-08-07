@@ -25,6 +25,7 @@ typedef void (^RNReorderableDropHandler)(NSArray<NSString *> *itemIds, NSString 
            selectedIds:(NSArray<NSString *> *)selectedIds
                enabled:(BOOL)enabled;
 - (void)invalidate;
+- (void)invalidateHostedLayout;
 #if DEBUG
 - (void)debugEmitTerminalReorderWithSourceIds:(NSArray<NSString *> *)sourceIds
                       destinationCollectionId:(NSString *)destinationCollectionId

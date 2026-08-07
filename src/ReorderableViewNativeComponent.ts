@@ -20,6 +20,10 @@ export type NativeDropEvent = Readonly<{
   destinationId: string;
 }>;
 
+export type NativeDebugInteractionStateEvent = Readonly<{
+  active: boolean;
+}>;
+
 export interface NativeProps extends ViewProps {
   mode?: WithDefault<'reorder' | 'dragDrop', 'reorder'>;
   entryKinds: ReadonlyArray<string>;
@@ -31,9 +35,13 @@ export interface NativeProps extends ViewProps {
   enabled: boolean;
   onMove?: DirectEventHandler<NativeMoveEvent>;
   onDrop?: DirectEventHandler<NativeDropEvent>;
+  onDebugInteractionStateChange?: DirectEventHandler<NativeDebugInteractionStateEvent>;
 }
 
 interface NativeCommands {
+  debugBeginInteraction: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>
+  ) => void;
   debugEmitTerminalReorder: (
     viewRef: React.ElementRef<HostComponent<NativeProps>>,
     sourceIdsJson: string,
@@ -43,7 +51,7 @@ interface NativeCommands {
 }
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
-  supportedCommands: ['debugEmitTerminalReorder'],
+  supportedCommands: ['debugBeginInteraction', 'debugEmitTerminalReorder'],
 });
 
 export default codegenNativeComponent<NativeProps>(

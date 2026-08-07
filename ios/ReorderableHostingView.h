@@ -9,11 +9,13 @@ typedef void (^RNReorderableMoveHandler)(
     NSString *destinationCollectionId,
     NSString *destinationBeforeId);
 typedef void (^RNReorderableDropHandler)(NSArray<NSString *> *itemIds, NSString *destinationId);
+typedef void (^RNReorderableInteractionStateHandler)(BOOL active);
 
 @interface RNReorderableHostingView : UIView
 
 @property (nonatomic, copy, nullable) RNReorderableMoveHandler moveHandler;
 @property (nonatomic, copy, nullable) RNReorderableDropHandler dropHandler;
+@property (nonatomic, copy, nullable) RNReorderableInteractionStateHandler interactionStateHandler;
 
 - (instancetype)initWithLayoutCoordinator:(RNReorderableLayoutCoordinator *)layoutCoordinator;
 - (void)updateWithMode:(NSString *)mode
@@ -27,6 +29,7 @@ typedef void (^RNReorderableDropHandler)(NSArray<NSString *> *itemIds, NSString 
 - (void)invalidate;
 - (void)invalidateHostedLayout;
 #if DEBUG
+- (void)debugBeginInteraction;
 - (void)debugEmitTerminalReorderWithSourceIds:(NSArray<NSString *> *)sourceIds
                       destinationCollectionId:(NSString *)destinationCollectionId
                           destinationBeforeId:(NSString *)destinationBeforeId;

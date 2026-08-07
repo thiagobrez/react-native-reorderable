@@ -104,6 +104,9 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
   const [cards, setCards] = useState(initialCards);
   const [callbackCount, setCallbackCount] = useState(0);
   const [nestedPressCount, setNestedPressCount] = useState(0);
+  const [enabled, setEnabled] = useState(true);
+  const [mounted, setMounted] = useState(true);
+  const [interactionActive, setInteractionActive] = useState(false);
 
   const handleReorder = (event: ReorderEvent) => {
     const itemIds = event.nextOrder[0]?.itemIds;
@@ -142,13 +145,40 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
       <Text style={styles.outcome} testID="single-nested-press-count">
         Nested short presses: {nestedPressCount}
       </Text>
-      {__DEV__ && engine === 'auto' ? (
+      <Text style={styles.outcome} testID="single-interaction-state">
+        Interaction: {interactionActive ? 'active' : 'inactive'}
+      </Text>
+      <View style={styles.scenarioActions}>
+        <Pressable
+          accessibilityLabel={enabled ? 'Disable reorder' : 'Enable reorder'}
+          accessibilityRole="button"
+          onPress={() => setEnabled((current) => !current)}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>
+            {enabled ? 'Disable' : 'Enable'}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel={mounted ? 'Unmount reorder' : 'Mount reorder'}
+          accessibilityRole="button"
+          onPress={() => setMounted((current) => !current)}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>
+            {mounted ? 'Unmount' : 'Mount'}
+          </Text>
+        </Pressable>
+      </View>
+      {!mounted ? null : __DEV__ && engine === 'auto' ? (
         <NativeCommitAcceptanceContainer
           acceptanceMove={{
             sourceIds: ['yellow'],
             destination: { sectionId: null, beforeId: 'green' },
           }}
           accessibilityLabel="Single collection cards"
+          enabled={enabled}
+          onInteractionStateChange={setInteractionActive}
           onReorder={handleReorder}
           style={styles.verticalCards}
           testID="single-container"
@@ -162,6 +192,8 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
             destination: { sectionId: null, beforeId: 'green' },
           }}
           accessibilityLabel="Single collection cards"
+          enabled={enabled}
+          onInteractionStateChange={setInteractionActive}
           onReorder={handleReorder}
           style={styles.verticalCards}
           testID="single-container"
@@ -172,6 +204,7 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
         <ReorderableContainer
           accessibilityLabel="Single collection cards"
           engine={engine}
+          enabled={enabled}
           onReorder={handleReorder}
           style={styles.verticalCards}
           testID="single-container"

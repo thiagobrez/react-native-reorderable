@@ -1,4 +1,10 @@
-import { createRef, type ReactElement, type RefAttributes } from 'react';
+import {
+  createRef,
+  useEffect,
+  useRef,
+  type ReactElement,
+  type RefAttributes,
+} from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { Button, Platform, View } from 'react-native';
 
@@ -16,6 +22,7 @@ import {
   prepareNativeEntries,
 } from './normalize';
 import { reconcileReorder } from './semantic';
+import { InteractionLifecycle } from './lifecycle';
 import {
   FallbackReorderContainer,
   type FallbackTerminalEvent,
@@ -45,6 +52,7 @@ type ReorderableSectionComponentProps = ReorderableSectionProps &
 
 type InternalReorderableContainerProps = ReorderableContainerComponentProps & {
   debugAcceptanceMove?: AcceptanceMove;
+  debugInteractionStateChange?: (active: boolean) => void;
 };
 
 function assignHostRef(ref: unknown, value: unknown): void {
@@ -113,8 +121,14 @@ function ReorderableContainerImplementation({
   ref,
   selectedIds = [],
   debugAcceptanceMove,
+  debugInteractionStateChange,
   ...viewProps
 }: InternalReorderableContainerProps) {
+  const fallbackLifecycle = useRef(new InteractionLifecycle()).current;
+  useEffect(() => {
+    if (!enabled) debugInteractionStateChange?.(false);
+    return () => debugInteractionStateChange?.(false);
+  }, [debugInteractionStateChange, enabled]);
   const nativeRef = createRef<React.ElementRef<typeof NativeReorderableView>>();
   const normalized = normalizeReorderableChildren(children, {
     Item: ReorderableItem,
@@ -140,8 +154,14 @@ function ReorderableContainerImplementation({
     });
     if (committedEvent != null) onReorder(committedEvent);
   };
-  const handleTerminal = (terminal: FallbackTerminalEvent | null) => {
-    if (terminal == null) return;
+  const handleFallbackInteractionStart = (interactionId: number) => {
+    fallbackLifecycle.begin(interactionId);
+  };
+  const handleTerminal = (terminal: FallbackTerminalEvent) => {
+    if (!fallbackLifecycle.finish(terminal.interactionId, terminal.outcome)) {
+      return;
+    }
+    if (terminal.outcome === 'cancel') return;
     commitTerminal(
       terminal.sourceIdsJson,
       terminal.destinationCollectionId,
@@ -162,6 +182,8 @@ function ReorderableContainerImplementation({
         entryIds={normalized.entryIds}
         entryKinds={normalized.entryKinds}
         forwardedRef={ref}
+        onInteractionStart={handleFallbackInteractionStart}
+        onInteractionStateChange={debugInteractionStateChange}
         onTerminal={handleTerminal}
         order={normalized.order}
         selectedIds={selectedIds}
@@ -188,19 +210,30 @@ function ReorderableContainerImplementation({
   return (
     <>
       {debugAcceptanceMove == null ? null : (
-        <Button
-          accessibilityLabel="Apply native reorder"
-          onPress={() => {
-            if (nativeRef.current == null) return;
-            Commands.debugEmitTerminalReorder(
-              nativeRef.current,
-              JSON.stringify(debugAcceptanceMove.sourceIds),
-              debugAcceptanceMove.destination.sectionId ?? '',
-              debugAcceptanceMove.destination.beforeId ?? ''
-            );
-          }}
-          title="Apply native reorder"
-        />
+        <>
+          <Button
+            accessibilityLabel="Activate native reorder"
+            onPress={() => {
+              if (nativeRef.current != null) {
+                Commands.debugBeginInteraction(nativeRef.current);
+              }
+            }}
+            title="Activate native reorder"
+          />
+          <Button
+            accessibilityLabel="Apply native reorder"
+            onPress={() => {
+              if (nativeRef.current == null) return;
+              Commands.debugEmitTerminalReorder(
+                nativeRef.current,
+                JSON.stringify(debugAcceptanceMove.sourceIds),
+                debugAcceptanceMove.destination.sectionId ?? '',
+                debugAcceptanceMove.destination.beforeId ?? ''
+              );
+            }}
+            title="Apply native reorder"
+          />
+        </>
       )}
       <NativeReorderableView
         {...viewProps}
@@ -211,6 +244,9 @@ function ReorderableContainerImplementation({
         layoutRevision={layoutRevision(viewProps.style, nativeEntries.children)}
         mode="reorder"
         onMove={handleMove}
+        onDebugInteractionStateChange={(event) =>
+          debugInteractionStateChange?.(event.nativeEvent.active)
+        }
         orderedEntryIds={nativeEntries.orderedEntryIds}
         ref={(value) => {
           nativeRef.current = value;
@@ -227,31 +263,48 @@ function ReorderableContainerImplementation({
 export function ReorderableContainer(
   props: ReorderableContainerComponentProps
 ) {
+  if (
+    props.enabled !== false &&
+    Platform.OS !== 'ios' &&
+    Platform.OS !== 'android'
+  ) {
+    throw new Error(
+      `[react-native-reorderable] No reorder engine can fulfill the portable contract for this enabled ${Platform.OS} container.`
+    );
+  }
   return ReorderableContainerImplementation(props);
 }
 
 /** @internal Debug-only acceptance harness; deliberately absent from index.tsx. */
 export function NativeCommitAcceptanceContainer(
-  props: ReorderableContainerComponentProps & { acceptanceMove: AcceptanceMove }
+  props: ReorderableContainerComponentProps & {
+    acceptanceMove: AcceptanceMove;
+    onInteractionStateChange?: (active: boolean) => void;
+  }
 ) {
-  const { acceptanceMove, ...containerProps } = props;
+  const { acceptanceMove, onInteractionStateChange, ...containerProps } = props;
   return (
     <ReorderableContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+      debugInteractionStateChange={onInteractionStateChange}
     />
   );
 }
 
 /** @internal Debug-only acceptance harness; deliberately absent from index.tsx. */
 export function FallbackCommitAcceptanceContainer(
-  props: ReorderableContainerComponentProps & { acceptanceMove: AcceptanceMove }
+  props: ReorderableContainerComponentProps & {
+    acceptanceMove: AcceptanceMove;
+    onInteractionStateChange?: (active: boolean) => void;
+  }
 ) {
-  const { acceptanceMove, ...containerProps } = props;
+  const { acceptanceMove, onInteractionStateChange, ...containerProps } = props;
   return (
     <ReorderableContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+      debugInteractionStateChange={onInteractionStateChange}
       engine="fallback"
     />
   );

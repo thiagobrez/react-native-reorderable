@@ -3,6 +3,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   type ReactElement,
   type Ref,
 } from 'react';
@@ -18,7 +19,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 import {
+  AppState,
+  BackHandler,
   Button,
+  Platform,
   StyleSheet,
   type HostInstance,
   type NativeSyntheticEvent,
@@ -26,14 +30,21 @@ import {
 } from 'react-native';
 
 import type { EntryKind } from './normalize';
+import { InteractionLifecycle } from './lifecycle';
 import { canonicalMoveSet } from './semantic';
 import type { CollectionOrder } from './types';
 
-export type FallbackTerminalEvent = Readonly<{
-  sourceIdsJson: string;
-  destinationCollectionId: string;
-  destinationBeforeId: string;
-}>;
+let nextFallbackInteractionId = 0;
+
+export type FallbackTerminalEvent =
+  | Readonly<{ interactionId: number; outcome: 'cancel' }>
+  | Readonly<{
+      interactionId: number;
+      outcome: 'commit';
+      sourceIdsJson: string;
+      destinationCollectionId: string;
+      destinationBeforeId: string;
+    }>;
 
 export type FallbackAcceptanceMove = Readonly<{
   sourceIds: readonly string[];
@@ -45,6 +56,7 @@ export type FallbackAcceptanceMove = Readonly<{
 
 type LayoutSlot = Readonly<{ height: number; y: number }>;
 type DragState = Readonly<{
+  activeInteractionId: SharedValue<number>;
   activatedEntryIndex: SharedValue<number>;
   activeSourceIds: SharedValue<string[]>;
   debugDestinationLocked: SharedValue<boolean>;
@@ -53,8 +65,10 @@ type DragState = Readonly<{
   destinationFeedbackY: SharedValue<number>;
   layouts: SharedValue<LayoutSlot[]>;
   measurementRevision: SharedValue<number>;
+  nextInteractionId: SharedValue<number>;
   pointerCorrection: SharedValue<number>;
   pointerTranslation: SharedValue<number>;
+  terminalClaimed: SharedValue<boolean>;
 }>;
 
 type FallbackItemProps = Readonly<{
@@ -67,31 +81,55 @@ type FallbackItemProps = Readonly<{
   id: string;
   index: number;
   moveSet: readonly string[];
-  onTerminal: (event: FallbackTerminalEvent | null) => void;
+  onInteractionStart: (interactionId: number) => void;
+  onTerminal: (event: FallbackTerminalEvent) => void;
 }>;
 
-function emitFallbackTerminal(
+function beginInteraction(
+  sourceIds: readonly string[],
+  dragState: DragState,
+  onInteractionStart: (interactionId: number) => void
+) {
+  'worklet';
+  const interactionId = dragState.nextInteractionId.value + 1;
+  dragState.nextInteractionId.value = interactionId;
+  dragState.activeInteractionId.value = interactionId;
+  dragState.terminalClaimed.value = false;
+  dragState.activeSourceIds.value = [...sourceIds];
+  scheduleOnRN(onInteractionStart, interactionId);
+}
+
+function finishInteraction(
+  dragState: DragState,
+  outcome: 'cancel' | 'commit',
   sourceIds: readonly string[],
   destinationCollectionId: string,
   destinationBeforeId: string,
   valid: boolean,
-  onTerminal: (event: FallbackTerminalEvent | null) => void
+  onTerminal: (event: FallbackTerminalEvent) => void
 ) {
   'worklet';
+  const interactionId = dragState.activeInteractionId.value;
+  if (interactionId < 0 || dragState.terminalClaimed.value) return false;
+  dragState.terminalClaimed.value = true;
   if (!valid || sourceIds.length === 0) {
-    scheduleOnRN(onTerminal, null);
-    return;
+    scheduleOnRN(onTerminal, { interactionId, outcome: 'cancel' });
+    return true;
   }
   scheduleOnRN(onTerminal, {
+    interactionId,
+    outcome,
     sourceIdsJson: JSON.stringify(sourceIds),
     destinationCollectionId,
     destinationBeforeId,
   });
+  return true;
 }
 
 function clearDragState(dragState: DragState) {
   'worklet';
   dragState.activatedEntryIndex.value = -1;
+  dragState.activeInteractionId.value = -1;
   dragState.activeSourceIds.value = [];
   dragState.debugDestinationLocked.value = false;
   dragState.destinationBeforeId.value = '';
@@ -241,6 +279,7 @@ function FallbackItem({
   id,
   index,
   moveSet,
+  onInteractionStart,
   onTerminal,
 }: FallbackItemProps) {
   const itemRef = useMeasuredEntry(
@@ -257,8 +296,8 @@ function FallbackItem({
         .withTestId(`fallback-item-${id}`)
         .activateAfterLongPress(350)
         .onStart(() => {
+          beginInteraction(moveSet, dragState, onInteractionStart);
           dragState.activatedEntryIndex.value = index;
-          dragState.activeSourceIds.value = [...moveSet];
           dragState.pointerCorrection.value = 0;
           dragState.pointerTranslation.value = 0;
           const slot = dragState.layouts.value[index];
@@ -299,7 +338,9 @@ function FallbackItem({
             event.absoluteX <= frame.pageX + frame.width &&
             event.absoluteY >= frame.pageY &&
             event.absoluteY <= frame.pageY + frame.height;
-          emitFallbackTerminal(
+          finishInteraction(
+            dragState,
+            'commit',
             moveSet,
             dragState.destinationCollectionId.value,
             dragState.destinationBeforeId.value,
@@ -308,7 +349,17 @@ function FallbackItem({
           );
         })
         .onFinalize((_event, success) => {
-          if (!success) scheduleOnRN(onTerminal, null);
+          if (!success) {
+            finishInteraction(
+              dragState,
+              'cancel',
+              [],
+              '',
+              '',
+              false,
+              onTerminal
+            );
+          }
           clearDragState(dragState);
         }),
     [
@@ -320,6 +371,7 @@ function FallbackItem({
       id,
       index,
       moveSet,
+      onInteractionStart,
       onTerminal,
     ]
   );
@@ -405,7 +457,8 @@ type FallbackAcceptanceControlsProps = Readonly<{
   dragState: DragState;
   entryIds: readonly string[];
   entryKinds: readonly EntryKind[];
-  onTerminal: (event: FallbackTerminalEvent | null) => void;
+  onTerminal: (event: FallbackTerminalEvent) => void;
+  onInteractionStart: (interactionId: number) => void;
 }>;
 
 function FallbackAcceptanceControls({
@@ -414,6 +467,7 @@ function FallbackAcceptanceControls({
   dragState,
   entryIds,
   entryKinds,
+  onInteractionStart,
   onTerminal,
 }: FallbackAcceptanceControlsProps) {
   const sourceEntryIndex = entryIds.findIndex(
@@ -441,8 +495,12 @@ function FallbackAcceptanceControls({
                 y: index * 72,
               }));
             }
+            beginInteraction(
+              acceptanceMove.sourceIds,
+              dragState,
+              onInteractionStart
+            );
             dragState.activatedEntryIndex.value = sourceEntryIndex;
-            dragState.activeSourceIds.value = [...acceptanceMove.sourceIds];
             dragState.debugDestinationLocked.value = false;
             dragState.measurementRevision.value += 1;
             dragState.pointerCorrection.value = 0;
@@ -487,7 +545,9 @@ function FallbackAcceptanceControls({
         onPress={() => {
           scheduleOnUI(() => {
             'worklet';
-            emitFallbackTerminal(
+            finishInteraction(
+              dragState,
+              'commit',
               acceptanceMove.sourceIds,
               dragState.destinationCollectionId.value,
               dragState.destinationBeforeId.value,
@@ -504,7 +564,15 @@ function FallbackAcceptanceControls({
         onPress={() => {
           scheduleOnUI(() => {
             'worklet';
-            scheduleOnRN(onTerminal, null);
+            finishInteraction(
+              dragState,
+              'cancel',
+              [],
+              '',
+              '',
+              false,
+              onTerminal
+            );
             clearDragState(dragState);
           });
         }}
@@ -515,7 +583,9 @@ function FallbackAcceptanceControls({
         onPress={() => {
           scheduleOnUI(() => {
             'worklet';
-            emitFallbackTerminal(
+            finishInteraction(
+              dragState,
+              'cancel',
               acceptanceMove.sourceIds,
               dragState.destinationCollectionId.value,
               dragState.destinationBeforeId.value,
@@ -539,7 +609,9 @@ export type FallbackReorderContainerProps = ViewProps &
     entryIds: readonly string[];
     entryKinds: readonly EntryKind[];
     forwardedRef: Ref<HostInstance> | undefined;
-    onTerminal: (event: FallbackTerminalEvent | null) => void;
+    onInteractionStateChange?: (active: boolean) => void;
+    onTerminal: (event: FallbackTerminalEvent) => void;
+    onInteractionStart: (interactionId: number) => void;
     order: readonly CollectionOrder[];
     selectedIds: readonly string[];
   }>;
@@ -551,13 +623,16 @@ export function FallbackReorderContainer({
   entryIds,
   entryKinds,
   forwardedRef,
+  onInteractionStateChange,
   onTerminal,
+  onInteractionStart,
   order,
   selectedIds,
   ...viewProps
 }: FallbackReorderContainerProps) {
   const containerRef = useAnimatedRef<HostInstance>();
-  const dragState: DragState = {
+  const currentDragState: DragState = {
+    activeInteractionId: useSharedValue(-1),
     activatedEntryIndex: useSharedValue(-1),
     activeSourceIds: useSharedValue<string[]>([]),
     debugDestinationLocked: useSharedValue(false),
@@ -566,9 +641,80 @@ export function FallbackReorderContainer({
     destinationFeedbackY: useSharedValue(-1),
     layouts: useSharedValue<LayoutSlot[]>([]),
     measurementRevision: useSharedValue(0),
+    nextInteractionId: useSharedValue(0),
     pointerCorrection: useSharedValue(0),
     pointerTranslation: useSharedValue(0),
+    terminalClaimed: useSharedValue(false),
   };
+  const dragState = useRef(currentDragState).current;
+
+  const interactionLifecycle = useRef(new InteractionLifecycle()).current;
+  const canonicalInteractionIds = useRef(new Map<number, number>());
+  const onInteractionStartRef = useRef(onInteractionStart);
+  const onTerminalRef = useRef(onTerminal);
+  onInteractionStartRef.current = onInteractionStart;
+  onTerminalRef.current = onTerminal;
+  const handleInteractionStart = useCallback(
+    (interactionId: number) => {
+      interactionLifecycle.begin(interactionId);
+      onInteractionStateChange?.(true);
+      const canonicalId = ++nextFallbackInteractionId;
+      canonicalInteractionIds.current.set(interactionId, canonicalId);
+      onInteractionStartRef.current(canonicalId);
+    },
+    [interactionLifecycle, onInteractionStateChange]
+  );
+  const handleTerminal = useCallback(
+    (event: FallbackTerminalEvent) => {
+      const canonicalId = canonicalInteractionIds.current.get(
+        event.interactionId
+      );
+      if (canonicalId == null) return;
+      canonicalInteractionIds.current.delete(event.interactionId);
+      if (interactionLifecycle.finish(event.interactionId, event.outcome)) {
+        onInteractionStateChange?.(false);
+      }
+      onTerminalRef.current({ ...event, interactionId: canonicalId });
+    },
+    [interactionLifecycle, onInteractionStateChange]
+  );
+  const cancelActiveInteraction = useCallback(() => {
+    if (!interactionLifecycle.cancelActive()) return false;
+    onInteractionStateChange?.(false);
+    scheduleOnUI(() => {
+      'worklet';
+      finishInteraction(dragState, 'cancel', [], '', '', false, handleTerminal);
+      clearDragState(dragState);
+    });
+    return true;
+  }, [
+    dragState,
+    handleTerminal,
+    interactionLifecycle,
+    onInteractionStateChange,
+  ]);
+
+  useEffect(() => {
+    const changeSubscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') cancelActiveInteraction();
+    });
+    const blurSubscription =
+      Platform.OS === 'android'
+        ? AppState.addEventListener('blur', cancelActiveInteraction)
+        : null;
+    const backSubscription =
+      Platform.OS === 'android'
+        ? BackHandler.addEventListener('hardwareBackPress', () => {
+            return cancelActiveInteraction();
+          })
+        : null;
+    return () => {
+      changeSubscription?.remove();
+      blurSubscription?.remove();
+      backSubscription?.remove();
+      cancelActiveInteraction();
+    };
+  }, [cancelActiveInteraction]);
 
   useEffect(() => {
     scheduleOnUI(() => {
@@ -583,10 +729,24 @@ export function FallbackReorderContainer({
     [containerRef]
   );
   const handleDebugMove = useCallback(
-    (event: NativeSyntheticEvent<FallbackTerminalEvent>) => {
-      onTerminal(event.nativeEvent);
+    (
+      event: NativeSyntheticEvent<
+        Omit<
+          Extract<FallbackTerminalEvent, { outcome: 'commit' }>,
+          'interactionId' | 'outcome'
+        >
+      >
+    ) => {
+      const interactionId = dragState.nextInteractionId.value + 1;
+      dragState.nextInteractionId.value = interactionId;
+      handleInteractionStart(interactionId);
+      handleTerminal({
+        ...event.nativeEvent,
+        interactionId,
+        outcome: 'commit',
+      });
     },
-    [onTerminal]
+    [dragState.nextInteractionId, handleInteractionStart, handleTerminal]
   );
   const debugProps = __DEV__
     ? ({ onFallbackMove: handleDebugMove } as unknown as ViewProps)
@@ -606,7 +766,8 @@ export function FallbackReorderContainer({
           dragState={dragState}
           entryIds={entryIds}
           entryKinds={entryKinds}
-          onTerminal={onTerminal}
+          onInteractionStart={handleInteractionStart}
+          onTerminal={handleTerminal}
         />
       )}
       {children.map((child, index) =>
@@ -626,7 +787,8 @@ export function FallbackReorderContainer({
               entryIds[index] ?? '',
               selectedIds
             )}
-            onTerminal={onTerminal}
+            onInteractionStart={handleInteractionStart}
+            onTerminal={handleTerminal}
           />
         ) : (
           <MeasuredStructuralEntry

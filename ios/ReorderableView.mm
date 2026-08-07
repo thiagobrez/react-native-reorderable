@@ -274,6 +274,17 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
       event.destinationId = RNStdString(destinationId);
       emitter->onDrop(event);
     };
+    _hostingView.interactionStateHandler = ^(BOOL active) {
+      ReorderableView *strongSelf = weakSelf;
+      if (strongSelf == nil || strongSelf->_reorderableEventEmitter == nullptr) {
+        return;
+      }
+      auto emitter = std::static_pointer_cast<const ReorderableViewEventEmitter>(
+          strongSelf->_reorderableEventEmitter);
+      ReorderableViewEventEmitter::OnDebugInteractionStateChange event;
+      event.active = active;
+      emitter->onDebugInteractionStateChange(event);
+    };
 
     self.contentView = _hostingView;
   }
@@ -356,6 +367,13 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
 - (void)handleCommand:(const NSString *)commandName args:(const NSArray *)args
 {
   RCTReorderableViewHandleCommand(self, commandName, args);
+}
+
+- (void)debugBeginInteraction
+{
+#if DEBUG
+  [_hostingView debugBeginInteraction];
+#endif
 }
 
 - (void)debugEmitTerminalReorder:(NSString *)sourceIdsJson

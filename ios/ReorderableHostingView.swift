@@ -164,10 +164,13 @@ private final class RNReorderableModel: ObservableObject {
     // modes are flat. Do not let SwiftUI reuse those containers across modes.
     let hostStructureChanged = state.mode != resolvedMode
       || state.sections.isEmpty != sections.isEmpty
-    let hostGeneration = hostStructureChanged
+    let structureGeneration = hostStructureChanged
       ? state.hostGeneration + 1
       : state.hostGeneration
 
+    let hostGeneration = state.enabled && !enabled
+      ? structureGeneration + 1
+      : structureGeneration
     state = RNReorderableRenderState(
       mode: resolvedMode,
       enabled: enabled,
@@ -183,11 +186,19 @@ private final class RNReorderableModel: ObservableObject {
     state.hostGeneration += 1
   }
 
+  func cancelInteraction() {
+    // Replacing the SwiftUI reorder container ends any in-flight native drag
+    // and rebuilds presentation from the latest application-owned entries.
+    state.hostGeneration += 1
+  }
+
   #if compiler(>=6.4)
   @available(iOS 27.0, *)
   func applySingleCollectionMove(
-    _ difference: ReorderDifference<String, ReorderableSingleCollectionIdentifier>
+    _ difference: ReorderDifference<String, ReorderableSingleCollectionIdentifier>,
+    hostGeneration: Int
   ) {
+    guard hostGeneration == state.hostGeneration else { return }
     var nextItems = state.items
     guard let sourceIDs = applyMove(
       sourceIDs: difference.sources,
@@ -204,7 +215,11 @@ private final class RNReorderableModel: ObservableObject {
   }
 
   @available(iOS 27.0, *)
-  func applySectionMove(_ difference: ReorderDifference<String, String>) {
+  func applySectionMove(
+    _ difference: ReorderDifference<String, String>,
+    hostGeneration: Int
+  ) {
+    guard hostGeneration == state.hostGeneration else { return }
     var nextSections = state.sections
     guard let movedEntries = resolveMoveSet(
       sourceIDs: difference.sources,
@@ -250,9 +265,15 @@ private final class RNReorderableModel: ObservableObject {
   func debugEmitTerminalReorder(
     sourceIDs: [String],
     destinationCollectionID: String,
-    destinationBeforeID: String
+    destinationBeforeID: String,
+    hostGeneration: Int
   ) {
-    guard state.enabled, state.mode == .reorder, !sourceIDs.isEmpty else { return }
+    guard
+      hostGeneration == state.hostGeneration,
+      state.enabled,
+      state.mode == .reorder,
+      !sourceIDs.isEmpty
+    else { return }
     let availableItems = state.sections.isEmpty
       ? state.items
       : state.sections.flatMap(\.items)
@@ -468,7 +489,11 @@ private struct RNSingleCollectionView: View {
       .reorderable()
     }
     .reorderContainer(for: RNHostedEntry.self, isEnabled: model.state.enabled) {
-      model.applySingleCollectionMove($0)
+      [hostGeneration = model.state.hostGeneration] difference in
+      model.applySingleCollectionMove(
+        difference,
+        hostGeneration: hostGeneration
+      )
     }
     .dragContainerSelection(model.state.selectedIDs)
   }
@@ -511,7 +536,8 @@ private struct RNSectionedCollectionView: View {
       in: String.self,
       isEnabled: model.state.enabled
     ) {
-      model.applySectionMove($0)
+      [hostGeneration = model.state.hostGeneration] difference in
+      model.applySectionMove(difference, hostGeneration: hostGeneration)
     }
     .dragContainerSelection(model.state.selectedIDs)
   }
@@ -584,10 +610,14 @@ final class RNReorderableHostingView: UIView {
     didSet { model.dropHandler = dropHandler }
   }
 
+  @objc var interactionStateHandler: ((Bool) -> Void)?
+
   private let model: RNReorderableModel
   private var hostingController: UIViewController?
   private weak var hostingParent: UIViewController?
   private let fallbackContainer = UIView()
+  private var debugInteractionActive = false
+  private var debugInteractionGeneration: Int?
 
   @objc(initWithLayoutCoordinator:)
   init(layoutCoordinator: RNReorderableLayoutCoordinator) {
@@ -597,6 +627,18 @@ final class RNReorderableHostingView: UIView {
     fallbackContainer.backgroundColor = .clear
     addSubview(fallbackContainer)
     installNativeHostIfAvailable()
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(cancelActiveInteraction),
+      name: UIApplication.willResignActiveNotification,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(cancelActiveInteraction),
+      name: UIApplication.didEnterBackgroundNotification,
+      object: nil
+    )
   }
 
   @available(*, unavailable)
@@ -647,6 +689,7 @@ final class RNReorderableHostingView: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil {
+      cancelActiveInteraction()
       detachHostingController()
     } else {
       attachHostingControllerIfNeeded()
@@ -654,12 +697,24 @@ final class RNReorderableHostingView: UIView {
   }
 
   @objc func invalidate() {
+    cancelActiveInteraction()
+    NotificationCenter.default.removeObserver(self)
     moveHandler = nil
     dropHandler = nil
+    interactionStateHandler = nil
     detachHostingController()
     hostingController?.view.removeFromSuperview()
     hostingController = nil
     fallbackContainer.subviews.forEach { $0.removeFromSuperview() }
+  }
+
+  @objc private func cancelActiveInteraction() {
+    guard hostingController != nil else { return }
+    model.cancelInteraction()
+    if debugInteractionActive {
+      debugInteractionActive = false
+      interactionStateHandler?(false)
+    }
   }
 
   @objc func invalidateHostedLayout() {
@@ -670,17 +725,31 @@ final class RNReorderableHostingView: UIView {
   }
 
   #if DEBUG
+  @objc func debugBeginInteraction() {
+    guard !debugInteractionActive else { return }
+    debugInteractionActive = true
+    debugInteractionGeneration = model.state.hostGeneration
+    interactionStateHandler?(true)
+  }
+
   @objc(debugEmitTerminalReorderWithSourceIds:destinationCollectionId:destinationBeforeId:)
   func debugEmitTerminalReorder(
     sourceIDs: [String],
     destinationCollectionID: String,
     destinationBeforeID: String
   ) {
+    guard let hostGeneration = debugInteractionGeneration else { return }
     model.debugEmitTerminalReorder(
       sourceIDs: sourceIDs,
       destinationCollectionID: destinationCollectionID,
-      destinationBeforeID: destinationBeforeID
+      destinationBeforeID: destinationBeforeID,
+      hostGeneration: hostGeneration
     )
+    debugInteractionGeneration = nil
+    if debugInteractionActive {
+      debugInteractionActive = false
+      interactionStateHandler?(false)
+    }
   }
   #endif
 

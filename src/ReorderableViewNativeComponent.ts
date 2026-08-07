@@ -37,6 +37,7 @@ export interface NativeProps extends ViewProps {
   acceptedDropZoneIds: ReadonlyArray<string>;
   layoutRevision: string;
   enabled: boolean;
+  debugAccessibilityContainerId?: string;
   onMove?: DirectEventHandler<NativeMoveEvent>;
   onDrop?: DirectEventHandler<NativeDropEvent>;
   onDragActivate?: DirectEventHandler<NativeDragActivateEvent>;
@@ -68,6 +69,11 @@ interface NativeCommands {
     viewRef: React.ElementRef<HostComponent<NativeProps>>,
     outside: boolean
   ) => void;
+  debugPerformAccessibilityAction: (
+    viewRef: React.ElementRef<HostComponent<NativeProps>>,
+    itemLabel: string,
+    actionLabel: string
+  ) => void;
 }
 
 export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
@@ -78,6 +84,7 @@ export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
     'debugBeginDrop',
     'debugTargetDrop',
     'debugEmitTerminalDrop',
+    'debugPerformAccessibilityAction',
   ],
 });
 

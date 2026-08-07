@@ -1,4 +1,5 @@
 import UIKit
+import React
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
@@ -23,6 +24,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       withModuleName: "ReorderableExample",
       in: window,
       launchOptions: appDelegate.launchOptions
+    )
+  }
+
+  func scene(_ scene: UIScene, openURLContexts contexts: Set<UIOpenURLContext>) {
+    guard let url = contexts.first?.url else { return }
+    _ = (UIApplication.shared.delegate as? AppDelegate)?.application(
+      UIApplication.shared,
+      open: url,
+      options: [:]
     )
   }
 }

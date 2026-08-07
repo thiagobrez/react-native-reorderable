@@ -13,6 +13,7 @@ import {
 } from 'react-native-reorderable';
 import { NativeCommitAcceptanceContainer } from '../../src/issue25-acceptance';
 import { FallbackCommitAcceptanceContainer } from '../../src/issue26-acceptance';
+import type { SemanticActionRequest } from '../../src/issue31-acceptance';
 import {
   FallbackDropAcceptanceContainer,
   NativeDropAcceptanceContainer,
@@ -120,9 +121,9 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
     }
   };
 
-  const renderedCards = cards.map((card, index) => (
+  const renderedCards = cards.map((card) => (
     <ReorderableItem
-      accessibilityLabel={`${card.label} card, position ${index + 1}`}
+      accessibilityLabel={`${card.label} card`}
       id={card.id}
       key={card.id}
       style={[styles.card, { backgroundColor: card.color }]}
@@ -220,11 +221,18 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
   );
 }
 
-function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
+function SectionedCollectionExample({
+  actionRequest,
+  engine,
+}: {
+  actionRequest: SemanticActionRequest | null;
+  engine: EnginePolicy;
+}) {
   const [sections, setSections] = useState(initialSections);
   const [callbackCount, setCallbackCount] = useState(0);
   const [lastEvent, setLastEvent] = useState('None');
   const [greenExpanded, setGreenExpanded] = useState(false);
+  const [appActionCount, setAppActionCount] = useState(0);
   const selectedIds = ['pink', 'missing', 'blue', 'pink', 'yellow'] as const;
 
   const handleReorder = (event: ReorderEvent) => {
@@ -272,14 +280,24 @@ function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
       key={section.id}
       style={styles.cardSection}
     >
-      {section.cards.map((card, index) => {
+      {section.cards.map((card) => {
         const selected = ['blue', 'yellow', 'pink'].includes(card.id);
         return (
           <ReorderableItem
-            accessibilityLabel={`${card.label} card, ${section.title} position ${index + 1}`}
+            accessibilityActions={
+              card.id === 'blue'
+                ? [{ name: 'mark-favorite', label: 'Mark favorite' }]
+                : undefined
+            }
+            accessibilityLabel={`${card.label} card`}
             accessibilityState={{ selected }}
             id={card.id}
             key={card.id}
+            onAccessibilityAction={(event) => {
+              if (event.nativeEvent.actionName === 'mark-favorite') {
+                setAppActionCount((count) => count + 1);
+              }
+            }}
             style={[
               styles.card,
               { backgroundColor: card.color },
@@ -327,6 +345,9 @@ function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
       <Text style={styles.outcome} testID="sections-last-event">
         Last event: {lastEvent}
       </Text>
+      <Text style={styles.outcome} testID="sections-app-action-count">
+        App actions: {appActionCount}
+      </Text>
       <View style={styles.scenarioActions}>
         <Pressable
           accessibilityLabel="Toggle Green card size"
@@ -353,11 +374,19 @@ function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
         </Pressable>
       </View>
       {__DEV__ && engine === 'fallback' ? (
-        <FallbackCommitAcceptanceContainer {...containerProps}>
+        <FallbackCommitAcceptanceContainer
+          {...containerProps}
+          actionContainerId="sections"
+          actionRequest={actionRequest}
+        >
           {renderedSections}
         </FallbackCommitAcceptanceContainer>
       ) : __DEV__ ? (
-        <NativeCommitAcceptanceContainer {...containerProps}>
+        <NativeCommitAcceptanceContainer
+          {...containerProps}
+          actionContainerId="sections"
+          actionRequest={actionRequest}
+        >
           {renderedSections}
         </NativeCommitAcceptanceContainer>
       ) : (
@@ -570,6 +599,7 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
 export default function App() {
   const [demo, setDemo] = useState<Demo>('single');
   const [engine, setEngine] = useState<EnginePolicy>('auto');
+  const actionRequest: SemanticActionRequest | null = null;
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -604,7 +634,11 @@ export default function App() {
             <SingleCollectionExample engine={engine} key={engine} />
           )}
           {demo === 'sections' && (
-            <SectionedCollectionExample engine={engine} key={engine} />
+            <SectionedCollectionExample
+              actionRequest={actionRequest}
+              engine={engine}
+              key={engine}
+            />
           )}
           {demo === 'drop' && <DragDropExample engine={engine} key={engine} />}
         </View>

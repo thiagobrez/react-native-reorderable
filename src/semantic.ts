@@ -5,6 +5,13 @@ import type {
   ReorderEvent,
 } from './types';
 
+export type AccessibleReorderDirection = 'earlier' | 'later';
+
+export type AccessibleReorderMove = Readonly<{
+  sourceIds: readonly string[];
+  destination: ReorderDestination;
+}>;
+
 export function reconcileDrop(
   knownItemIds: readonly string[],
   sourceIds: readonly string[],
@@ -99,6 +106,76 @@ export function canonicalMoveSet(
   const selectedSet = new Set(selectedIds);
   if (!selectedSet.has(activatedId)) return [activatedId];
   return currentItemIds.filter((id) => selectedSet.has(id));
+}
+
+/** Resolves one logical semantic-action step without entering drag state. */
+export function accessibleReorderMove(
+  currentOrder: readonly CollectionOrder[],
+  activatedId: string,
+  selectedIds: readonly string[],
+  direction: AccessibleReorderDirection
+): AccessibleReorderMove | null {
+  const sourceIds = canonicalMoveSet(currentOrder, activatedId, selectedIds);
+  if (sourceIds.length === 0) return null;
+
+  const sourceSet = new Set(sourceIds);
+  const firstSourceCollectionIndex = currentOrder.findIndex((collection) =>
+    collection.itemIds.includes(sourceIds[0]!)
+  );
+  const lastSourceId = sourceIds[sourceIds.length - 1]!;
+  const lastSourceCollectionIndex = currentOrder.findIndex((collection) =>
+    collection.itemIds.includes(lastSourceId)
+  );
+
+  let destination: ReorderDestination | null = null;
+  if (direction === 'earlier') {
+    const sourceCollection = currentOrder[firstSourceCollectionIndex]!;
+    const firstIndex = sourceCollection.itemIds.indexOf(sourceIds[0]!);
+    const precedingId = sourceCollection.itemIds
+      .slice(0, firstIndex)
+      .findLast((id) => !sourceSet.has(id));
+    if (precedingId != null) {
+      destination = {
+        sectionId: sourceCollection.sectionId,
+        beforeId: precedingId,
+      };
+    } else if (firstSourceCollectionIndex > 0) {
+      destination = {
+        sectionId: currentOrder[firstSourceCollectionIndex - 1]!.sectionId,
+        beforeId: null,
+      };
+    }
+  } else {
+    const sourceCollection = currentOrder[lastSourceCollectionIndex]!;
+    const lastIndex = sourceCollection.itemIds.indexOf(lastSourceId);
+    const followingIndex = sourceCollection.itemIds.findIndex(
+      (id, index) => index > lastIndex && !sourceSet.has(id)
+    );
+    if (followingIndex >= 0) {
+      const afterFollowingId = sourceCollection.itemIds
+        .slice(followingIndex + 1)
+        .find((id) => !sourceSet.has(id));
+      destination = {
+        sectionId: sourceCollection.sectionId,
+        beforeId: afterFollowingId ?? null,
+      };
+    } else if (lastSourceCollectionIndex < currentOrder.length - 1) {
+      const nextCollection = currentOrder[lastSourceCollectionIndex + 1]!;
+      destination = {
+        sectionId: nextCollection.sectionId,
+        beforeId:
+          nextCollection.itemIds.find((id) => !sourceSet.has(id)) ?? null,
+      };
+    }
+  }
+
+  if (
+    destination == null ||
+    reconcileReorder(currentOrder, sourceIds, destination) == null
+  ) {
+    return null;
+  }
+  return { sourceIds, destination };
 }
 
 /**

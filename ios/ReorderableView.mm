@@ -27,6 +27,25 @@
 using namespace facebook;
 using namespace facebook::react;
 
+static NSString *const RNReorderableDebugAccessibilityActionNotification =
+    @"RNReorderableDebugAccessibilityAction";
+
+#if DEBUG
+static UIView *RNFindAccessibilityView(UIView *view, NSString *label)
+{
+  if ([view.accessibilityLabel isEqualToString:label]) {
+    return view;
+  }
+  for (UIView *child in view.subviews) {
+    UIView *match = RNFindAccessibilityView(child, label);
+    if (match != nil) {
+      return match;
+    }
+  }
+  return nil;
+}
+#endif
+
 @interface ReorderableView () <RCTReorderableViewViewProtocol>
 @end
 
@@ -228,6 +247,7 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
   RNReorderableHostingView *_hostingView;
   RNReorderableLayoutCoordinator *_layoutCoordinator;
   NSMutableArray<UIView<RCTComponentViewProtocol> *> *_childComponentViews;
+  NSString *_debugAccessibilityContainerId;
   EventEmitter::Shared _reorderableEventEmitter;
   BOOL _needsSync;
 }
@@ -327,6 +347,22 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
 
 - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
 {
+#if DEBUG
+  const auto &newProps = *std::static_pointer_cast<ReorderableViewProps const>(props);
+  NSString *containerId = RNString(newProps.debugAccessibilityContainerId);
+  if (![_debugAccessibilityContainerId isEqualToString:containerId]) {
+    [NSNotificationCenter.defaultCenter removeObserver:self
+                                                  name:RNReorderableDebugAccessibilityActionNotification
+                                                object:nil];
+    _debugAccessibilityContainerId = [containerId copy];
+    if (_debugAccessibilityContainerId.length > 0) {
+      [NSNotificationCenter.defaultCenter addObserver:self
+                                             selector:@selector(debugPerformAccessibilityActionNotification:)
+                                                 name:RNReorderableDebugAccessibilityActionNotification
+                                               object:nil];
+    }
+  }
+#endif
   [super updateProps:props oldProps:oldProps];
   _needsSync = YES;
 }
@@ -373,6 +409,7 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
 
 - (void)invalidate
 {
+  [NSNotificationCenter.defaultCenter removeObserver:self];
   [_hostingView invalidate];
   _reorderableEventEmitter.reset();
   [super invalidate];
@@ -439,6 +476,40 @@ static std::string RNLayoutIdentifier(NSString *kind, NSString *entryId, NSStrin
 {
 #if DEBUG
   [_hostingView debugEmitTerminalDropOutside:outside];
+#endif
+}
+
+- (void)debugPerformAccessibilityAction:(NSString *)itemLabel
+                            actionLabel:(NSString *)actionLabel
+{
+#if DEBUG
+  UIView *target = RNFindAccessibilityView(self.window ?: self, itemLabel);
+  for (UIAccessibilityCustomAction *action in target.accessibilityCustomActions) {
+    if (![action.name isEqualToString:actionLabel] || action.target == nil) {
+      continue;
+    }
+    typedef BOOL (*AccessibilityActionHandler)(id, SEL, UIAccessibilityCustomAction *);
+    AccessibilityActionHandler handler =
+        (AccessibilityActionHandler)[action.target methodForSelector:action.selector];
+    if (handler != NULL) {
+      handler(action.target, action.selector, action);
+    }
+    return;
+  }
+#endif
+}
+
+- (void)debugPerformAccessibilityActionNotification:(NSNotification *)notification
+{
+#if DEBUG
+  NSString *itemLabel = notification.userInfo[@"itemLabel"];
+  NSString *actionLabel = notification.userInfo[@"actionLabel"];
+  NSString *containerId = notification.userInfo[@"containerId"];
+  if ([itemLabel isKindOfClass:NSString.class] &&
+      [actionLabel isKindOfClass:NSString.class] &&
+      [containerId isEqualToString:_debugAccessibilityContainerId]) {
+    [self debugPerformAccessibilityAction:itemLabel actionLabel:actionLabel];
+  }
 #endif
 }
 

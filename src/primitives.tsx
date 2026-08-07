@@ -1,5 +1,6 @@
 import {
   Children,
+  cloneElement,
   createRef,
   isValidElement,
   useEffect,
@@ -9,8 +10,19 @@ import {
   type ReactNode,
   type RefAttributes,
 } from 'react';
-import type { NativeSyntheticEvent } from 'react-native';
-import { Button, Platform, View } from 'react-native';
+import type {
+  AccessibilityActionEvent,
+  NativeSyntheticEvent,
+  ViewProps,
+} from 'react-native';
+import {
+  AccessibilityInfo,
+  Button,
+  findNodeHandle,
+  Platform,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import NativeReorderableView, {
   type NativeDropEvent,
@@ -25,7 +37,7 @@ import {
   parseNativeIds,
   prepareNativeEntries,
 } from './normalize';
-import { reconcileReorder } from './semantic';
+import { accessibleReorderMove, reconcileReorder } from './semantic';
 import { InteractionLifecycle } from './lifecycle';
 import {
   FallbackReorderContainer,
@@ -43,13 +55,33 @@ import type {
 } from './types';
 import { FallbackDropContainer } from './fallback-drop';
 import { reconcileDrop } from './semantic';
+import {
+  collectionOrderSignature,
+  resolveAccessibilityStrings,
+} from './accessibility';
 
 type AcceptanceMove = Readonly<{
   sourceIds: readonly string[];
   destination: ReorderDestination;
 }>;
 
+export type SemanticActionRequest = Readonly<{
+  actionLabel: string;
+  itemLabel: string;
+  nonce: number;
+}>;
+
 type HostViewRef = React.ElementRef<typeof View>;
+type AndroidCollectionItemProps = Readonly<{
+  accessibilityCollectionItem?: Readonly<{
+    columnIndex: number;
+    columnSpan: number;
+    heading: boolean;
+    itemIndex: number;
+    rowIndex: number;
+    rowSpan: number;
+  }>;
+}>;
 type ReorderableContainerComponentProps = ReorderableContainerProps &
   RefAttributes<HostViewRef>;
 type ReorderableItemComponentProps = ReorderableItemProps &
@@ -59,6 +91,8 @@ type ReorderableSectionComponentProps = ReorderableSectionProps &
 
 type InternalReorderableContainerProps = ReorderableContainerComponentProps & {
   debugAcceptanceMove?: AcceptanceMove;
+  debugAccessibilityAction?: SemanticActionRequest | null;
+  debugAccessibilityContainerId?: string;
   debugInteractionStateChange?: (active: boolean) => void;
 };
 
@@ -105,6 +139,20 @@ function layoutRevision(
   ]);
 }
 
+function uniqueAccessibilityActionName(
+  baseName: string,
+  appActions: NonNullable<ViewProps['accessibilityActions']>
+): string {
+  const appNames = new Set(appActions.map((action) => action.name));
+  let name = baseName;
+  let suffix = 1;
+  while (appNames.has(name)) {
+    name = `${baseName}.${suffix}`;
+    suffix += 1;
+  }
+  return name;
+}
+
 export function ReorderableItem({
   children,
   id: _id,
@@ -134,13 +182,15 @@ export function ReorderableSection(props: ReorderableSectionComponentProps) {
 
 function ReorderableContainerImplementation({
   children,
-  accessibilityStrings: _accessibilityStrings,
+  accessibilityStrings,
   enabled = true,
   engine = 'auto',
   onReorder,
   ref,
   selectedIds = [],
   debugAcceptanceMove,
+  debugAccessibilityAction,
+  debugAccessibilityContainerId,
   debugInteractionStateChange,
   ...viewProps
 }: InternalReorderableContainerProps) {
@@ -156,11 +206,237 @@ function ReorderableContainerImplementation({
     if (!enabled) debugInteractionStateChange?.(false);
     return () => debugInteractionStateChange?.(false);
   }, [debugInteractionStateChange, enabled]);
-  const nativeRef = createRef<React.ElementRef<typeof NativeReorderableView>>();
+  const nativeRef =
+    useRef<React.ElementRef<typeof NativeReorderableView>>(null);
+  const debugAccessibilityBridgeRef =
+    useRef<React.ElementRef<typeof NativeReorderableView>>(null);
   const normalized = normalizeReorderableChildren(children, {
     Item: ReorderableItem,
     Section: ReorderableSection,
   });
+  const currentOrderRef = useRef(normalized.order);
+  currentOrderRef.current = normalized.order;
+  const currentItemIds = normalized.order.flatMap(
+    (collection) => collection.itemIds
+  );
+  const selectedSet = new Set(selectedIds);
+  const normalizedSelectedIds = currentItemIds.filter((id) =>
+    selectedSet.has(id)
+  );
+  const semanticActionSignature = JSON.stringify([
+    enabled,
+    normalized.order,
+    normalizedSelectedIds,
+  ]);
+  const currentSemanticActionSignatureRef = useRef(semanticActionSignature);
+  currentSemanticActionSignatureRef.current = semanticActionSignature;
+  const onReorderRef = useRef(onReorder);
+  onReorderRef.current = onReorder;
+  const resolvedAccessibilityStrings =
+    resolveAccessibilityStrings(accessibilityStrings);
+  const accessibilityStringsRef = useRef(resolvedAccessibilityStrings);
+  accessibilityStringsRef.current = resolvedAccessibilityStrings;
+  const accessibleItemRefs = useRef(new Map<string, unknown>());
+  const pendingAccessibleOrder = useRef<string | null>(null);
+  const currentOrderSignature = collectionOrderSignature(normalized.order);
+  const currentOrderSignatureRef = useRef(currentOrderSignature);
+  currentOrderSignatureRef.current = currentOrderSignature;
+
+  const focusAccessibleItem = (id: string) => {
+    setTimeout(() => {
+      const tag = findNodeHandle(accessibleItemRefs.current.get(id));
+      if (tag != null) AccessibilityInfo.setAccessibilityFocus(tag);
+    }, 0);
+  };
+
+  const settlePendingAccessibleOrder = () => {
+    const expectedOrder = pendingAccessibleOrder.current;
+    if (expectedOrder == null) return;
+    pendingAccessibleOrder.current = null;
+    if (expectedOrder !== currentOrderSignatureRef.current) {
+      AccessibilityInfo.announceForAccessibility(
+        accessibilityStringsRef.current.orderCorrectedAnnouncement
+      );
+    }
+  };
+
+  useEffect(settlePendingAccessibleOrder);
+
+  const handleAccessibleMove = (
+    activatedId: string,
+    move: NonNullable<ReturnType<typeof accessibleReorderMove>>,
+    activationSignature: string
+  ) => {
+    if (activationSignature !== currentSemanticActionSignatureRef.current) {
+      AccessibilityInfo.announceForAccessibility(
+        accessibilityStringsRef.current.unavailableAnnouncement
+      );
+      focusAccessibleItem(activatedId);
+      return;
+    }
+    const committedEvent = reconcileReorder(
+      currentOrderRef.current,
+      move.sourceIds,
+      move.destination
+    );
+    if (committedEvent == null) {
+      AccessibilityInfo.announceForAccessibility(
+        accessibilityStringsRef.current.unavailableAnnouncement
+      );
+      focusAccessibleItem(activatedId);
+      return;
+    }
+    pendingAccessibleOrder.current = collectionOrderSignature(
+      committedEvent.nextOrder
+    );
+    onReorderRef.current(committedEvent);
+    const destinationCollection = committedEvent.nextOrder.find(
+      (collection) =>
+        collection.sectionId === committedEvent.destination.sectionId
+    )!;
+    AccessibilityInfo.announceForAccessibility(
+      accessibilityStringsRef.current.reorderAnnouncement({
+        event: committedEvent,
+        position:
+          destinationCollection.itemIds.indexOf(committedEvent.sourceIds[0]!) +
+          1,
+        collectionSize: destinationCollection.itemIds.length,
+      })
+    );
+    focusAccessibleItem(activatedId);
+  };
+
+  const accessibleChildren = normalized.children.map((child, index) => {
+    if (normalized.entryKinds[index] !== 'item') return child;
+    const id = normalized.entryIds[index]!;
+    const earlier = accessibleReorderMove(
+      normalized.order,
+      id,
+      selectedIds,
+      'earlier'
+    );
+    const later = accessibleReorderMove(
+      normalized.order,
+      id,
+      selectedIds,
+      'later'
+    );
+    const accessibleChild = child as ReactElement<
+      ViewProps & AndroidCollectionItemProps & RefAttributes<unknown>
+    >;
+    const childProps = accessibleChild.props;
+    const appActions = childProps.accessibilityActions ?? [];
+    const earlierActionName = uniqueAccessibilityActionName(
+      'reorder-move-earlier',
+      appActions
+    );
+    const laterActionName = uniqueAccessibilityActionName(
+      'reorder-move-later',
+      appActions
+    );
+    const collection = normalized.order.find((candidate) =>
+      candidate.itemIds.includes(id)
+    )!;
+    const collectionIndex = normalized.order.indexOf(collection);
+    const position = collection.itemIds.indexOf(id) + 1;
+    const libraryActions: NonNullable<
+      ViewProps['accessibilityActions']
+    >[number][] = [];
+    if (earlier != null) {
+      libraryActions.push({
+        name: earlierActionName,
+        label: resolvedAccessibilityStrings.moveEarlierAction,
+      });
+    }
+    if (later != null) {
+      libraryActions.push({
+        name: laterActionName,
+        label: resolvedAccessibilityStrings.moveLaterAction,
+      });
+    }
+    const onAppAccessibilityAction = childProps.onAccessibilityAction;
+    const appRef = childProps.ref;
+    return cloneElement(accessibleChild, {
+      accessible: childProps.accessible ?? true,
+      accessibilityActions: [...appActions, ...libraryActions],
+      accessibilityValue: {
+        max: collection.itemIds.length,
+        min: 1,
+        now: position,
+      },
+      ...(Platform.OS === 'android'
+        ? {
+            accessibilityCollectionItem: {
+              columnIndex: collectionIndex,
+              columnSpan: 1,
+              heading: false,
+              itemIndex: position - 1,
+              rowIndex: position - 1,
+              rowSpan: 1,
+            },
+          }
+        : {}),
+      onAccessibilityAction: (event: AccessibilityActionEvent) => {
+        const actionName = event.nativeEvent.actionName;
+        if (actionName === earlierActionName) {
+          if (earlier != null) {
+            handleAccessibleMove(id, earlier, semanticActionSignature);
+          } else {
+            AccessibilityInfo.announceForAccessibility(
+              accessibilityStringsRef.current.unavailableAnnouncement
+            );
+            focusAccessibleItem(id);
+          }
+        } else if (actionName === laterActionName) {
+          if (later != null) {
+            handleAccessibleMove(id, later, semanticActionSignature);
+          } else {
+            AccessibilityInfo.announceForAccessibility(
+              accessibilityStringsRef.current.unavailableAnnouncement
+            );
+            focusAccessibleItem(id);
+          }
+        } else {
+          onAppAccessibilityAction?.(event);
+        }
+      },
+      ref: (value: unknown) => {
+        assignHostRef(appRef, value);
+        if (value == null) accessibleItemRefs.current.delete(id);
+        else accessibleItemRefs.current.set(id, value);
+      },
+    });
+  });
+
+  useEffect(() => {
+    if (debugAccessibilityAction == null) return;
+    const target = nativeRef.current ?? debugAccessibilityBridgeRef.current;
+    if (target == null) return;
+    Commands.debugPerformAccessibilityAction(
+      target,
+      debugAccessibilityAction.itemLabel,
+      debugAccessibilityAction.actionLabel
+    );
+  }, [debugAccessibilityAction]);
+
+  const debugAccessibilityBridge =
+    debugAccessibilityAction === undefined ? null : (
+      <NativeReorderableView
+        acceptedDropZoneIds={[]}
+        collectionIds={[]}
+        debugAccessibilityContainerId={debugAccessibilityContainerId}
+        enabled={false}
+        entryIds={[]}
+        entryKinds={[]}
+        layoutRevision="accessibility-action-bridge"
+        mode="reorder"
+        orderedEntryIds={[]}
+        parentEntryIds={[]}
+        ref={debugAccessibilityBridgeRef}
+        selectedIds={[]}
+        style={debugStyles.accessibilityActionBridge}
+      />
+    );
 
   if (!enabled) {
     return (
@@ -202,32 +478,30 @@ function ReorderableContainerImplementation({
       );
     }
     return (
-      <FallbackReorderContainer
-        {...viewProps}
-        collectionIds={normalized.collectionIds}
-        debugAcceptanceMove={debugAcceptanceMove}
-        entryIds={normalized.entryIds}
-        entryKinds={normalized.entryKinds}
-        forwardedRef={ref}
-        onInteractionStart={handleFallbackInteractionStart}
-        onInteractionStateChange={debugInteractionStateChange}
-        onTerminal={handleTerminal}
-        order={normalized.order}
-        selectedIds={selectedIds}
-      >
-        {normalized.children}
-      </FallbackReorderContainer>
+      <>
+        {debugAccessibilityBridge}
+        <FallbackReorderContainer
+          {...viewProps}
+          collectionIds={normalized.collectionIds}
+          debugAcceptanceMove={debugAcceptanceMove}
+          entryIds={normalized.entryIds}
+          entryKinds={normalized.entryKinds}
+          forwardedRef={ref}
+          onInteractionStart={handleFallbackInteractionStart}
+          onInteractionStateChange={debugInteractionStateChange}
+          onTerminal={handleTerminal}
+          order={normalized.order}
+          selectedIds={selectedIds}
+        >
+          {accessibleChildren}
+        </FallbackReorderContainer>
+      </>
     );
   }
-  const nativeEntries = prepareNativeEntries(normalized);
-  const currentItemIds = normalized.order.flatMap(
-    (collection) => collection.itemIds
-  );
-  const selectedSet = new Set(selectedIds);
-  const normalizedSelectedIds = currentItemIds.filter((id) =>
-    selectedSet.has(id)
-  );
-
+  const nativeEntries = prepareNativeEntries({
+    ...normalized,
+    children: accessibleChildren,
+  });
   const handleMove = (event: NativeSyntheticEvent<NativeMoveEvent>) => {
     const { destinationBeforeId, destinationCollectionId, sourceIdsJson } =
       event.nativeEvent;
@@ -266,6 +540,7 @@ function ReorderableContainerImplementation({
         {...viewProps}
         acceptedDropZoneIds={[]}
         collectionIds={nativeEntries.collectionIds}
+        debugAccessibilityContainerId={debugAccessibilityContainerId}
         enabled={enabled}
         entryIds={nativeEntries.entryIds}
         entryKinds={nativeEntries.entryKinds}
@@ -289,6 +564,15 @@ function ReorderableContainerImplementation({
   );
 }
 
+const debugStyles = StyleSheet.create({
+  accessibilityActionBridge: {
+    height: 1,
+    opacity: 0,
+    position: 'absolute',
+    width: 1,
+  },
+});
+
 export function ReorderableContainer(
   props: ReorderableContainerComponentProps
 ) {
@@ -308,14 +592,24 @@ export function ReorderableContainer(
 export function NativeCommitAcceptanceContainer(
   props: ReorderableContainerComponentProps & {
     acceptanceMove: AcceptanceMove;
+    actionRequest?: SemanticActionRequest | null;
+    actionContainerId?: string;
     onInteractionStateChange?: (active: boolean) => void;
   }
 ) {
-  const { acceptanceMove, onInteractionStateChange, ...containerProps } = props;
+  const {
+    acceptanceMove,
+    actionRequest,
+    actionContainerId,
+    onInteractionStateChange,
+    ...containerProps
+  } = props;
   return (
     <ReorderableContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+      debugAccessibilityAction={actionRequest}
+      debugAccessibilityContainerId={actionContainerId}
       debugInteractionStateChange={onInteractionStateChange}
     />
   );
@@ -325,16 +619,43 @@ export function NativeCommitAcceptanceContainer(
 export function FallbackCommitAcceptanceContainer(
   props: ReorderableContainerComponentProps & {
     acceptanceMove: AcceptanceMove;
+    actionRequest?: SemanticActionRequest | null;
+    actionContainerId?: string;
     onInteractionStateChange?: (active: boolean) => void;
   }
 ) {
-  const { acceptanceMove, onInteractionStateChange, ...containerProps } = props;
+  const {
+    acceptanceMove,
+    actionRequest,
+    actionContainerId,
+    onInteractionStateChange,
+    ...containerProps
+  } = props;
   return (
     <ReorderableContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+      debugAccessibilityAction={actionRequest}
+      debugAccessibilityContainerId={actionContainerId}
       debugInteractionStateChange={onInteractionStateChange}
       engine="fallback"
+    />
+  );
+}
+
+/** @internal DEBUG harness that asks native accessibility to invoke a real item action. */
+export function SemanticActionAcceptanceContainer(
+  props: ReorderableContainerComponentProps & {
+    actionRequest: SemanticActionRequest | null;
+    actionContainerId: string;
+  }
+) {
+  const { actionContainerId, actionRequest, ...containerProps } = props;
+  return (
+    <ReorderableContainerImplementation
+      {...containerProps}
+      debugAccessibilityAction={actionRequest}
+      debugAccessibilityContainerId={actionContainerId}
     />
   );
 }

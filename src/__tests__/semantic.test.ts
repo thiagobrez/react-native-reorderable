@@ -1,6 +1,64 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { canonicalMoveSet, reconcileDrop, reconcileReorder } from '../semantic';
+import {
+  accessibleReorderMove,
+  canonicalMoveSet,
+  reconcileDrop,
+  reconcileReorder,
+} from '../semantic';
+
+describe('accessibleReorderMove', () => {
+  const order = [
+    { sectionId: 'empty-before', itemIds: [] },
+    { sectionId: 'one', itemIds: ['blue', 'green', 'yellow'] },
+    { sectionId: 'empty-middle', itemIds: [] },
+    { sectionId: 'two', itemIds: ['orange', 'pink'] },
+    { sectionId: 'empty-after', itemIds: [] },
+  ] as const;
+
+  it('moves a selected item earlier as one canonical move set', () => {
+    expect(
+      accessibleReorderMove(order, 'pink', ['pink', 'green'], 'earlier')
+    ).toEqual({
+      sourceIds: ['green', 'pink'],
+      destination: { sectionId: 'one', beforeId: 'blue' },
+    });
+  });
+
+  it('moves later across a section boundary into an empty section', () => {
+    expect(accessibleReorderMove(order, 'yellow', [], 'later')).toEqual({
+      sourceIds: ['yellow'],
+      destination: { sectionId: 'empty-middle', beforeId: null },
+    });
+  });
+
+  it('moves earlier across a section boundary into an empty section', () => {
+    expect(accessibleReorderMove(order, 'blue', [], 'earlier')).toEqual({
+      sourceIds: ['blue'],
+      destination: { sectionId: 'empty-before', beforeId: null },
+    });
+  });
+
+  it('omits actions at the first and last logical boundaries', () => {
+    expect(accessibleReorderMove(order, 'blue', [], 'earlier')).not.toBeNull();
+    expect(
+      accessibleReorderMove(
+        [{ sectionId: null, itemIds: ['blue', 'green'] }],
+        'blue',
+        [],
+        'earlier'
+      )
+    ).toBeNull();
+    expect(
+      accessibleReorderMove(
+        [{ sectionId: null, itemIds: ['blue', 'green'] }],
+        'green',
+        [],
+        'later'
+      )
+    ).toBeNull();
+  });
+});
 
 describe('reconcileDrop', () => {
   it('emits only canonical known identities and the known destination', () => {

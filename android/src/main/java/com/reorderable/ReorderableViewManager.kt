@@ -60,6 +60,14 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
   @ReactProp(name = "enabled")
   override fun setEnabled(view: ReorderableView?, value: Boolean) = Unit
 
+  @ReactProp(name = "debugAccessibilityContainerId")
+  override fun setDebugAccessibilityContainerId(
+    view: ReorderableView?,
+    value: String?
+  ) {
+    view?.setDebugAccessibilityContainerId(value)
+  }
+
   override fun cancelInteraction(view: ReorderableView) = Unit
 
   override fun debugBeginInteraction(view: ReorderableView) = Unit
@@ -76,6 +84,14 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
   override fun debugTargetDrop(view: ReorderableView, destinationId: String) = Unit
 
   override fun debugEmitTerminalDrop(view: ReorderableView, outside: Boolean) = Unit
+
+  override fun debugPerformAccessibilityAction(
+    view: ReorderableView,
+    itemLabel: String,
+    actionLabel: String
+  ) {
+    view.debugPerformAccessibilityAction(itemLabel, actionLabel)
+  }
 
   companion object {
     const val NAME = "ReorderableView"

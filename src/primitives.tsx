@@ -16,6 +16,10 @@ import {
   prepareNativeEntries,
 } from './normalize';
 import { reconcileReorder } from './semantic';
+import {
+  FallbackReorderContainer,
+  type FallbackTerminalEvent,
+} from './fallback';
 import type {
   DragContainerProps,
   DraggableItemProps,
@@ -124,9 +128,43 @@ function ReorderableContainerImplementation({
       </View>
     );
   }
+  const commitTerminal = (
+    sourceIdsJson: string,
+    destinationCollectionId: string,
+    destinationBeforeId: string
+  ) => {
+    const sourceIds = parseNativeIds(sourceIdsJson);
+    const committedEvent = reconcileReorder(normalized.order, sourceIds, {
+      sectionId: destinationCollectionId || null,
+      beforeId: destinationBeforeId || null,
+    });
+    if (committedEvent != null) onReorder(committedEvent);
+  };
+  const handleTerminal = (terminal: FallbackTerminalEvent | null) => {
+    if (terminal == null) return;
+    commitTerminal(
+      terminal.sourceIdsJson,
+      terminal.destinationCollectionId,
+      terminal.destinationBeforeId
+    );
+  };
   if (engine === 'fallback' || !isNativeReorderingAvailable()) {
-    throw new Error(
-      '[react-native-reorderable] No reorder engine can fulfill the portable contract for this enabled container.'
+    if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
+      throw new Error(
+        `[react-native-reorderable] No reorder engine can fulfill the portable contract for this enabled ${Platform.OS} container.`
+      );
+    }
+    return (
+      <FallbackReorderContainer
+        {...viewProps}
+        debugAcceptanceMove={debugAcceptanceMove}
+        entryIds={normalized.entryIds}
+        entryKinds={normalized.entryKinds}
+        forwardedRef={ref}
+        onTerminal={handleTerminal}
+      >
+        {normalized.children}
+      </FallbackReorderContainer>
     );
   }
   const nativeEntries = prepareNativeEntries(normalized);
@@ -141,16 +179,7 @@ function ReorderableContainerImplementation({
   const handleMove = (event: NativeSyntheticEvent<NativeMoveEvent>) => {
     const { destinationBeforeId, destinationCollectionId, sourceIdsJson } =
       event.nativeEvent;
-    const sourceIds = parseNativeIds(sourceIdsJson);
-    const sectionId = destinationCollectionId || null;
-    const beforeId = destinationBeforeId || null;
-    const committedEvent = reconcileReorder(normalized.order, sourceIds, {
-      sectionId,
-      beforeId,
-    });
-    if (committedEvent != null) {
-      onReorder(committedEvent);
-    }
+    commitTerminal(sourceIdsJson, destinationCollectionId, destinationBeforeId);
   };
 
   return (
@@ -207,6 +236,20 @@ export function NativeCommitAcceptanceContainer(
     <ReorderableContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+    />
+  );
+}
+
+/** @internal Debug-only acceptance harness; deliberately absent from index.tsx. */
+export function FallbackCommitAcceptanceContainer(
+  props: ReorderableContainerComponentProps & { acceptanceMove: AcceptanceMove }
+) {
+  const { acceptanceMove, ...containerProps } = props;
+  return (
+    <ReorderableContainerImplementation
+      {...containerProps}
+      debugAcceptanceMove={acceptanceMove}
+      engine="fallback"
     />
   );
 }

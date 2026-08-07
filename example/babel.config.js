@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '..');
 
 module.exports = getConfig(
   {
+    plugins: ['react-native-worklets/plugin'],
     presets: ['module:@react-native/babel-preset'],
   },
   { root, pkg }

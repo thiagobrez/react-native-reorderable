@@ -2,6 +2,7 @@ import { describe, expect, it, jest } from '@jest/globals';
 import { fireEvent, render } from '@testing-library/react-native';
 import { createRef, type ReactElement } from 'react';
 import { Platform, Text, View, type ViewProps } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as publicApi from '..';
 
 import {
@@ -259,11 +260,11 @@ describe('public reorder component', () => {
     expect(itemRef.current).not.toBeNull();
   });
 
-  it('never leaves an enabled unsupported container inert', () => {
+  it('never leaves an enabled unsupported platform container inert', () => {
     const originalOS = Platform.OS;
     Object.defineProperty(Platform, 'OS', {
       configurable: true,
-      value: 'android',
+      value: 'web',
     });
     try {
       expect(() =>
@@ -373,18 +374,25 @@ describe('public reorder component', () => {
     }
   });
 
-  it('rejects a forced fallback policy until that engine is implemented', () => {
-    expect(() =>
-      ReorderableContainer({
-        children: (
+  it('renders a forced fallback policy with interactive presentation', async () => {
+    const rendered = await render(
+      <GestureHandlerRootView>
+        <ReorderableContainer
+          engine="fallback"
+          onReorder={() => undefined}
+          testID="forced-fallback"
+        >
           <ReorderableItem id="one">
-            <View />
+            <Text>One</Text>
           </ReorderableItem>
-        ),
-        engine: 'fallback',
-        onReorder: () => undefined,
-      })
-    ).toThrow('No reorder engine can fulfill the portable contract');
+        </ReorderableContainer>
+      </GestureHandlerRootView>
+    );
+
+    expect(rendered.getByText('One')).toBeOnTheScreen();
+    expect(
+      rendered.getByTestId('fallback-destination-feedback')
+    ).toBeOnTheScreen();
   });
 
   it('preserves the existing drag fallback until its frozen replacement lands', () => {

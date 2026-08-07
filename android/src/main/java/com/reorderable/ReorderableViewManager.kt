@@ -54,6 +54,13 @@ class ReorderableViewManager : SimpleViewManager<ReorderableView>(),
   @ReactProp(name = "enabled")
   override fun setEnabled(view: ReorderableView?, value: Boolean) = Unit
 
+  override fun debugEmitTerminalReorder(
+    view: ReorderableView,
+    sourceIdsJson: String,
+    destinationCollectionId: String,
+    destinationBeforeId: String
+  ) = Unit
+
   companion object {
     const val NAME = "ReorderableView"
   }

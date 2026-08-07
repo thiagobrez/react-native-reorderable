@@ -84,13 +84,19 @@
     "react": "19.2.3",
     "react-native": "0.85.0",
     "react-native-builder-bob": "^0.43.0",
+    "react-native-gesture-handler": "3.0.0",
+    "react-native-reanimated": "4.3.0",
+    "react-native-worklets": "0.8.1",
     "test-renderer": "^1.0.0",
     "turbo": "^2.9.16",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "react": "*",
-    "react-native": "*"
+    "react-native": "*",
+    "react-native-gesture-handler": "^3.0.0",
+    "react-native-reanimated": "^4.3.0",
+    "react-native-worklets": ">=0.8.0 <0.13.0"
   },
   "workspaces": [
     "example"
@@ -149,8 +155,15 @@
       ]
     },
     "modulePathIgnorePatterns": [
+      "<rootDir>/.claude/worktrees/",
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|react-native-gesture-handler|react-native-reanimated|react-native-worklets)/)"
     ]
   },
   "commitlint": {

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   DragContainer,
   DraggableItem,
@@ -8,8 +9,10 @@ import {
   ReorderableItem,
   ReorderableSection,
   type ReorderEvent,
+  type EnginePolicy,
 } from 'react-native-reorderable';
 import { NativeCommitAcceptanceContainer } from '../../src/issue25-acceptance';
+import { FallbackCommitAcceptanceContainer } from '../../src/issue26-acceptance';
 
 type Card = Readonly<{
   color: string;
@@ -94,9 +97,10 @@ function DemoSelector({
   );
 }
 
-function SingleCollectionExample() {
+function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
   const [cards, setCards] = useState(initialCards);
   const [callbackCount, setCallbackCount] = useState(0);
+  const [nestedPressCount, setNestedPressCount] = useState(0);
 
   const handleReorder = (event: ReorderEvent) => {
     const itemIds = event.nextOrder[0]?.itemIds;
@@ -114,7 +118,13 @@ function SingleCollectionExample() {
       style={[styles.card, { backgroundColor: card.color }]}
       testID={`single-card-${card.id}`}
     >
-      <Text style={styles.cardLabel}>{card.label}</Text>
+      <Pressable
+        accessibilityLabel={`${card.label} nested action`}
+        onPress={() => setNestedPressCount((current) => current + 1)}
+        style={styles.nestedAction}
+      >
+        <Text style={styles.cardLabel}>{card.label}</Text>
+      </Pressable>
     </ReorderableItem>
   ));
 
@@ -126,7 +136,10 @@ function SingleCollectionExample() {
       <Text style={styles.outcome} testID="single-callback-count">
         Reorder callbacks: {callbackCount}
       </Text>
-      {__DEV__ ? (
+      <Text style={styles.outcome} testID="single-nested-press-count">
+        Nested short presses: {nestedPressCount}
+      </Text>
+      {__DEV__ && engine === 'auto' ? (
         <NativeCommitAcceptanceContainer
           acceptanceMove={{
             sourceIds: ['yellow'],
@@ -139,9 +152,23 @@ function SingleCollectionExample() {
         >
           {renderedCards}
         </NativeCommitAcceptanceContainer>
+      ) : __DEV__ ? (
+        <FallbackCommitAcceptanceContainer
+          acceptanceMove={{
+            sourceIds: ['yellow'],
+            destination: { sectionId: null, beforeId: 'green' },
+          }}
+          accessibilityLabel="Single collection cards"
+          onReorder={handleReorder}
+          style={styles.verticalCards}
+          testID="single-container"
+        >
+          {renderedCards}
+        </FallbackCommitAcceptanceContainer>
       ) : (
         <ReorderableContainer
           accessibilityLabel="Single collection cards"
+          engine={engine}
           onReorder={handleReorder}
           style={styles.verticalCards}
           testID="single-container"
@@ -298,22 +325,52 @@ function MultiItemDragExample() {
 
 export default function App() {
   const [demo, setDemo] = useState<Demo>('single');
+  const [engine, setEngine] = useState<EnginePolicy>('auto');
 
   return (
-    <View style={styles.screen}>
-      <StatusBar barStyle="light-content" />
-      <Text style={styles.title}>Cards</Text>
-      <DemoSelector demo={demo} onChange={setDemo} />
-      <View style={styles.example}>
-        {demo === 'single' && <SingleCollectionExample />}
-        {demo === 'sections' && <SectionedCollectionExample />}
-        {demo === 'multi' && <MultiItemDragExample />}
+    <GestureHandlerRootView style={styles.root}>
+      <View style={styles.screen}>
+        <StatusBar barStyle="light-content" />
+        <Text style={styles.title}>Cards</Text>
+        <DemoSelector demo={demo} onChange={setDemo} />
+        <View accessibilityRole="radiogroup" style={styles.engineSelector}>
+          {(['auto', 'fallback'] as const).map((policy) => {
+            const selected = engine === policy;
+            const label = policy === 'auto' ? 'Auto' : 'Fallback';
+            return (
+              <Pressable
+                accessibilityLabel={`${label} engine policy`}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                key={policy}
+                onPress={() => setEngine(policy)}
+                style={[
+                  styles.engineOption,
+                  selected && styles.engineOptionSelected,
+                ]}
+                testID={`engine-${policy}`}
+              >
+                <Text style={styles.engineOptionText}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.example}>
+          {demo === 'single' && (
+            <SingleCollectionExample engine={engine} key={engine} />
+          )}
+          {demo === 'sections' && <SectionedCollectionExample />}
+          {demo === 'multi' && <MultiItemDragExample />}
+        </View>
       </View>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: '#000000',
@@ -355,6 +412,28 @@ const styles = StyleSheet.create({
   example: {
     flex: 1,
   },
+  engineSelector: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  engineOption: {
+    borderColor: '#636366',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+  engineOptionSelected: {
+    backgroundColor: '#3A3A3C',
+    borderColor: '#FFFFFF',
+  },
+  engineOptionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   verticalCards: {
     gap: 6,
     width: '100%',
@@ -370,6 +449,12 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 14,
     fontWeight: '700',
+  },
+  nestedAction: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    width: '100%',
   },
   outcome: {
     color: '#D1D1D6',

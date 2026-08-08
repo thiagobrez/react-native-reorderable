@@ -214,6 +214,8 @@ describe('issue 30 selected drop move sets', () => {
           })
         );
         harness.expectNormalizedSelection(selected, canonicalIds);
+        accepted.mockClear();
+        rejected.mockClear();
         await harness.activate(selected, canonicalIds);
         expect(accepted).toHaveBeenCalledTimes(1);
         expect(rejected).toHaveBeenCalledTimes(1);
@@ -291,9 +293,11 @@ describe('issue 30 selected drop move sets', () => {
 
   it('fallback surfaces a move-set predicate error and emits nothing', async () => {
     const applicationError = new Error('selected predicate failed');
+    let shouldThrow = false;
     const predicate = jest.fn((ids: readonly string[]) => {
       expect(ids).toEqual(['blue', 'yellow', 'pink']);
-      throw applicationError;
+      if (shouldThrow) throw applicationError;
+      return true;
     });
     const onDrop = jest.fn<(event: DropEvent) => void>();
     const rendered = await render(
@@ -307,6 +311,8 @@ describe('issue 30 selected drop move sets', () => {
         </FallbackDropAcceptanceContainer>
       </GestureHandlerRootView>
     );
+    shouldThrow = true;
+    predicate.mockClear();
     await expect(
       fireEvent.press(
         rendered.getByRole('button', { name: 'Activate fallback drop' })
@@ -324,9 +330,11 @@ describe('issue 30 selected drop move sets', () => {
 
   it('native cancels and surfaces a move-set predicate error', async () => {
     const applicationError = new Error('native selected predicate failed');
+    let shouldThrow = false;
     const predicate = jest.fn((ids: readonly string[]) => {
       expect(ids).toEqual(['blue', 'yellow', 'pink']);
-      throw applicationError;
+      if (shouldThrow) throw applicationError;
+      return true;
     });
     const cancel = jest.spyOn(Commands, 'cancelInteraction');
     const onDrop = jest.fn<(event: DropEvent) => void>();
@@ -342,6 +350,8 @@ describe('issue 30 selected drop move sets', () => {
             {scenarioChildren({ canAccept: predicate, canReject: () => false })}
           </NativeDropAcceptanceContainer>
         );
+        shouldThrow = true;
+        predicate.mockClear();
         await expect(
           fireEvent(rendered.getByTestId('native-drop-error'), 'dragActivate', {
             nativeEvent: { itemIdsJson: '["blue","yellow","pink"]' },

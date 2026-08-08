@@ -12,6 +12,15 @@ export type AccessibleReorderMove = Readonly<{
   destination: ReorderDestination;
 }>;
 
+/** Resolves the current application-owned drop selection in known item order. */
+export function canonicalDropSelection(
+  knownItemIds: readonly string[],
+  selectedIds: readonly string[]
+): string[] {
+  const selected = new Set(selectedIds);
+  return knownItemIds.filter((id) => selected.has(id));
+}
+
 export function reconcileDrop(
   knownItemIds: readonly string[],
   sourceIds: readonly string[],

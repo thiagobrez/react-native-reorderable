@@ -405,22 +405,36 @@ function SectionedCollectionExample({
   );
 }
 
-function DragDropExample({ engine }: { engine: EnginePolicy }) {
+function DragDropExample({
+  actionRequest,
+  engine,
+}: {
+  actionRequest: SemanticActionRequest | null;
+  engine: EnginePolicy;
+}) {
   const [callbackCount, setCallbackCount] = useState(0);
   const [lastEvent, setLastEvent] = useState('None');
+  const [appActionCount, setAppActionCount] = useState(0);
   const [acceptingEnabled, setAcceptingEnabled] = useState(true);
   const [destinationId, setDestinationId] = useState('accepting');
   const [sourceId, setSourceId] = useState('pink');
   const [showAccepting, setShowAccepting] = useState(true);
   const [predicateError, setPredicateError] = useState(false);
-  const [predicateCount, setPredicateCount] = useState(0);
-  const [lastPredicateIds, setLastPredicateIds] = useState('None');
+  const [selectionMode, setSelectionMode] = useState<'multi' | 'single'>(
+    'multi'
+  );
+  const predicateCount = useRef(0);
+  const lastPredicateIds = useRef('None');
   const [nativeInteraction, setNativeInteraction] = useState('inactive (0)');
   const nativeInteractionCount = useRef(0);
-  const selectedIds = ['pink', 'missing', 'blue', 'pink', 'yellow'] as const;
+  const selectedIds =
+    selectionMode === 'multi'
+      ? (['pink', 'missing', 'blue', 'pink', 'yellow'] as const)
+      : (['green'] as const);
+  const selectedSet = new Set<string>(selectedIds);
   const recordPredicate = (ids: readonly string[]) => {
-    setPredicateCount((current) => current + 1);
-    setLastPredicateIds(ids.join(','));
+    predicateCount.current += 1;
+    lastPredicateIds.current = ids.join(',');
   };
   const containerProps = {
     acceptanceMove: { sourceId, destinationId },
@@ -440,9 +454,7 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
           {initialCards
             .filter((card) => card.id !== 'orange')
             .map((card) => {
-              const selected = selectedIds.includes(
-                card.id as (typeof selectedIds)[number]
-              );
+              const selected = selectedSet.has(card.id);
               return (
                 <DraggableItem
                   accessibilityLabel={`${card.label} draggable card${selected ? ', selected' : ''}`}
@@ -467,6 +479,9 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
       <View style={styles.dropPanels}>
         {showAccepting ? (
           <DropZone
+            accessibilityActions={[
+              { name: 'mark-zone', label: 'Mark destination' },
+            ]}
             accessibilityLabel="Accepting drop zone"
             canDrop={(ids) => {
               recordPredicate(ids);
@@ -476,6 +491,11 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
               return acceptingEnabled;
             }}
             id="accepting"
+            onAccessibilityAction={(event) => {
+              if (event.nativeEvent.actionName === 'mark-zone') {
+                setAppActionCount((count) => count + 1);
+              }
+            }}
             style={[styles.dropZone, styles.dropPanel]}
           >
             <Text style={styles.dropZoneLabel}>Accepting</Text>
@@ -501,18 +521,39 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
       <Text style={styles.outcome}>
         Data: blue,green,yellow,pink (unchanged)
       </Text>
-      <Text style={styles.outcome}>Selection: blue,yellow,pink</Text>
+      <Text style={styles.outcome}>
+        Selection: {selectionMode === 'multi' ? 'blue,yellow,pink' : 'green'}
+      </Text>
       <Text style={styles.outcome}>Activation: {sourceId}</Text>
       <Text style={styles.outcome}>Drop callbacks: {callbackCount}</Text>
       <Text style={styles.outcome}>Last drop: {lastEvent}</Text>
-      <Text style={styles.outcome}>Predicate calls: {predicateCount}</Text>
-      <Text style={styles.outcome}>Predicate IDs: {lastPredicateIds}</Text>
+      <Text style={styles.outcome}>
+        Predicate calls: {predicateCount.current}
+      </Text>
+      <Text style={styles.outcome}>
+        Predicate IDs: {lastPredicateIds.current}
+      </Text>
+      <Text style={styles.outcome}>App actions: {appActionCount}</Text>
       {__DEV__ && engine === 'auto' ? (
         <Text style={styles.outcome}>
           Native lifecycle: {nativeInteraction}
         </Text>
       ) : null}
       <View style={styles.scenarioActions}>
+        <Pressable
+          accessibilityLabel="Use single accessible drop selection"
+          onPress={() => setSelectionMode('single')}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Single selection</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Use multi accessible drop selection"
+          onPress={() => setSelectionMode('multi')}
+          style={styles.scenarioAction}
+        >
+          <Text style={styles.scenarioActionText}>Multi selection</Text>
+        </Pressable>
         <Pressable
           accessibilityLabel="Target accepting zone"
           onPress={() => setDestinationId('accepting')}
@@ -571,12 +612,18 @@ function DragDropExample({ engine }: { engine: EnginePolicy }) {
       </View>
       {__DEV__ ? (
         engine === 'fallback' ? (
-          <FallbackDropAcceptanceContainer {...containerProps}>
+          <FallbackDropAcceptanceContainer
+            {...containerProps}
+            actionContainerId="drop"
+            actionRequest={actionRequest}
+          >
             {content}
           </FallbackDropAcceptanceContainer>
         ) : (
           <NativeDropAcceptanceContainer
             {...containerProps}
+            actionContainerId="drop"
+            actionRequest={actionRequest}
             interactionStateChange={(active) => {
               nativeInteractionCount.current += 1;
               setNativeInteraction(
@@ -640,7 +687,13 @@ export default function App() {
               key={engine}
             />
           )}
-          {demo === 'drop' && <DragDropExample engine={engine} key={engine} />}
+          {demo === 'drop' && (
+            <DragDropExample
+              actionRequest={actionRequest}
+              engine={engine}
+              key={engine}
+            />
+          )}
         </View>
       </View>
     </GestureHandlerRootView>

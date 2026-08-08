@@ -2,10 +2,26 @@ import { describe, expect, it } from '@jest/globals';
 
 import {
   accessibleReorderMove,
+  canonicalDropSelection,
   canonicalMoveSet,
   reconcileDrop,
   reconcileReorder,
 } from '../semantic';
+
+describe('canonicalDropSelection', () => {
+  it('uses known application order instead of selection chronology', () => {
+    expect(
+      canonicalDropSelection(
+        ['blue', 'green', 'yellow', 'pink'],
+        ['pink', 'missing', 'blue', 'pink', 'yellow']
+      )
+    ).toEqual(['blue', 'yellow', 'pink']);
+  });
+
+  it('returns no move set when the current selection has no known identity', () => {
+    expect(canonicalDropSelection(['blue', 'green'], ['missing'])).toEqual([]);
+  });
+});
 
 describe('accessibleReorderMove', () => {
   const order = [

@@ -1,9 +1,9 @@
 import {
   Children,
   cloneElement,
-  createRef,
   isValidElement,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -37,7 +37,11 @@ import {
   parseNativeIds,
   prepareNativeEntries,
 } from './normalize';
-import { accessibleReorderMove, reconcileReorder } from './semantic';
+import {
+  accessibleReorderMove,
+  canonicalDropSelection,
+  reconcileReorder,
+} from './semantic';
 import { InteractionLifecycle } from './lifecycle';
 import {
   FallbackReorderContainer,
@@ -95,6 +99,13 @@ type InternalReorderableContainerProps = ReorderableContainerComponentProps & {
   debugAccessibilityContainerId?: string;
   debugInteractionStateChange?: (active: boolean) => void;
 };
+
+function acceptsDrop(
+  predicate: ((itemIds: readonly string[]) => boolean) | undefined,
+  itemIds: readonly string[]
+): boolean {
+  return predicate == null ? itemIds.length > 0 : predicate(itemIds);
+}
 
 function assignHostRef(ref: unknown, value: unknown): void {
   if (typeof ref === 'function') {
@@ -674,17 +685,21 @@ export function DropZone({ children, id: _id, ...viewProps }: DropZoneProps) {
 
 type InternalDragDropContainerProps = DragDropContainerProps & {
   debugAcceptanceMove?: Readonly<{ sourceId: string; destinationId: string }>;
+  debugAccessibilityAction?: SemanticActionRequest | null;
+  debugAccessibilityContainerId?: string;
   debugInteractionStateChange?: (active: boolean) => void;
 };
 
 function DragDropContainerImplementation({
   children,
-  accessibilityStrings: _accessibilityStrings,
+  accessibilityStrings,
   enabled = true,
   engine = 'auto',
   onDrop,
   selectedIds = [],
   debugAcceptanceMove,
+  debugAccessibilityAction,
+  debugAccessibilityContainerId,
   debugInteractionStateChange,
   ...viewProps
 }: InternalDragDropContainerProps) {
@@ -708,7 +723,10 @@ function DragDropContainerImplementation({
   const nativeActivationPhaseRef = useRef<'idle' | 'evaluating' | 'ready'>(
     'idle'
   );
-  const nativeRef = createRef<React.ElementRef<typeof NativeReorderableView>>();
+  const nativeRef =
+    useRef<React.ElementRef<typeof NativeReorderableView>>(null);
+  const debugAccessibilityBridgeRef =
+    useRef<React.ElementRef<typeof NativeReorderableView>>(null);
   const normalized = normalizeDragChildren(children, {
     DropZone,
     Item: DraggableItem,
@@ -721,6 +739,165 @@ function DragDropContainerImplementation({
   );
   const selectedSet = new Set(selectedIds);
   const normalizedSelectedIds = itemIds.filter((id) => selectedSet.has(id));
+  const accessibleSelectionSignature = JSON.stringify(normalizedSelectedIds);
+  const accessibleAcceptanceByZone = useMemo(() => {
+    const acceptance = new Map<string, boolean>();
+    for (const zoneId of zoneIds) {
+      if (!enabled || normalizedSelectedIds.length === 0) {
+        acceptance.set(zoneId, false);
+        continue;
+      }
+      acceptance.set(
+        zoneId,
+        acceptsDrop(normalized.canDropById.get(zoneId), normalizedSelectedIds)
+      );
+    }
+    return acceptance;
+    // Internal interaction-state renders retain the same children. Application
+    // rerenders provide a new tree and must refresh current action availability.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessibleSelectionSignature, children, enabled]);
+  const currentAccessibleDropStateRef = useRef({
+    canDropById: normalized.canDropById,
+    enabled,
+    itemIds,
+    selectedIds: normalizedSelectedIds,
+    zoneIds,
+  });
+  currentAccessibleDropStateRef.current = {
+    canDropById: normalized.canDropById,
+    enabled,
+    itemIds,
+    selectedIds: normalizedSelectedIds,
+    zoneIds,
+  };
+  const onDropRef = useRef(onDrop);
+  onDropRef.current = onDrop;
+  const resolvedAccessibilityStrings =
+    resolveAccessibilityStrings(accessibilityStrings);
+  const accessibilityStringsRef = useRef(resolvedAccessibilityStrings);
+  accessibilityStringsRef.current = resolvedAccessibilityStrings;
+  const accessibleZoneRefs = useRef(new Map<string, unknown>());
+  const focusAccessibleZone = (id: string) => {
+    setTimeout(() => {
+      const tag = findNodeHandle(accessibleZoneRefs.current.get(id));
+      if (tag != null) AccessibilityInfo.setAccessibilityFocus(tag);
+    }, 0);
+  };
+  const settleUnavailableDrop = (id: string) => {
+    AccessibilityInfo.announceForAccessibility(
+      accessibilityStringsRef.current.unavailableAnnouncement
+    );
+    focusAccessibleZone(id);
+  };
+  const handleAccessibleDrop = (destinationId: string) => {
+    const current = currentAccessibleDropStateRef.current;
+    const currentSelection = canonicalDropSelection(
+      current.itemIds,
+      current.selectedIds
+    );
+    if (
+      !current.enabled ||
+      currentSelection.length === 0 ||
+      !current.zoneIds.includes(destinationId)
+    ) {
+      settleUnavailableDrop(destinationId);
+      return;
+    }
+    const accepted = acceptsDrop(
+      current.canDropById.get(destinationId),
+      currentSelection
+    );
+    if (!accepted) {
+      settleUnavailableDrop(destinationId);
+      return;
+    }
+    const event = reconcileDrop(
+      current.itemIds,
+      currentSelection,
+      current.zoneIds,
+      destinationId,
+      true
+    );
+    if (event == null) {
+      settleUnavailableDrop(destinationId);
+      return;
+    }
+    onDropRef.current(event);
+    AccessibilityInfo.announceForAccessibility(
+      accessibilityStringsRef.current.dropAnnouncement({ event })
+    );
+    focusAccessibleZone(destinationId);
+  };
+  const accessibleChildren = normalized.children.map((child, index) => {
+    if (normalized.entryKinds[index] !== 'dropZone') return child;
+    const id = normalized.entryIds[index]!;
+    const accessibleChild = child as ReactElement<
+      ViewProps & RefAttributes<unknown>
+    >;
+    const childProps = accessibleChild.props;
+    const appActions = childProps.accessibilityActions ?? [];
+    const actionName = uniqueAccessibilityActionName(
+      'drag-drop-drop-selected',
+      appActions
+    );
+    const accepted = accessibleAcceptanceByZone.get(id) === true;
+    const libraryActions: NonNullable<ViewProps['accessibilityActions']> =
+      accepted
+        ? [
+            {
+              name: actionName,
+              label: resolvedAccessibilityStrings.dropSelectedItemsAction,
+            },
+          ]
+        : [];
+    const onAppAccessibilityAction = childProps.onAccessibilityAction;
+    const appRef = childProps.ref;
+    return cloneElement(accessibleChild, {
+      accessible: childProps.accessible ?? true,
+      accessibilityActions: [...appActions, ...libraryActions],
+      onAccessibilityAction: (event: AccessibilityActionEvent) => {
+        if (event.nativeEvent.actionName === actionName && accepted) {
+          handleAccessibleDrop(id);
+        } else {
+          onAppAccessibilityAction?.(event);
+        }
+      },
+      ref: (value: unknown) => {
+        assignHostRef(appRef, value);
+        if (value == null) accessibleZoneRefs.current.delete(id);
+        else accessibleZoneRefs.current.set(id, value);
+      },
+    });
+  });
+  useEffect(() => {
+    if (debugAccessibilityAction == null) return;
+    const target = nativeRef.current ?? debugAccessibilityBridgeRef.current;
+    if (target == null) return;
+    Commands.debugPerformAccessibilityAction(
+      target,
+      debugAccessibilityAction.itemLabel,
+      debugAccessibilityAction.actionLabel
+    );
+  }, [debugAccessibilityAction]);
+  const debugAccessibilityBridge =
+    debugAccessibilityAction === undefined ? null : (
+      <NativeReorderableView
+        acceptedDropZoneIds={[]}
+        collectionIds={[]}
+        debugAccessibilityContainerId={debugAccessibilityContainerId}
+        enabled={false}
+        entryIds={[]}
+        entryKinds={[]}
+        layoutRevision="drop-accessibility-action-bridge"
+        mode="dragDrop"
+        orderedEntryIds={[]}
+        parentEntryIds={[]}
+        ref={debugAccessibilityBridgeRef}
+        selectedIds={[]}
+        style={debugStyles.accessibilityActionBridge}
+      />
+    );
   const mountedAcceptedDropZoneIds = acceptedDropZoneIds.filter((id) =>
     zoneIds.includes(id)
   );
@@ -748,29 +925,35 @@ function DragDropContainerImplementation({
       );
     }
     return (
-      <FallbackDropContainer
-        {...viewProps}
-        canDropById={normalized.canDropById}
-        debugMove={debugAcceptanceMove}
-        entryIds={normalized.entryIds}
-        entryKinds={normalized.entryKinds}
-        parentEntryIds={normalized.parentEntryIds}
-        selectedIds={selectedIds}
-        onDropTerminal={(terminal) => {
-          if (terminal != null) {
-            commitDrop(
-              terminal.itemIds,
-              terminal.destinationId,
-              terminal.accepted
-            );
-          }
-        }}
-      >
-        {normalized.children}
-      </FallbackDropContainer>
+      <>
+        {debugAccessibilityBridge}
+        <FallbackDropContainer
+          {...viewProps}
+          canDropById={normalized.canDropById}
+          debugMove={debugAcceptanceMove}
+          entryIds={normalized.entryIds}
+          entryKinds={normalized.entryKinds}
+          parentEntryIds={normalized.parentEntryIds}
+          selectedIds={selectedIds}
+          onDropTerminal={(terminal) => {
+            if (terminal != null) {
+              commitDrop(
+                terminal.itemIds,
+                terminal.destinationId,
+                terminal.accepted
+              );
+            }
+          }}
+        >
+          {accessibleChildren}
+        </FallbackDropContainer>
+      </>
     );
   }
-  const nativeEntries = prepareNativeEntries(normalized);
+  const nativeEntries = prepareNativeEntries({
+    ...normalized,
+    children: accessibleChildren,
+  });
   const finishNativeDrop = (mapped: DropEvent) => {
     if (nativeActivationPhaseRef.current === 'idle') return;
     const acceptance = activeAcceptanceRef.current;
@@ -814,10 +997,7 @@ function DragDropContainerImplementation({
     let accepted: readonly string[];
     try {
       accepted = zoneIds.filter((zoneId) => {
-        const predicate = normalized.canDropById.get(zoneId);
-        return (predicate ?? ((ids: readonly string[]) => ids.length > 0))(
-          activeIds
-        );
+        return acceptsDrop(normalized.canDropById.get(zoneId), activeIds);
       });
     } catch (error) {
       pendingNativeDropRef.current = null;
@@ -900,6 +1080,7 @@ function DragDropContainerImplementation({
         {...viewProps}
         acceptedDropZoneIds={mountedAcceptedDropZoneIds}
         collectionIds={nativeEntries.collectionIds}
+        debugAccessibilityContainerId={debugAccessibilityContainerId}
         enabled
         entryIds={nativeEntries.entryIds}
         entryKinds={nativeEntries.entryKinds}
@@ -927,13 +1108,22 @@ export function DragDropContainer(props: DragDropContainerProps) {
 export function FallbackDropAcceptanceContainer(
   props: DragDropContainerProps & {
     acceptanceMove: Readonly<{ sourceId: string; destinationId: string }>;
+    actionContainerId?: string;
+    actionRequest?: SemanticActionRequest | null;
   }
 ) {
-  const { acceptanceMove, ...containerProps } = props;
+  const {
+    acceptanceMove,
+    actionContainerId,
+    actionRequest,
+    ...containerProps
+  } = props;
   return (
     <DragDropContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+      debugAccessibilityAction={actionRequest}
+      debugAccessibilityContainerId={actionContainerId}
       engine="fallback"
     />
   );
@@ -943,14 +1133,24 @@ export function FallbackDropAcceptanceContainer(
 export function NativeDropAcceptanceContainer(
   props: DragDropContainerProps & {
     acceptanceMove: Readonly<{ sourceId: string; destinationId: string }>;
+    actionContainerId?: string;
+    actionRequest?: SemanticActionRequest | null;
     interactionStateChange?: (active: boolean) => void;
   }
 ) {
-  const { acceptanceMove, interactionStateChange, ...containerProps } = props;
+  const {
+    acceptanceMove,
+    actionContainerId,
+    actionRequest,
+    interactionStateChange,
+    ...containerProps
+  } = props;
   return (
     <DragDropContainerImplementation
       {...containerProps}
       debugAcceptanceMove={acceptanceMove}
+      debugAccessibilityAction={actionRequest}
+      debugAccessibilityContainerId={actionContainerId}
       debugInteractionStateChange={interactionStateChange}
     />
   );

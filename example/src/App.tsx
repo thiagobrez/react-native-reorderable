@@ -32,7 +32,7 @@ type CardSection = Readonly<{
   title: string;
 }>;
 
-type Demo = 'single' | 'sections' | 'drop' | 'scale';
+type Demo = 'single' | 'sections' | 'drop' | 'scale' | 'variable';
 
 const initialCards: readonly Card[] = [
   { id: 'blue', label: 'Blue', color: '#0A84FF' },
@@ -80,6 +80,7 @@ function DemoSelector({
           ['sections', 'Sections'],
           ['drop', 'Drop'],
           ['scale', '10k list'],
+          ['variable', 'Variable'],
         ] as const
       ).map(([value, label]) => {
         const selected = value === demo;
@@ -197,6 +198,101 @@ function ScaleListExample({ engine }: { engine: EnginePolicy }) {
         )}
         style={styles.scaleList}
         testID="scale-list"
+        windowSize={5}
+      />
+    </View>
+  );
+}
+
+type VariableItem = Readonly<{ id: string; label: string; height: number }>;
+const initialVariableItems: readonly VariableItem[] = Array.from(
+  { length: 1_000 },
+  (_, index) => ({
+    id: `variable-${index}`,
+    label: `Variable row ${index}`,
+    height: 40 + ((index * 37) % 5) * 14,
+  })
+);
+
+function VariableRow({
+  item,
+  onMountChange,
+}: Readonly<{
+  item: VariableItem;
+  onMountChange: (change: number) => void;
+}>) {
+  useEffect(() => {
+    onMountChange(1);
+    return () => onMountChange(-1);
+  }, [onMountChange]);
+  return (
+    <View
+      accessibilityLabel={`${item.label}, ${item.height} points tall`}
+      style={[styles.variableRow, { height: item.height }]}
+      testID={`variable-${item.id}`}
+    >
+      <Text style={styles.scaleRowLabel}>{item.label}</Text>
+      <Text style={styles.variableHeight}>{item.height} pt</Text>
+    </View>
+  );
+}
+
+function VariableListExample({ engine }: { engine: EnginePolicy }) {
+  const [items, setItems] = useState(initialVariableItems);
+  const [callbackCount, setCallbackCount] = useState(0);
+  const [mountedRows, setMountedRows] = useState(0);
+  const handleMountChange = useCallback((change: number) => {
+    setMountedRows((current) => current + change);
+  }, []);
+  const reset = useCallback(() => {
+    setItems(initialVariableItems);
+    setCallbackCount(0);
+  }, []);
+  const handleReorder = useCallback((event: ReorderEvent) => {
+    const nextIds = event.nextOrder[0]?.itemIds;
+    if (nextIds == null) return;
+    setItems((current) => itemsInOrder(current, nextIds));
+    setCallbackCount((current) => current + 1);
+  }, []);
+  return (
+    <View style={styles.scaleScenario} testID="variable-scenario">
+      <Text style={styles.outcome} testID="variable-mounted-count">
+        Mounted/rendered rows: {mountedRows} / 1000
+      </Text>
+      <Text style={styles.outcome} testID="variable-callback-count">
+        Reorder callbacks: {callbackCount}
+      </Text>
+      <Text style={styles.outcome} testID="variable-order">
+        First rows:{' '}
+        {items
+          .slice(0, 5)
+          .map((item) => item.label)
+          .join(', ')}
+      </Text>
+      <Pressable
+        accessibilityLabel="Reset variable-height scenario"
+        accessibilityRole="button"
+        onPress={reset}
+        style={styles.scenarioAction}
+        testID="variable-reset"
+      >
+        <Text style={styles.scenarioActionText}>Reset</Text>
+      </Pressable>
+      <ReorderableList
+        accessibilityLabel="One thousand variable-height reorderable rows"
+        data={items}
+        engine={engine}
+        estimatedItemSize={68}
+        initialNumToRender={8}
+        keyExtractor={(item) => item.id}
+        maxToRenderPerBatch={8}
+        onReorder={handleReorder}
+        removeClippedSubviews
+        renderItem={({ item }) => (
+          <VariableRow item={item} onMountChange={handleMountChange} />
+        )}
+        style={styles.scaleList}
+        testID="variable-list"
         windowSize={5}
       />
     </View>
@@ -795,6 +891,9 @@ export default function App() {
           {demo === 'scale' && (
             <ScaleListExample engine={engine} key={engine} />
           )}
+          {demo === 'variable' && (
+            <VariableListExample engine={engine} key={engine} />
+          )}
         </View>
       </View>
     </GestureHandlerRootView>
@@ -888,6 +987,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  variableHeight: {
+    color: '#8E8E93',
+    fontSize: 11,
+  },
+  variableRow: {
+    alignItems: 'center',
+    backgroundColor: '#2C2C2E',
+    borderBottomColor: '#48484A',
+    borderBottomWidth: 1,
+    justifyContent: 'center',
   },
   scaleScenario: {
     flex: 1,

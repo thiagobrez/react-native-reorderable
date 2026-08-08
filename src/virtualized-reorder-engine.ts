@@ -1,4 +1,15 @@
 import type { ReorderableItemLayout, ReorderDestination } from './types';
+import {
+  applyMeasurement,
+  contentLength,
+  createEstimatedGeometry,
+  createExactGeometry,
+  indexAtOffset,
+  itemLength,
+  itemOffset,
+  type GeometryCorrection,
+  type VirtualizedGeometry,
+} from './virtualized-geometry';
 
 type Commit = Readonly<{
   sourceIds: readonly string[];
@@ -6,9 +17,11 @@ type Commit = Readonly<{
 }>;
 
 type ActiveInteraction = {
+  activatedId: string;
   destination: ReorderDestination | null;
   pointerViewportY: number;
   sourceIds: readonly string[];
+  sourceIndex: number;
   sourceViewportCenter: number;
 };
 
@@ -24,47 +37,89 @@ export type VirtualizedReorderSnapshot = Readonly<{
 const EDGE_SIZE = 60;
 const MAX_AUTO_SCROLL_VELOCITY = 360;
 
-/**
- * Identity and exact-geometry coordinator for one library-owned list viewport.
- * The viewport adapter owns clocks and scrolling; this class owns no React or
- * native implementation detail, which keeps terminal semantics deterministic.
- */
+/** Deterministic semantic/geometry seam mirroring the UI-runtime coordinator. */
 export class VirtualizedReorderEngine {
   private active: ActiveInteraction | null = null;
+  private geometry: VirtualizedGeometry;
   private itemIds: readonly string[];
-  private layouts: readonly ReorderableItemLayout[];
   private readonly onCommit: (commit: Commit) => void;
+  private readonly onTerminal: ((commit: Commit | null) => void) | undefined;
   private scrollOffset = 0;
   private viewportHeight = 0;
 
   constructor({
     itemIds,
     layouts,
+    estimatedItemSize = 64,
+    adaptive = false,
     onCommit,
+    onTerminal,
   }: Readonly<{
     itemIds: readonly string[];
-    layouts: readonly ReorderableItemLayout[];
+    layouts?: readonly ReorderableItemLayout[];
+    estimatedItemSize?: number;
+    adaptive?: boolean;
     onCommit: (commit: Commit) => void;
+    onTerminal?: (commit: Commit | null) => void;
   }>) {
     this.itemIds = itemIds;
-    this.layouts = layouts;
+    this.geometry = layouts
+      ? createExactGeometry(layouts)
+      : createEstimatedGeometry(itemIds.length, estimatedItemSize, adaptive);
     this.onCommit = onCommit;
+    this.onTerminal = onTerminal;
   }
 
   updateGeometry(
     itemIds: readonly string[],
-    layouts: readonly ReorderableItemLayout[]
+    layouts?: readonly ReorderableItemLayout[]
   ): void {
+    const active = this.active;
+    const orderChanged =
+      itemIds.length !== this.itemIds.length ||
+      this.itemIds.some((id, index) => id !== itemIds[index]);
     this.itemIds = itemIds;
-    this.layouts = layouts;
-    if (
-      this.active != null &&
-      this.active.sourceIds.some((id) => !itemIds.includes(id))
-    ) {
-      this.cancel();
-      return;
+    if (layouts != null) this.geometry = createExactGeometry(layouts);
+    else if (orderChanged) {
+      const estimate = this.geometry.exact ? 64 : this.geometry.estimate;
+      const adaptive = this.geometry.exact ? false : this.geometry.adaptive;
+      this.geometry = createEstimatedGeometry(
+        itemIds.length,
+        estimate,
+        adaptive
+      );
+    }
+    if (active != null && orderChanged) {
+      const nextSourceIndex = itemIds.indexOf(active.activatedId);
+      if (
+        nextSourceIndex < 0 ||
+        active.sourceIds.some((id) => !itemIds.includes(id))
+      ) {
+        this.cancel();
+        return;
+      }
+      active.sourceIndex = nextSourceIndex;
+      active.sourceViewportCenter =
+        itemOffset(this.geometry, nextSourceIndex) +
+        itemLength(this.geometry, nextSourceIndex) / 2 -
+        this.scrollOffset;
     }
     this.refreshDestination();
+  }
+
+  measure(index: number, length: number): GeometryCorrection {
+    const correction = applyMeasurement(
+      this.geometry,
+      index,
+      length,
+      this.active?.sourceIndex
+    );
+    if (this.active != null && correction.anchorDelta !== 0) {
+      this.active.sourceViewportCenter += correction.anchorDelta;
+      this.active.pointerViewportY += correction.anchorDelta;
+    }
+    this.refreshDestination();
+    return correction;
   }
 
   setViewport(height: number, scrollOffset: number): void {
@@ -80,20 +135,21 @@ export class VirtualizedReorderEngine {
 
   start(activatedId: string, selectedIds: readonly string[]): boolean {
     const activatedIndex = this.itemIds.indexOf(activatedId);
-    const activatedLayout = this.layouts[activatedIndex];
-    if (activatedIndex < 0 || activatedLayout == null || this.active != null) {
-      return false;
-    }
+    if (activatedIndex < 0 || this.active != null) return false;
     const selected = new Set(selectedIds);
     const sourceIds = selected.has(activatedId)
       ? this.itemIds.filter((id) => selected.has(id))
       : [activatedId];
     const sourceViewportCenter =
-      activatedLayout.offset + activatedLayout.length / 2 - this.scrollOffset;
+      itemOffset(this.geometry, activatedIndex) +
+      itemLength(this.geometry, activatedIndex) / 2 -
+      this.scrollOffset;
     this.active = {
+      activatedId,
       destination: null,
       pointerViewportY: sourceViewportCenter,
       sourceIds,
+      sourceIndex: activatedIndex,
       sourceViewportCenter,
     };
     this.refreshDestination();
@@ -122,45 +178,47 @@ export class VirtualizedReorderEngine {
     const active = this.active;
     if (active == null) return;
     this.active = null;
-    if (!withinViewport || active.destination == null) return;
+    let commit: Commit | null = null;
     if (
-      active.sourceIds.some((id) => !this.itemIds.includes(id)) ||
-      (active.destination.beforeId != null &&
-        !this.itemIds.includes(active.destination.beforeId))
+      withinViewport &&
+      active.destination != null &&
+      !active.sourceIds.some((id) => !this.itemIds.includes(id)) &&
+      (active.destination.beforeId == null ||
+        this.itemIds.includes(active.destination.beforeId))
     ) {
-      return;
+      commit = {
+        sourceIds: active.sourceIds,
+        destination: active.destination,
+      };
     }
-    this.onCommit({
-      sourceIds: active.sourceIds,
-      destination: active.destination,
-    });
+    this.onTerminal?.(commit);
+    if (commit != null) this.onCommit(commit);
   }
 
   cancel(): void {
+    if (this.active == null) return;
     this.active = null;
+    this.onTerminal?.(null);
   }
 
   snapshot(): VirtualizedReorderSnapshot {
-    const feedbackViewportY = this.feedbackViewportY();
     return {
       active: this.active != null,
       autoScrollVelocity: this.autoScrollVelocity(),
       destination: this.active?.destination ?? null,
-      feedbackViewportY,
+      feedbackViewportY: this.feedbackViewportY(),
       scrollOffset: this.scrollOffset,
       sourceIds: this.active?.sourceIds ?? [],
     };
   }
 
-  private contentLength(): number {
-    const lastLayout = this.layouts[this.layouts.length - 1];
-    return lastLayout == null ? 0 : lastLayout.offset + lastLayout.length;
-  }
-
   private clampScrollOffset(offset: number): number {
     return Math.max(
       0,
-      Math.min(offset, Math.max(0, this.contentLength() - this.viewportHeight))
+      Math.min(
+        offset,
+        Math.max(0, contentLength(this.geometry) - this.viewportHeight)
+      )
     );
   }
 
@@ -175,7 +233,7 @@ export class VirtualizedReorderEngine {
     }
     const maximumOffset = Math.max(
       0,
-      this.contentLength() - this.viewportHeight
+      contentLength(this.geometry) - this.viewportHeight
     );
     if (
       pointer > this.viewportHeight - EDGE_SIZE &&
@@ -195,21 +253,21 @@ export class VirtualizedReorderEngine {
   private refreshDestination(): void {
     const active = this.active;
     if (active == null || this.viewportHeight <= 0) return;
-    const sourceIds = new Set(active.sourceIds);
     const contentY =
       this.scrollOffset +
       Math.max(0, Math.min(this.viewportHeight, active.pointerViewportY));
-    let beforeId: string | null = null;
-    for (let index = 0; index < this.itemIds.length; index += 1) {
-      const id = this.itemIds[index];
-      const layout = this.layouts[index];
-      if (id == null || layout == null || sourceIds.has(id)) continue;
-      if (contentY < layout.offset + layout.length / 2) {
-        beforeId = id;
-        break;
-      }
+    let destinationIndex = indexAtOffset(this.geometry, contentY, true).index;
+    const sourceIds = new Set(active.sourceIds);
+    while (
+      destinationIndex < this.itemIds.length &&
+      sourceIds.has(this.itemIds[destinationIndex]!)
+    ) {
+      destinationIndex += 1;
     }
-    active.destination = { sectionId: null, beforeId };
+    active.destination = {
+      sectionId: null,
+      beforeId: this.itemIds[destinationIndex] ?? null,
+    };
   }
 
   private feedbackViewportY(): number | null {
@@ -217,15 +275,14 @@ export class VirtualizedReorderEngine {
     if (destination == null || this.viewportHeight <= 0) return null;
     const destinationIndex =
       destination.beforeId == null
-        ? this.layouts.length
+        ? this.itemIds.length
         : this.itemIds.indexOf(destination.beforeId);
-    const contentY =
-      destinationIndex >= this.layouts.length
-        ? this.contentLength()
-        : (this.layouts[destinationIndex]?.offset ?? 0);
     return Math.max(
       0,
-      Math.min(this.viewportHeight, contentY - this.scrollOffset)
+      Math.min(
+        this.viewportHeight,
+        itemOffset(this.geometry, destinationIndex) - this.scrollOffset
+      )
     );
   }
 }

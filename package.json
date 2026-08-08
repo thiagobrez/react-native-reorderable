@@ -35,6 +35,8 @@
     "example": "yarn workspace react-native-reorderable-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
+    "benchmark:issue34": "yarn prepare && node benchmarks/issue34-geometry.mjs",
+    "performance:reassure": "reassure --branch issue-34 --commit-hash staged-tree",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest"
@@ -87,6 +89,7 @@
     "react-native-gesture-handler": "3.0.0",
     "react-native-reanimated": "4.3.0",
     "react-native-worklets": "0.8.1",
+    "reassure": "1.6.0",
     "test-renderer": "^1.0.0",
     "turbo": "^2.9.16",
     "typescript": "^6.0.3"

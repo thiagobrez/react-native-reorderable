@@ -4,7 +4,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type ReactElement,
   type Ref,
   type RefAttributes,
@@ -25,8 +24,19 @@ import {
   type ViewProps,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useSharedValue } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import Animated, {
+  cancelAnimation,
+  scrollTo,
+  useAnimatedReaction,
+  useAnimatedRef,
+  useAnimatedStyle,
+  useFrameCallback,
+  useSharedValue,
+  withTiming,
+  type FrameCallback,
+  type SharedValue,
+} from 'react-native-reanimated';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
 import { reconcileReorder } from './semantic';
 import { accessibleReorderMove } from './semantic';
@@ -40,9 +50,15 @@ import type {
   ReorderableListRenderItemInfo,
 } from './types';
 import {
-  VirtualizedReorderEngine,
-  type VirtualizedReorderSnapshot,
-} from './virtualized-reorder-engine';
+  applyMeasurement,
+  applyMeasurementBatch,
+  contentLength,
+  createEstimatedGeometry,
+  createExactGeometry,
+  indexAtOffset,
+  itemOffset,
+  type VirtualizedGeometry,
+} from './virtualized-geometry';
 
 const RESERVED_RUNTIME_PROPS = [
   'CellRendererComponent',
@@ -93,34 +109,55 @@ function removeNonFlatListProps(
   return safeProps;
 }
 
-function listGeometry<Item>(
+function createListGeometry<Item>(
   data: readonly Item[],
   getItemLayout:
     | ((data: readonly Item[], index: number) => ReorderableItemLayout)
     | undefined,
-  estimatedItemSize: number | undefined,
-  measuredItemSize: number | null
-): readonly ReorderableItemLayout[] {
-  const estimate = measuredItemSize ?? estimatedItemSize ?? 64;
-  let offset = 0;
-  return data.map((_item, index) => {
-    const exact = getItemLayout?.(data, index);
-    const length = exact?.length ?? estimate;
-    const layout = exact ?? { index, length, offset };
-    if (
-      layout.index !== index ||
-      !Number.isFinite(layout.length) ||
-      layout.length <= 0 ||
-      !Number.isFinite(layout.offset) ||
-      layout.offset < 0
-    ) {
-      throw new Error(
-        `[react-native-reorderable] ReorderableList getItemLayout returned invalid exact geometry for index ${index}.`
+  estimatedItemSize: number | undefined
+): VirtualizedGeometry {
+  return getItemLayout == null
+    ? createEstimatedGeometry(
+        data.length,
+        estimatedItemSize ?? 64,
+        estimatedItemSize == null
+      )
+    : createExactGeometry(
+        data.map((_item, index) => getItemLayout(data, index))
       );
+}
+
+function resolveDestinationIndex(
+  geometry: VirtualizedGeometry,
+  itemCount: number,
+  sourceIndexes: readonly number[],
+  contentY: number
+): number {
+  'worklet';
+  const index = indexAtOffset(geometry, contentY, true).index;
+  let low = 0;
+  let high = sourceIndexes.length - 1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const sourceIndex = sourceIndexes[middle]!;
+    if (sourceIndex < index) low = middle + 1;
+    else if (sourceIndex > index) high = middle - 1;
+    else {
+      const runKey = sourceIndex - middle;
+      let runLow = middle;
+      let runHigh = sourceIndexes.length - 1;
+      while (runLow < runHigh) {
+        const candidate = Math.floor((runLow + runHigh + 1) / 2);
+        if (sourceIndexes[candidate]! - candidate === runKey) {
+          runLow = candidate;
+        } else {
+          runHigh = candidate - 1;
+        }
+      }
+      return Math.min(itemCount, sourceIndexes[runLow]! + 1);
     }
-    offset = layout.offset + layout.length;
-    return layout;
-  });
+  }
+  return index;
 }
 
 function assignListRef<Item>(
@@ -146,15 +183,13 @@ function uniqueActionName(
 }
 
 type ListCellProps<Item> = Readonly<{
-  active: boolean;
   id: string;
   item: Item;
   index: number;
   renderItem: (
     info: ReorderableListRenderItemInfo<Item>
   ) => ReactElement | null;
-  translationY: number;
-  onMeasure: (index: number, length: number) => void;
+  onMeasure: (id: string, index: number, length: number) => void;
   canMoveEarlier: boolean;
   canMoveLater: boolean;
   moveEarlierLabel: string;
@@ -162,15 +197,16 @@ type ListCellProps<Item> = Readonly<{
   onAccessibleMove: (id: string, direction: 'earlier' | 'later') => void;
   registerAccessibleRef: (id: string, value: unknown) => void;
   collectionSize: number;
+  activeSourceIndexes: SharedValue<readonly number[]>;
+  activeTranslationY: SharedValue<number>;
+  anchorCorrection: SharedValue<number>;
 }>;
 
 function ListCell<Item>({
-  active,
   id,
   item,
   index,
   renderItem,
-  translationY,
   onMeasure,
   canMoveEarlier,
   canMoveLater,
@@ -179,7 +215,25 @@ function ListCell<Item>({
   onAccessibleMove,
   registerAccessibleRef,
   collectionSize,
+  activeSourceIndexes,
+  activeTranslationY,
+  anchorCorrection,
 }: ListCellProps<Item>) {
+  const activeStyle = useAnimatedStyle(() => {
+    const active = activeSourceIndexes.value.includes(index);
+    return {
+      elevation: active ? 8 : 0,
+      opacity: active ? 0.94 : 1,
+      transform: [
+        {
+          translateY: active
+            ? activeTranslationY.value - anchorCorrection.value
+            : 0,
+        },
+      ],
+      zIndex: active ? 2 : 0,
+    };
+  }, [index]);
   const rendered = renderItem({ item, index });
   const renderedProps = isValidElement(rendered)
     ? (rendered.props as ViewProps)
@@ -197,7 +251,7 @@ function ListCell<Item>({
     libraryActions.push({ name: laterName, label: moveLaterLabel });
   }
   return (
-    <View
+    <Animated.View
       accessible={renderedProps.accessible ?? true}
       accessibilityActions={[...appActions, ...libraryActions]}
       accessibilityLabel={renderedProps.accessibilityLabel}
@@ -211,17 +265,15 @@ function ListCell<Item>({
           renderedProps.onAccessibilityAction?.(event);
         }
       }}
-      style={
-        active
-          ? [styles.activeItem, { transform: [{ translateY: translationY }] }]
-          : undefined
+      style={activeStyle}
+      onLayout={(event) =>
+        onMeasure(id, index, event.nativeEvent.layout.height)
       }
-      onLayout={(event) => onMeasure(index, event.nativeEvent.layout.height)}
-      ref={(value) => registerAccessibleRef(id, value)}
+      ref={(value: unknown) => registerAccessibleRef(id, value)}
       testID={`reorderable-list-wrapper-${id}`}
     >
       {rendered}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -259,7 +311,6 @@ export function ReorderableList<Item>(
   } = props as ReorderableListComponentProps<Item> & Record<string, unknown>;
   const selectedIds = selectedIdsProp ?? EMPTY_SELECTED_IDS;
   const flatListProps = removeNonFlatListProps(remainingProps);
-  const [measuredItemSize, setMeasuredItemSize] = useState<number | null>(null);
   const itemIds = useMemo(() => {
     const ids = data.map(keyExtractor);
     const seenIds = new Set<string>();
@@ -278,14 +329,11 @@ export function ReorderableList<Item>(
     }
     return ids;
   }, [data, keyExtractor]);
-  const layouts = useMemo(
-    () =>
-      listGeometry(data, getItemLayout, estimatedItemSize, measuredItemSize),
-    [data, estimatedItemSize, getItemLayout, measuredItemSize]
+  const nextGeometry = useMemo(
+    () => createListGeometry(data, getItemLayout, estimatedItemSize),
+    [data, estimatedItemSize, getItemLayout]
   );
-  const listRef = useRef<FlatList<Item> | null>(null);
-  const viewportHeight = useRef(0);
-  const interactionStartY = useRef(0);
+  const animatedListRef = useAnimatedRef<FlatList<Item>>();
   const currentItemIds = useRef(itemIds);
   const onReorderRef = useRef(onReorder);
   const selectedIdsRef = useRef(selectedIds);
@@ -300,121 +348,96 @@ export function ReorderableList<Item>(
   onReorderRef.current = onReorder;
   selectedIdsRef.current = selectedIds;
   enabledRef.current = enabled;
-  const [snapshot, setSnapshot] = useState<VirtualizedReorderSnapshot>({
-    active: false,
-    autoScrollVelocity: 0,
-    destination: null,
-    feedbackViewportY: null,
-    scrollOffset: 0,
-    sourceIds: [],
-  });
-  const [translationY, setTranslationY] = useState(0);
   const gestureActivated = useSharedValue(false);
   const gestureOriginX = useSharedValue(0);
   const gestureOriginY = useSharedValue(0);
-  const engineRef = useRef<VirtualizedReorderEngine | null>(null);
-  if (engineRef.current == null) {
-    engineRef.current = new VirtualizedReorderEngine({
-      itemIds,
-      layouts,
-      onCommit: ({ sourceIds, destination }) => {
-        const event = reconcileReorder(
-          [{ sectionId: null, itemIds: currentItemIds.current }],
-          sourceIds,
-          destination
-        );
-        if (event != null) onReorderRef.current(event);
-      },
-    });
-  }
-  const reorderEngine = engineRef.current;
-  const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const geometry = useSharedValue<VirtualizedGeometry>(nextGeometry);
+  const uiItemIds = useSharedValue<readonly string[]>(itemIds);
+  const uiSelectedIds = useSharedValue<readonly string[]>(selectedIds);
+  const activeId = useSharedValue<string | null>(null);
+  const activeIndex = useSharedValue(-1);
+  const activeSourceIds = useSharedValue<readonly string[]>([]);
+  const activeSourceIndexes = useSharedValue<readonly number[]>([]);
+  const activeTranslationY = useSharedValue(0);
+  const anchorCorrection = useSharedValue(0);
+  const interactionStartY = useSharedValue(0);
+  const pointerViewportY = useSharedValue(0);
+  const viewportHeight = useSharedValue(0);
+  const scrollOffset = useSharedValue(0);
+  const autoScrollOffset = useSharedValue(0);
+  const autoScrollActive = useSharedValue(false);
+  const destinationIndex = useSharedValue(-1);
+  const feedbackViewportY = useSharedValue(0);
+  const terminalSent = useSharedValue(true);
+  const measurementQueue = useSharedValue<{
+    cursor: number;
+    ids: string[];
+    indices: number[];
+    lengths: number[];
+  }>({ cursor: 0, ids: [], indices: [], lengths: [] });
 
-  const stopClock = useCallback(() => {
-    if (autoScrollTimer.current == null) return;
-    clearInterval(autoScrollTimer.current);
-    autoScrollTimer.current = null;
-  }, []);
-  const publishSnapshot = useCallback(() => {
-    setSnapshot(reorderEngine.snapshot());
-  }, [reorderEngine]);
-  const cancel = useCallback(() => {
-    reorderEngine.cancel();
-    stopClock();
-    setTranslationY(0);
-    publishSnapshot();
-  }, [publishSnapshot, reorderEngine, stopClock]);
-  const startClock = useCallback(() => {
-    if (autoScrollTimer.current != null) return;
-    autoScrollTimer.current = setInterval(() => {
-      if (!reorderEngine.autoScrollTick(16)) {
-        if (!reorderEngine.snapshot().active) stopClock();
-        return;
-      }
-      const next = reorderEngine.snapshot();
-      listRef.current?.scrollToOffset({
-        animated: false,
-        offset: next.scrollOffset,
-      });
-      setSnapshot(next);
-    }, 16);
-  }, [reorderEngine, stopClock]);
-  const beginAt = useCallback(
-    (viewportY: number) => {
-      const contentY = reorderEngine.snapshot().scrollOffset + viewportY;
-      const index = layouts.findIndex(
-        (layout) =>
-          contentY >= layout.offset && contentY <= layout.offset + layout.length
+  const handlePointerTerminal = useCallback(
+    (
+      cancelled: boolean,
+      sourceIds: readonly string[],
+      beforeId: string | null
+    ) => {
+      if (cancelled) return;
+      const event = reconcileReorder(
+        [{ sectionId: null, itemIds: currentItemIds.current }],
+        sourceIds,
+        { sectionId: null, beforeId }
       );
-      const id = itemIds[index];
-      if (id == null) return;
-      if (!enabled || !reorderEngine.start(id, selectedIdsRef.current)) return;
-      interactionStartY.current = viewportY;
-      setTranslationY(0);
-      startClock();
-      publishSnapshot();
+      if (event != null) onReorderRef.current(event);
     },
-    [enabled, itemIds, layouts, publishSnapshot, reorderEngine, startClock]
+    []
   );
-  const move = useCallback(
-    (nextTranslationY: number) => {
-      reorderEngine.move(nextTranslationY);
-      setTranslationY(nextTranslationY);
-      publishSnapshot();
+
+  const finishPointerInteraction = useCallback(
+    (
+      cancelled: boolean,
+      sourceIds: readonly string[],
+      beforeId: string | null
+    ) => {
+      'worklet';
+      if (activeIndex.value < 0 || terminalSent.value) return;
+      terminalSent.value = true;
+      activeId.value = null;
+      activeIndex.value = -1;
+      activeSourceIds.value = [];
+      activeSourceIndexes.value = [];
+      gestureActivated.value = false;
+      activeTranslationY.value = 0;
+      anchorCorrection.value = 0;
+      cancelAnimation(autoScrollOffset);
+      autoScrollActive.value = false;
+      destinationIndex.value = -1;
+      pointerViewportY.value = 0;
+      scheduleOnRN(handlePointerTerminal, cancelled, sourceIds, beforeId);
     },
-    [publishSnapshot, reorderEngine]
+    [
+      activeIndex,
+      activeId,
+      activeSourceIds,
+      activeSourceIndexes,
+      activeTranslationY,
+      anchorCorrection,
+      autoScrollActive,
+      autoScrollOffset,
+      destinationIndex,
+      gestureActivated,
+      handlePointerTerminal,
+      pointerViewportY,
+      terminalSent,
+    ]
   );
-  const moveTo = useCallback(
-    (viewportY: number) => move(viewportY - interactionStartY.current),
-    [move]
-  );
-  const finish = useCallback(
-    (viewportY: number) => {
-      const withinViewport =
-        viewportY >= 0 && viewportY <= viewportHeight.current;
-      reorderEngine.finish(withinViewport);
-      stopClock();
-      setTranslationY(0);
-      publishSnapshot();
-    },
-    [publishSnapshot, reorderEngine, stopClock]
-  );
-  const finishAt = useCallback(
-    (viewportY: number) => {
-      moveTo(viewportY);
-      finish(viewportY);
-    },
-    [finish, moveTo]
-  );
-  const handleMeasure = useCallback(
-    (_index: number, length: number) => {
-      if (getItemLayout != null || !Number.isFinite(length) || length <= 0) {
-        return;
-      }
-      setMeasuredItemSize((current) => current ?? length);
-    },
-    [getItemLayout]
-  );
+
+  const cancel = useCallback(() => {
+    scheduleOnUI(() => {
+      'worklet';
+      finishPointerInteraction(true, [], null);
+    });
+  }, [finishPointerInteraction]);
   const registerAccessibleRef = useCallback((id: string, value: unknown) => {
     if (value == null) accessibleItemRefs.current.delete(id);
     else accessibleItemRefs.current.set(id, value);
@@ -486,6 +509,164 @@ export function ReorderableList<Item>(
       );
     }
   });
+  const refreshDestination = useCallback(() => {
+    'worklet';
+    if (activeIndex.value < 0 || viewportHeight.value <= 0) {
+      destinationIndex.value = -1;
+      return;
+    }
+    const contentY =
+      scrollOffset.value +
+      Math.max(0, Math.min(viewportHeight.value, pointerViewportY.value));
+    const index = resolveDestinationIndex(
+      geometry.value,
+      uiItemIds.value.length,
+      activeSourceIndexes.value,
+      contentY
+    );
+    destinationIndex.value = index;
+    feedbackViewportY.value = Math.max(
+      0,
+      Math.min(
+        viewportHeight.value,
+        itemOffset(geometry.value, index) - scrollOffset.value
+      )
+    );
+  }, [
+    activeIndex,
+    activeSourceIndexes,
+    destinationIndex,
+    feedbackViewportY,
+    geometry,
+    pointerViewportY,
+    scrollOffset,
+    uiItemIds,
+    viewportHeight,
+  ]);
+  const updateAutoScroll = useCallback(() => {
+    'worklet';
+    cancelAnimation(autoScrollOffset);
+    autoScrollOffset.value = scrollOffset.value;
+    autoScrollActive.value = false;
+    if (activeIndex.value < 0 || viewportHeight.value <= 0) return;
+    const edgeSize = 60;
+    const pointer = pointerViewportY.value;
+    let velocity = 0;
+    if (pointer < edgeSize && scrollOffset.value > 0) {
+      velocity =
+        -360 * Math.min(1, Math.max(0, (edgeSize - pointer) / edgeSize));
+    } else if (pointer > viewportHeight.value - edgeSize) {
+      velocity =
+        360 *
+        Math.min(
+          1,
+          Math.max(0, (pointer - (viewportHeight.value - edgeSize)) / edgeSize)
+        );
+    }
+    if (velocity === 0) return;
+    const maximumOffset = Math.max(
+      0,
+      contentLength(geometry.value) - viewportHeight.value
+    );
+    const target = velocity < 0 ? 0 : maximumOffset;
+    if (target === scrollOffset.value) return;
+    autoScrollActive.value = true;
+    autoScrollOffset.value = withTiming(
+      target,
+      {
+        duration:
+          (Math.abs(target - scrollOffset.value) / Math.abs(velocity)) * 1000,
+      },
+      (finished) => {
+        if (finished) autoScrollActive.value = false;
+      }
+    );
+  }, [
+    activeIndex,
+    autoScrollActive,
+    autoScrollOffset,
+    geometry,
+    pointerViewportY,
+    scrollOffset,
+    viewportHeight,
+  ]);
+  const frameLoopRef = useRef<FrameCallback | null>(null);
+  const setFrameLoopActive = useCallback(
+    (active: boolean) => frameLoopRef.current?.setActive(active),
+    []
+  );
+  frameLoopRef.current = useFrameCallback(() => {
+    'worklet';
+    let queuePending = false;
+    geometry.modify((current) => {
+      const queue = measurementQueue.value;
+      const validBatch = {
+        cursor: 0,
+        indices: [] as number[],
+        lengths: [] as number[],
+      };
+      let consumed = 0;
+      while (queue.cursor < queue.indices.length && consumed < 4) {
+        const cursor = queue.cursor;
+        const index = queue.indices[cursor]!;
+        const id = queue.ids[cursor]!;
+        if (uiItemIds.value[index] === id) {
+          validBatch.indices.push(index);
+          validBatch.lengths.push(queue.lengths[cursor]!);
+        }
+        queue.cursor += 1;
+        consumed += 1;
+      }
+      const batch = applyMeasurementBatch(
+        current,
+        validBatch,
+        activeIndex.value,
+        4
+      );
+      anchorCorrection.value += batch.anchorDelta;
+      if (queue.cursor === queue.indices.length && queue.cursor > 0) {
+        queue.cursor = 0;
+        queue.ids.length = 0;
+        queue.indices.length = 0;
+        queue.lengths.length = 0;
+      }
+      queuePending = queue.cursor < queue.indices.length;
+      return current;
+    }, true);
+    if (activeIndex.value >= 0) {
+      refreshDestination();
+      updateAutoScroll();
+    }
+    if (!queuePending) scheduleOnRN(setFrameLoopActive, false);
+  }, false);
+  const handleMeasure = useCallback(
+    (id: string, index: number, length: number) => {
+      if (getItemLayout != null || !Number.isFinite(length) || length <= 0) {
+        return;
+      }
+      setFrameLoopActive(true);
+      scheduleOnUI(() => {
+        'worklet';
+        measurementQueue.modify((queue) => {
+          queue.ids.push(id);
+          queue.indices.push(index);
+          queue.lengths.push(length);
+          return queue;
+        }, true);
+      });
+    },
+    [getItemLayout, measurementQueue, setFrameLoopActive]
+  );
+  useAnimatedReaction(
+    () => (autoScrollActive.value ? autoScrollOffset.value : null),
+    (offset) => {
+      if (offset == null) return;
+      scrollOffset.value = offset;
+      scrollTo(animatedListRef, 0, offset, false);
+      refreshDestination();
+    },
+    [refreshDestination]
+  );
   const viewportGestures = useMemo(() => {
     const nativeGesture = Gesture.Native();
     const reorderGesture = Gesture.LongPress()
@@ -500,10 +681,38 @@ export function ReorderableList<Item>(
         gestureOriginY.value = touch.y;
       })
       .onStart((event) => {
+        'worklet';
+        if (!enabled || viewportHeight.value <= 0) return;
+        const index = indexAtOffset(
+          geometry.value,
+          scrollOffset.value + event.y
+        ).index;
+        const id = uiItemIds.value[index];
+        if (id == null) return;
         gestureActivated.value = true;
-        scheduleOnRN(beginAt, event.y);
+        activeId.value = id;
+        activeIndex.value = index;
+        const sourceIndexes = uiSelectedIds.value.includes(id)
+          ? uiItemIds.value
+              .map((candidate, candidateIndex) =>
+                uiSelectedIds.value.includes(candidate) ? candidateIndex : -1
+              )
+              .filter((candidateIndex) => candidateIndex >= 0)
+          : [index];
+        activeSourceIndexes.value = sourceIndexes;
+        activeSourceIds.value = sourceIndexes.map(
+          (sourceIndex) => uiItemIds.value[sourceIndex]!
+        );
+        interactionStartY.value = event.y;
+        pointerViewportY.value = event.y;
+        activeTranslationY.value = 0;
+        anchorCorrection.value = 0;
+        terminalSent.value = false;
+        updateAutoScroll();
+        refreshDestination();
       })
       .onTouchesMove((event, state) => {
+        'worklet';
         const touch = event.allTouches[0];
         if (touch == null) return;
         if (
@@ -516,39 +725,147 @@ export function ReorderableList<Item>(
           state.fail();
           return;
         }
-        if (gestureActivated.value) scheduleOnRN(moveTo, touch.y);
+        if (gestureActivated.value && activeIndex.value >= 0) {
+          pointerViewportY.value = touch.y;
+          activeTranslationY.value = touch.y - interactionStartY.value;
+          updateAutoScroll();
+          refreshDestination();
+        }
       })
-      .onEnd((event) => scheduleOnRN(finishAt, event.y))
+      .onEnd((event) => {
+        'worklet';
+        if (activeIndex.value < 0 || terminalSent.value) return;
+        pointerViewportY.value = event.y;
+        activeTranslationY.value = event.y - interactionStartY.value;
+        refreshDestination();
+        const index = destinationIndex.value;
+        const sourceIds = activeSourceIds.value;
+        const beforeId = index < 0 ? null : (uiItemIds.value[index] ?? null);
+        const cancelled =
+          event.y < 0 || event.y > viewportHeight.value || index < 0;
+        finishPointerInteraction(cancelled, sourceIds, beforeId);
+      })
       .onFinalize((_event, success) => {
+        'worklet';
         gestureActivated.value = false;
-        if (!success) scheduleOnRN(cancel);
+        if (!success) finishPointerInteraction(true, [], null);
       })
       .simultaneousWithExternalGesture(nativeGesture);
     nativeGesture.simultaneousWithExternalGesture(reorderGesture);
     return { nativeGesture, reorderGesture };
   }, [
-    beginAt,
-    cancel,
-    finishAt,
+    activeId,
+    activeIndex,
+    activeSourceIds,
+    activeSourceIndexes,
+    activeTranslationY,
+    anchorCorrection,
+    destinationIndex,
+    enabled,
+    geometry,
     gestureActivated,
     gestureOriginX,
     gestureOriginY,
-    moveTo,
+    finishPointerInteraction,
+    interactionStartY,
+    pointerViewportY,
+    refreshDestination,
+    scrollOffset,
+    terminalSent,
+    uiItemIds,
+    uiSelectedIds,
+    updateAutoScroll,
+    viewportHeight,
   ]);
 
   useEffect(() => {
     if (!enabled) cancel();
   }, [cancel, enabled]);
   useEffect(() => {
-    const wasActive = reorderEngine.snapshot().active;
-    reorderEngine.updateGeometry(itemIds, layouts);
-    if (!wasActive) return;
-    if (!reorderEngine.snapshot().active) {
-      stopClock();
-      setTranslationY(0);
-    }
-    publishSnapshot();
-  }, [itemIds, layouts, publishSnapshot, reorderEngine, stopClock]);
+    scheduleOnUI(() => {
+      'worklet';
+      measurementQueue.value = { cursor: 0, ids: [], indices: [], lengths: [] };
+      const previousGeometry = geometry.value;
+      const previousIds = uiItemIds.value;
+      const sameOrder =
+        previousIds.length === itemIds.length &&
+        previousIds.every((id, index) => id === itemIds[index]);
+      let replacementGeometry = nextGeometry;
+      if (
+        !previousGeometry.exact &&
+        !nextGeometry.exact &&
+        sameOrder &&
+        previousGeometry.estimate === nextGeometry.estimate &&
+        previousGeometry.adaptive === nextGeometry.adaptive
+      ) {
+        replacementGeometry = previousGeometry;
+      } else if (!nextGeometry.exact) {
+        const nextIndexById: Record<string, number> = {};
+        for (let index = 0; index < itemIds.length; index += 1) {
+          nextIndexById[`identity:${itemIds[index]!}`] = index;
+        }
+        if (!previousGeometry.exact) {
+          for (let index = 0; index < previousGeometry.count; index += 1) {
+            if (previousGeometry.measuredFlags[index] !== 1) continue;
+            const id = previousIds[index];
+            const nextIndex =
+              id == null ? null : nextIndexById[`identity:${id}`];
+            if (nextIndex == null) continue;
+            applyMeasurement(
+              replacementGeometry,
+              nextIndex,
+              previousGeometry.measuredSizes[index]!
+            );
+          }
+        }
+      }
+      if (activeIndex.value >= 0) {
+        const nextActiveIndex =
+          activeId.value == null ? -1 : itemIds.indexOf(activeId.value);
+        const nextSourceIndexes = activeSourceIds.value
+          .map((id) => itemIds.indexOf(id))
+          .sort((left, right) => left - right);
+        if (
+          nextActiveIndex < 0 ||
+          nextSourceIndexes.some((index) => index < 0)
+        ) {
+          finishPointerInteraction(true, [], null);
+        } else {
+          const previousAnchor = itemOffset(geometry.value, activeIndex.value);
+          const nextAnchor = itemOffset(replacementGeometry, nextActiveIndex);
+          anchorCorrection.value += nextAnchor - previousAnchor;
+          activeIndex.value = nextActiveIndex;
+          activeSourceIndexes.value = nextSourceIndexes;
+        }
+      }
+      geometry.value = replacementGeometry;
+      uiItemIds.value = itemIds;
+      if (activeIndex.value >= 0) {
+        refreshDestination();
+        updateAutoScroll();
+      }
+    });
+  }, [
+    activeId,
+    activeIndex,
+    activeSourceIds,
+    activeSourceIndexes,
+    anchorCorrection,
+    finishPointerInteraction,
+    geometry,
+    itemIds,
+    measurementQueue,
+    nextGeometry,
+    uiItemIds,
+    updateAutoScroll,
+    refreshDestination,
+  ]);
+  useEffect(() => {
+    scheduleOnUI(() => {
+      'worklet';
+      uiSelectedIds.value = selectedIds;
+    });
+  }, [selectedIds, uiSelectedIds]);
   useEffect(() => {
     const appState = AppState.addEventListener('change', (state) => {
       if (state !== 'active') cancel();
@@ -560,7 +877,7 @@ export function ReorderableList<Item>(
     const back =
       Platform.OS === 'android'
         ? BackHandler.addEventListener('hardwareBackPress', () => {
-            if (!reorderEngine.snapshot().active) return false;
+            if (activeIndex.get() < 0) return false;
             cancel();
             return true;
           })
@@ -571,34 +888,28 @@ export function ReorderableList<Item>(
       back?.remove();
       cancel();
     };
-  }, [cancel, reorderEngine]);
+  }, [activeIndex, cancel]);
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
-      viewportHeight.current = event.nativeEvent.layout.height;
-      reorderEngine.setViewport(
-        event.nativeEvent.layout.height,
-        reorderEngine.snapshot().scrollOffset
-      );
-      publishSnapshot();
+      viewportHeight.value = event.nativeEvent.layout.height;
       onLayout?.(event);
     },
-    [onLayout, publishSnapshot, reorderEngine]
+    [onLayout, viewportHeight]
   );
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      reorderEngine.setScrollOffset(event.nativeEvent.contentOffset.y);
-      if (reorderEngine.snapshot().active) publishSnapshot();
+      scrollOffset.value = event.nativeEvent.contentOffset.y;
       onScroll?.(event);
     },
-    [onScroll, publishSnapshot, reorderEngine]
+    [onScroll, scrollOffset]
   );
   const handleListRef = useCallback(
     (value: FlatList<Item> | null) => {
-      listRef.current = value;
+      animatedListRef(value);
       assignListRef(ref, value);
     },
-    [ref]
+    [animatedListRef, ref]
   );
   const accessibilityAvailability = useMemo(() => {
     const indexById = new Map(itemIds.map((id, index) => [id, index]));
@@ -619,17 +930,22 @@ export function ReorderableList<Item>(
       return direction === 'earlier' ? index > 0 : index < itemIds.length - 1;
     };
   }, [itemIds, selectedIds]);
+  const feedbackStyle = useAnimatedStyle(() => ({
+    opacity: destinationIndex.value < 0 ? 0 : 1,
+    transform: [{ translateY: feedbackViewportY.value }],
+  }));
   const handleRenderItem = useCallback(
     ({ item, index }: { item: Item; index: number }) => {
       const id = keyExtractor(item, index);
       return (
         <ListCell
-          active={snapshot.sourceIds.includes(id)}
+          activeSourceIndexes={activeSourceIndexes}
+          activeTranslationY={activeTranslationY}
+          anchorCorrection={anchorCorrection}
           id={id}
           index={index}
           item={item}
           renderItem={renderItem}
-          translationY={translationY}
           onMeasure={handleMeasure}
           canMoveEarlier={enabled && accessibilityAvailability(id, 'earlier')}
           canMoveLater={enabled && accessibilityAvailability(id, 'later')}
@@ -644,6 +960,9 @@ export function ReorderableList<Item>(
     [
       handleMeasure,
       handleAccessibleMove,
+      activeSourceIndexes,
+      activeTranslationY,
+      anchorCorrection,
       accessibilityAvailability,
       enabled,
       itemIds,
@@ -651,8 +970,6 @@ export function ReorderableList<Item>(
       renderItem,
       registerAccessibleRef,
       resolvedAccessibilityStrings,
-      snapshot.sourceIds,
-      translationY,
     ]
   );
 
@@ -661,7 +978,7 @@ export function ReorderableList<Item>(
       <GestureDetector gesture={viewportGestures.reorderGesture}>
         <View collapsable={false} style={styles.gestureSurface}>
           <GestureDetector gesture={viewportGestures.nativeGesture}>
-            <FlatList
+            <Animated.FlatList
               {...flatListProps}
               data={data as Item[]}
               getItemLayout={
@@ -679,31 +996,22 @@ export function ReorderableList<Item>(
           </GestureDetector>
         </View>
       </GestureDetector>
-      {snapshot.feedbackViewportY == null ? null : (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.destinationFeedback,
-            { top: snapshot.feedbackViewportY },
-          ]}
-          testID="reorderable-list-destination-feedback"
-        />
-      )}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.destinationFeedback, feedbackStyle]}
+        testID="reorderable-list-destination-feedback"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  activeItem: {
-    elevation: 8,
-    opacity: 0.94,
-    zIndex: 2,
-  },
   destinationFeedback: {
     backgroundColor: '#0A84FF',
     height: 3,
     left: 0,
     position: 'absolute',
+    top: 0,
     right: 0,
     zIndex: 3,
   },

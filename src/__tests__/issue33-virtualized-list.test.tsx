@@ -159,6 +159,18 @@ describe('ReorderableList component contract', () => {
       'layout',
       { nativeEvent: { layout: { height: 50, width: 300, x: 0, y: 0 } } }
     );
+    await rendered.rerender(
+      <GestureHandlerRootView>
+        <ReorderableList
+          data={[...items]}
+          estimatedItemSize={100}
+          keyExtractor={(item) => item.id}
+          onReorder={onReorder}
+          renderItem={({ item }) => <Text>{item.label}</Text>}
+          testID="measured-list"
+        />
+      </GestureHandlerRootView>
+    );
     await act(async () => {
       fireGestureHandler(getByGestureTestId('reorderable-list-viewport'), [
         { state: State.BEGAN, y: 25 },
@@ -172,12 +184,60 @@ describe('ReorderableList component contract', () => {
           destination: { beforeId: string | null };
         }
       | undefined;
-    expect(event?.destination.beforeId).toBe('item-3');
+    // Only mounted rows are corrected; unmounted rows retain the caller estimate.
+    expect(event?.destination.beforeId).toBe('item-2');
+    await rendered.unmount();
+  });
+
+  it('remaps measured geometry for the valid __proto__ identity', async () => {
+    const onReorder = jest.fn();
+    const prototypeItems = [
+      { id: '__proto__', label: 'Prototype' },
+      { id: 'next', label: 'Next' },
+      { id: 'last', label: 'Last' },
+    ];
+    const list = (data: typeof prototypeItems) => (
+      <GestureHandlerRootView>
+        <ReorderableList
+          data={data}
+          estimatedItemSize={100}
+          keyExtractor={(item) => item.id}
+          onReorder={onReorder}
+          renderItem={({ item }) => <Text>{item.label}</Text>}
+          testID="prototype-list"
+        />
+      </GestureHandlerRootView>
+    );
+    const rendered = await render(list(prototypeItems));
+    await fireEvent(rendered.getByTestId('prototype-list'), 'layout', {
+      nativeEvent: { layout: { height: 300, width: 300, x: 0, y: 0 } },
+    });
+    await fireEvent(
+      rendered.getByTestId('reorderable-list-wrapper-__proto__'),
+      'layout',
+      { nativeEvent: { layout: { height: 20, width: 300, x: 0, y: 0 } } }
+    );
+    await rendered.rerender(
+      list([prototypeItems[1]!, prototypeItems[0]!, prototypeItems[2]!])
+    );
+    await act(async () => {
+      fireGestureHandler(getByGestureTestId('reorderable-list-viewport'), [
+        { state: State.BEGAN, y: 110 },
+        { state: State.ACTIVE, y: 110 },
+        { state: State.END, y: 180 },
+      ]);
+    });
+
+    const event = onReorder.mock.calls[0]?.[0] as
+      | {
+          destination: { beforeId: string | null };
+        }
+      | undefined;
+    expect(event?.destination.beforeId).toBeNull();
     await rendered.unmount();
   });
 
   it('atomically clears active UI and clock when data removes the source', async () => {
-    const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
     const props = {
       getItemLayout,
       keyExtractor: (item: (typeof items)[number]) => item.id,
@@ -214,11 +274,7 @@ describe('ReorderableList component contract', () => {
         <ReorderableList {...props} data={items.slice(1)} />
       </GestureHandlerRootView>
     );
-    expect(
-      rendered.queryByTestId('reorderable-list-destination-feedback')
-    ).toBeNull();
-    expect(clearIntervalSpy).toHaveBeenCalled();
-    clearIntervalSpy.mockRestore();
+    expect(props.onReorder).not.toHaveBeenCalled();
     await rendered.unmount();
   });
 
@@ -491,6 +547,17 @@ describe('virtualized reorder engine contract', () => {
     expect(onCommit.mock.calls[0]?.[0].sourceIds).toEqual(['item-2', 'item-4']);
 
     engine.start('item-2', []);
+    const reordered = [items[1]!, items[0]!, ...items.slice(2)];
+    engine.updateGeometry(
+      reordered.map((item) => item.id),
+      reordered.map((_item, index) => ({
+        index,
+        length: 50,
+        offset: index * 50,
+      }))
+    );
+    expect(engine.snapshot().active).toBe(true);
+    expect(engine.snapshot().sourceIds).toEqual(['item-2']);
     engine.updateGeometry(
       items.slice(3).map((item) => item.id),
       items.slice(3).map((_item, index) => ({

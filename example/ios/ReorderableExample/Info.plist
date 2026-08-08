@@ -7,7 +7,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>reorderable-example</string>
+				<string>reorderable</string>
 			</array>
 		</dict>
 	</array>

@@ -12,6 +12,10 @@ import {
   type ReorderEvent,
   type EnginePolicy,
 } from 'react-native-reorderable';
+import {
+  ReorderableFlashList,
+  ReorderableFlashSectionList,
+} from 'react-native-reorderable/flash-list';
 import { NativeCommitAcceptanceContainer } from '../../src/issue25-acceptance';
 import { FallbackCommitAcceptanceContainer } from '../../src/issue26-acceptance';
 import type { SemanticActionRequest } from '../../src/issue31-acceptance';
@@ -26,7 +30,7 @@ type Card = Readonly<{
   label: string;
 }>;
 
-type Demo = 'single' | 'sections' | 'drop' | 'scale' | 'variable';
+type Demo = 'single' | 'sections' | 'drop' | 'scale' | 'variable' | 'flash';
 
 const initialCards: readonly Card[] = [
   { id: 'blue', label: 'Blue', color: '#0A84FF' },
@@ -63,6 +67,7 @@ function DemoSelector({
           ['drop', 'Drop'],
           ['scale', '10k list'],
           ['variable', 'Variable'],
+          ['flash', 'Flash'],
         ] as const
       ).map(([value, label]) => {
         const selected = value === demo;
@@ -277,6 +282,263 @@ function VariableListExample({ engine }: { engine: EnginePolicy }) {
         testID="variable-list"
         windowSize={5}
       />
+    </View>
+  );
+}
+
+const initialFlashItems: readonly VariableItem[] = Array.from(
+  { length: 120 },
+  (_, index) => ({
+    id: `flash-${index}`,
+    label: `Flash row ${index}`,
+    height: 42 + ((index * 29) % 4) * 12,
+  })
+);
+type FlashSectionId =
+  'empty-start' | 'first' | 'empty-middle' | 'second' | 'third' | 'empty-end';
+const initialFlashSectionItemIds: Readonly<
+  Record<FlashSectionId, readonly string[]>
+> = {
+  'empty-start': [],
+  'first': initialFlashItems.slice(0, 40).map((item) => item.id),
+  'empty-middle': [],
+  'second': initialFlashItems.slice(40, 80).map((item) => item.id),
+  'third': initialFlashItems.slice(80).map((item) => item.id),
+  'empty-end': [],
+};
+
+function FlashListIntegrations({ engine }: { engine: EnginePolicy }) {
+  const [mode, setMode] = useState<'list' | 'sections'>('list');
+  const [items, setItems] = useState(initialFlashItems);
+  const [sectionItemIds, setSectionItemIds] = useState(
+    initialFlashSectionItemIds
+  );
+  const [reorderCallbackCount, setReorderCallbackCount] = useState(0);
+  const [lastReorderEvent, setLastReorderEvent] = useState('none');
+  const [enabled, setEnabled] = useState(true);
+  const [selected, setSelected] = useState(false);
+  const [cancellationArmed, setCancellationArmed] = useState(false);
+  const [mountedRows, setMountedRows] = useState(0);
+  const cancellationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (cancellationTimer.current != null)
+        clearTimeout(cancellationTimer.current);
+    },
+    []
+  );
+  const handleMountChange = useCallback((change: number) => {
+    setMountedRows((current) => current + change);
+  }, []);
+  const reset = useCallback(() => {
+    setItems(initialFlashItems);
+    setSectionItemIds(initialFlashSectionItemIds);
+    setReorderCallbackCount(0);
+    setLastReorderEvent('none');
+    setEnabled(true);
+    setSelected(false);
+    setCancellationArmed(false);
+    if (cancellationTimer.current != null)
+      clearTimeout(cancellationTimer.current);
+  }, []);
+  const handleReorder = useCallback(
+    (event: ReorderEvent) => {
+      const nextIds = event.nextOrder.flatMap(
+        (collection) => collection.itemIds
+      );
+      setItems((current) => itemsInOrder(current, nextIds));
+      if (mode === 'sections') {
+        const proposed = new Map(
+          event.nextOrder.flatMap((collection) =>
+            collection.sectionId == null
+              ? []
+              : [[collection.sectionId, collection.itemIds] as const]
+          )
+        );
+        setSectionItemIds({
+          'empty-start': proposed.get('empty-start') ?? [],
+          'first': proposed.get('first') ?? [],
+          'empty-middle': proposed.get('empty-middle') ?? [],
+          'second': proposed.get('second') ?? [],
+          'third': proposed.get('third') ?? [],
+          'empty-end': proposed.get('empty-end') ?? [],
+        });
+      }
+      setReorderCallbackCount((current) => current + 1);
+      setLastReorderEvent(JSON.stringify(event));
+    },
+    [mode]
+  );
+  const cancelNextHold = useCallback(() => {
+    if (cancellationTimer.current != null)
+      clearTimeout(cancellationTimer.current);
+    setEnabled(true);
+    setCancellationArmed(true);
+    cancellationTimer.current = setTimeout(() => {
+      setEnabled(false);
+      setCancellationArmed(false);
+      cancellationTimer.current = null;
+    }, 3000);
+  }, []);
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const sectionItems = (sectionId: FlashSectionId) =>
+    sectionItemIds[sectionId].flatMap((id) => {
+      const item = itemById.get(id);
+      return item == null ? [] : [item];
+    });
+  const sections = [
+    {
+      id: 'empty-start',
+      title: 'Empty start',
+      data: sectionItems('empty-start'),
+    },
+    { id: 'first', title: 'First', data: sectionItems('first') },
+    {
+      id: 'empty-middle',
+      title: 'Empty middle',
+      data: sectionItems('empty-middle'),
+    },
+    { id: 'second', title: 'Second', data: sectionItems('second') },
+    { id: 'third', title: 'Third', data: sectionItems('third') },
+    { id: 'empty-end', title: 'Empty end', data: sectionItems('empty-end') },
+  ] as const;
+  const controls = (
+    <View style={[styles.engineSelector, styles.flashControls]}>
+      {(['list', 'sections'] as const).map((value) => (
+        <Pressable
+          accessibilityRole="button"
+          key={value}
+          onPress={() => setMode(value)}
+          style={[styles.scenarioAction, styles.flashScenarioAction]}
+          testID={`flash-mode-${value}`}
+        >
+          <Text
+            style={[styles.scenarioActionText, styles.flashScenarioActionText]}
+          >
+            {value === 'list' ? 'List' : 'Sections'}
+          </Text>
+        </Pressable>
+      ))}
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setEnabled((value) => !value)}
+        style={[styles.scenarioAction, styles.flashScenarioAction]}
+        testID="flash-cancel-toggle"
+      >
+        <Text
+          style={[styles.scenarioActionText, styles.flashScenarioActionText]}
+        >
+          {enabled ? 'Disable' : 'Enable'}
+        </Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={cancelNextHold}
+        style={[styles.scenarioAction, styles.flashScenarioAction]}
+        testID="flash-cancel-next-hold"
+      >
+        <Text
+          style={[styles.scenarioActionText, styles.flashScenarioActionText]}
+        >
+          {cancellationArmed ? 'Armed' : 'Cancel hold'}
+        </Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setSelected((value) => !value)}
+        style={[styles.scenarioAction, styles.flashScenarioAction]}
+        testID="flash-selection-toggle"
+      >
+        <Text
+          style={[styles.scenarioActionText, styles.flashScenarioActionText]}
+        >
+          Select
+        </Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={reset}
+        style={[styles.scenarioAction, styles.flashScenarioAction]}
+        testID="flash-reset"
+      >
+        <Text
+          style={[styles.scenarioActionText, styles.flashScenarioActionText]}
+        >
+          Reset
+        </Text>
+      </Pressable>
+    </View>
+  );
+  const status = (
+    <View>
+      <Text style={styles.outcome} testID="flash-mounted-count">
+        Mounted rows: {mountedRows} / 120
+      </Text>
+      <Text style={styles.outcome} testID="flash-order">
+        Order:{' '}
+        {items
+          .slice(0, 5)
+          .map((item) => item.id)
+          .join(', ')}
+      </Text>
+      <Text style={styles.outcome} testID="flash-reorder-callback-count">
+        Reorder callbacks: {reorderCallbackCount}
+      </Text>
+      <Text style={styles.outcome} testID="flash-last-reorder-event">
+        Last reorder event: {lastReorderEvent}
+      </Text>
+      <Text style={styles.outcome} testID="flash-selection">
+        Selection:{' '}
+        {selected
+          ? mode === 'list'
+            ? 'flash-7, flash-9'
+            : 'flash-1, flash-41'
+          : 'none'}
+      </Text>
+    </View>
+  );
+  const renderFlashRow = ({ item }: { item: VariableItem }) => (
+    <VariableRow item={item} onMountChange={handleMountChange} />
+  );
+  return (
+    <View style={styles.scaleScenario} testID="flash-integrations">
+      {controls}
+      {status}
+      {mode === 'list' ? (
+        <ReorderableFlashList
+          data={items}
+          drawDistance={240}
+          enabled={enabled}
+          engine={engine}
+          estimatedItemSize={60}
+          keyExtractor={(item) => item.id}
+          onReorder={handleReorder}
+          renderItem={renderFlashRow}
+          selectedIds={selected ? ['flash-7', 'flash-9'] : []}
+          style={styles.scaleList}
+          testID="flash-list-integration"
+        />
+      ) : (
+        <ReorderableFlashSectionList
+          drawDistance={240}
+          enabled={enabled}
+          engine={engine}
+          estimatedItemSize={60}
+          keyExtractor={(item) => item.id}
+          onReorder={handleReorder}
+          renderItem={renderFlashRow}
+          renderSectionFooter={({ section }) => (
+            <Text style={styles.sectionFooter}>{section.title} footer</Text>
+          )}
+          renderSectionHeader={({ section }) => (
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+          )}
+          sections={sections}
+          selectedIds={selected ? ['flash-1', 'flash-41'] : []}
+          style={styles.scaleList}
+          testID="flash-section-list-integration"
+        />
+      )}
     </View>
   );
 }
@@ -950,6 +1212,9 @@ export default function App() {
           {demo === 'variable' && (
             <VariableListExample engine={engine} key={engine} />
           )}
+          {demo === 'flash' && (
+            <FlashListIntegrations engine={engine} key={engine} />
+          )}
         </View>
       </View>
     </GestureHandlerRootView>
@@ -1009,8 +1274,20 @@ const styles = StyleSheet.create({
   engineSelector: {
     alignSelf: 'center',
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
+    justifyContent: 'center',
     marginBottom: 12,
+  },
+  flashControls: {
+    flexWrap: 'nowrap',
+    gap: 4,
+  },
+  flashScenarioAction: {
+    paddingHorizontal: 4,
+  },
+  flashScenarioActionText: {
+    fontSize: 9,
   },
   engineOption: {
     borderColor: '#636366',

@@ -1,10 +1,12 @@
 import {
   isValidElement,
+  createElement,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   type ReactElement,
+  type ComponentType,
   type Ref,
   type RefAttributes,
 } from 'react';
@@ -59,6 +61,10 @@ import {
   itemOffset,
   type VirtualizedGeometry,
 } from './virtualized-geometry';
+import {
+  assignViewportRef,
+  useOwnedAnimatedScrollComponent,
+} from './viewport-adapter';
 
 const RESERVED_RUNTIME_PROPS = [
   'CellRendererComponent',
@@ -158,14 +164,6 @@ function resolveDestinationIndex(
     }
   }
   return index;
-}
-
-function assignListRef<Item>(
-  ref: Ref<FlatList<Item>> | undefined,
-  value: FlatList<Item> | null
-): void {
-  if (typeof ref === 'function') ref(value);
-  else if (ref != null) ref.current = value;
 }
 
 function uniqueActionName(
@@ -280,10 +278,32 @@ function ListCell<Item>({
 type ReorderableListComponentProps<Item> = ReorderableListProps<Item> &
   RefAttributes<FlatList<Item>>;
 
+export type ReorderableListViewportAdapter = Readonly<{
+  component: ComponentType<Record<string, unknown>>;
+  displayName: string;
+  reservedProps: readonly string[];
+}>;
+
 export function ReorderableList<Item>(
   props: ReorderableListComponentProps<Item>
 ) {
+  return ReorderableListRuntime(props);
+}
+
+export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
+  props: ReorderableListProps<Item> & RefAttributes<ViewportRef>,
+  viewportAdapter?: ReorderableListViewportAdapter
+) {
   assertSupportedProps(props as unknown as Record<string, unknown>);
+  if (viewportAdapter != null) {
+    for (const name of viewportAdapter.reservedProps) {
+      if (Object.prototype.hasOwnProperty.call(props, name)) {
+        throw new Error(
+          `[react-native-reorderable] ${viewportAdapter.displayName} owns the correctness-critical ${name} prop; remove it.`
+        );
+      }
+    }
+  }
   if (
     props.enabled !== false &&
     Platform.OS !== 'ios' &&
@@ -905,12 +925,13 @@ export function ReorderableList<Item>(
     [onScroll, scrollOffset]
   );
   const handleListRef = useCallback(
-    (value: FlatList<Item> | null) => {
-      animatedListRef(value);
-      assignListRef(ref, value);
+    (value: FlatList<Item> | ViewportRef | null) => {
+      if (viewportAdapter == null) animatedListRef(value as FlatList<Item>);
+      assignViewportRef(ref as Ref<unknown>, value);
     },
-    [animatedListRef, ref]
+    [animatedListRef, ref, viewportAdapter]
   );
+  const ownedScrollComponent = useOwnedAnimatedScrollComponent(animatedListRef);
   const accessibilityAvailability = useMemo(() => {
     const indexById = new Map(itemIds.map((id, index) => [id, index]));
     const selectedSet = new Set(selectedIds);
@@ -973,26 +994,38 @@ export function ReorderableList<Item>(
     ]
   );
 
+  const viewportProps: Record<string, unknown> = {
+    ...flatListProps,
+    data: data as Item[],
+    keyExtractor,
+    onLayout: handleLayout,
+    onScroll: handleScroll,
+    ref: handleListRef,
+    renderItem: handleRenderItem,
+    scrollEventThrottle,
+  };
+  if (viewportAdapter == null && getItemLayout != null) {
+    viewportProps.getItemLayout = (_data: unknown, index: number) =>
+      getItemLayout(data, index);
+  }
+  if (viewportAdapter != null) {
+    viewportProps.maintainVisibleContentPosition = { disabled: true };
+    viewportProps.renderScrollComponent = ownedScrollComponent;
+  }
+  const ViewportComponent = viewportAdapter?.component;
+  const viewport = createElement(
+    (ViewportComponent ?? Animated.FlatList) as ComponentType<
+      Record<string, unknown>
+    >,
+    viewportProps
+  );
+
   return (
     <View style={styles.viewportContainer}>
       <GestureDetector gesture={viewportGestures.reorderGesture}>
         <View collapsable={false} style={styles.gestureSurface}>
           <GestureDetector gesture={viewportGestures.nativeGesture}>
-            <Animated.FlatList
-              {...flatListProps}
-              data={data as Item[]}
-              getItemLayout={
-                getItemLayout == null
-                  ? undefined
-                  : (_data, index) => getItemLayout(data, index)
-              }
-              keyExtractor={keyExtractor}
-              onLayout={handleLayout}
-              onScroll={handleScroll}
-              ref={handleListRef}
-              renderItem={handleRenderItem}
-              scrollEventThrottle={scrollEventThrottle}
-            />
+            {viewport}
           </GestureDetector>
         </View>
       </GestureDetector>

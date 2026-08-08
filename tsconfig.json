@@ -2,7 +2,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "react-native-reorderable": ["./src/index"]
+      "react-native-reorderable": ["./src/index"],
+      "react-native-reorderable/flash-list": ["./src/flash-list"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

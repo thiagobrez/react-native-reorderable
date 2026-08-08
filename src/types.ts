@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
-import type { FlatListProps, ViewProps } from 'react-native';
+import type { FlatListProps, SectionListProps, ViewProps } from 'react-native';
 
 export type CollectionOrder = Readonly<{
   sectionId: string | null;
@@ -96,6 +96,14 @@ export type ReorderableListRenderItemInfo<Item> = Readonly<{
   index: number;
 }>;
 
+export type ReorderableSectionListRenderItemInfo<Item, Section> =
+  ReorderableListRenderItemInfo<Item> & Readonly<{ section: Section }>;
+
+export type ReorderableListSection<Item> = Readonly<{
+  id: string;
+  data: readonly Item[];
+}>;
+
 type OwnedListProp =
   | 'CellRendererComponent'
   | 'data'
@@ -126,5 +134,36 @@ export type ReorderableListProps<Item> = Omit<
     data: readonly Item[],
     index: number
   ) => ReorderableItemLayout;
+  estimatedItemSize?: number;
+};
+
+export type ReorderableSectionListProps<
+  Item,
+  Section extends ReorderableListSection<Item>,
+> = Omit<
+  SectionListProps<Item, Section>,
+  OwnedListProp | 'renderSectionFooter' | 'renderSectionHeader' | 'sections'
+> & {
+  sections: readonly Section[];
+  keyExtractor: (item: Item, index: number, section: Section) => string;
+  renderItem: (
+    info: ReorderableSectionListRenderItemInfo<Item, Section>
+  ) => ReactElement | null;
+  renderSectionHeader?: (
+    info: Readonly<{ section: Section }>
+  ) => ReactElement | null;
+  renderSectionFooter?: (
+    info: Readonly<{ section: Section }>
+  ) => ReactElement | null;
+  onReorder: (event: ReorderEvent) => void;
+  accessibilityStrings?: Partial<AccessibilityStrings>;
+  enabled?: boolean;
+  engine?: EnginePolicy;
+  selectedIds?: readonly string[];
+  getItemLayout?: (
+    sections: readonly Section[],
+    sectionIndex: number,
+    itemIndex: number
+  ) => Omit<ReorderableItemLayout, 'index'>;
   estimatedItemSize?: number;
 };

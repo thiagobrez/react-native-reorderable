@@ -198,6 +198,7 @@ describe('issue 28 visible fallback lifecycle contract', () => {
         'ReorderableItem',
         'ReorderableList',
         'ReorderableSection',
+        'ReorderableSectionList',
       ]);
     } finally {
       keyboardListener.mockRestore();

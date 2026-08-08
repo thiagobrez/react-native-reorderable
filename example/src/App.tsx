@@ -8,7 +8,7 @@ import {
   ReorderableContainer,
   ReorderableItem,
   ReorderableList,
-  ReorderableSection,
+  ReorderableSectionList,
   type ReorderEvent,
   type EnginePolicy,
 } from 'react-native-reorderable';
@@ -26,12 +26,6 @@ type Card = Readonly<{
   label: string;
 }>;
 
-type CardSection = Readonly<{
-  cards: readonly Card[];
-  id: string;
-  title: string;
-}>;
-
 type Demo = 'single' | 'sections' | 'drop' | 'scale' | 'variable';
 
 const initialCards: readonly Card[] = [
@@ -40,18 +34,6 @@ const initialCards: readonly Card[] = [
   { id: 'yellow', label: 'Yellow', color: '#FFD60A' },
   { id: 'orange', label: 'Orange', color: '#FF9F0A' },
   { id: 'pink', label: 'Pink', color: '#FF375F' },
-];
-
-const initialSections: readonly CardSection[] = [
-  { id: 'beginning-empty', title: 'Beginning empty', cards: [] },
-  {
-    id: 'favorites',
-    title: 'Favorites',
-    cards: initialCards.slice(0, 3),
-  },
-  { id: 'middle-empty', title: 'Middle empty', cards: [] },
-  { id: 'others', title: 'Others', cards: initialCards.slice(3) },
-  { id: 'end-empty', title: 'End empty', cards: [] },
 ];
 
 function itemsInOrder<T extends { id: string }>(
@@ -415,121 +397,158 @@ function SingleCollectionExample({ engine }: { engine: EnginePolicy }) {
   );
 }
 
-function SectionedCollectionExample({
-  actionRequest,
-  engine,
+type SectionRow = Readonly<{ id: string; label: string; height: number }>;
+type ScaleSection = Readonly<{
+  id: string;
+  title: string;
+  data: readonly SectionRow[];
+}>;
+
+const EMPTY_SECTION_INDEXES = new Set([0, 12, 23]);
+const initialScaleSections: readonly ScaleSection[] = Array.from(
+  { length: 24 },
+  (_, sectionIndex) => ({
+    id: `section-${sectionIndex}`,
+    title: `Section ${sectionIndex}`,
+    data: EMPTY_SECTION_INDEXES.has(sectionIndex)
+      ? []
+      : Array.from({ length: 25 }, (_unused, itemIndex) => ({
+          id: `section-${sectionIndex}-row-${itemIndex}`,
+          label: `Section ${sectionIndex} row ${itemIndex}`,
+          height: 44 + ((sectionIndex * 13 + itemIndex * 17) % 4) * 12,
+        })),
+  })
+);
+const sectionSelection = [
+  'section-1-row-1',
+  'section-6-row-12',
+  'section-18-row-20',
+] as const;
+const noSectionSelection: readonly string[] = [];
+
+function SectionScaleRow({
+  item,
+  onMountChange,
+  selected,
 }: {
-  actionRequest: SemanticActionRequest | null;
-  engine: EnginePolicy;
+  item: SectionRow;
+  onMountChange: (change: number) => void;
+  selected: boolean;
 }) {
-  const [sections, setSections] = useState(initialSections);
+  useEffect(() => {
+    onMountChange(1);
+    return () => onMountChange(-1);
+  }, [onMountChange]);
+  return (
+    <View
+      accessibilityLabel={item.label}
+      accessibilityState={{ selected }}
+      style={[
+        styles.sectionScaleRow,
+        { height: item.height },
+        selected && styles.reorderSelected,
+      ]}
+      testID={`sections-row-${item.id}`}
+    >
+      <Text style={styles.scaleRowLabel}>{item.label}</Text>
+      <Text style={styles.variableHeight}>{item.height} pt</Text>
+    </View>
+  );
+}
+
+function SectionedCollectionExample({ engine }: { engine: EnginePolicy }) {
+  const [sections, setSections] = useState(initialScaleSections);
   const [callbackCount, setCallbackCount] = useState(0);
   const [lastEvent, setLastEvent] = useState('None');
-  const [greenExpanded, setGreenExpanded] = useState(false);
-  const [appActionCount, setAppActionCount] = useState(0);
-  const selectedIds = ['pink', 'missing', 'blue', 'pink', 'yellow'] as const;
-
-  const handleReorder = (event: ReorderEvent) => {
+  const [mountedRows, setMountedRows] = useState(0);
+  const [enabled, setEnabled] = useState(true);
+  const [multiSelection, setMultiSelection] = useState(true);
+  const [styledGeometry, setStyledGeometry] = useState(false);
+  const selectedIds = multiSelection ? sectionSelection : noSectionSelection;
+  const selectedSet = new Set<string>(selectedIds);
+  const handleMountChange = useCallback((change: number) => {
+    setMountedRows((current) => current + change);
+  }, []);
+  const getSectionItemLayout = useCallback(
+    (
+      currentSections: readonly ScaleSection[],
+      sectionIndex: number,
+      itemIndex: number
+    ) => {
+      let offset = 0;
+      for (let index = 0; index < sectionIndex; index += 1) {
+        offset += 32 + 24;
+        currentSections[index]!.data.forEach((item) => {
+          offset += item.height;
+        });
+      }
+      offset += 32;
+      for (let index = 0; index < itemIndex; index += 1)
+        offset += currentSections[sectionIndex]!.data[index]!.height;
+      const item = currentSections[sectionIndex]!.data[itemIndex]!;
+      return { length: item.height, offset };
+    },
+    []
+  );
+  const reset = useCallback(() => {
+    setSections(initialScaleSections);
+    setCallbackCount(0);
+    setLastEvent('None');
+    setEnabled(true);
+    setMultiSelection(true);
+    setStyledGeometry(false);
+  }, []);
+  const handleReorder = useCallback((event: ReorderEvent) => {
     setCallbackCount((current) => current + 1);
     setLastEvent(
-      `${event.sourceIds.join('+')} -> ${event.destination.sectionId ?? 'root'}:${event.destination.beforeId ?? 'end'}`
+      `${event.sourceIds.join('+')} -> ${event.destination.sectionId}:${event.destination.beforeId ?? 'end'}`
     );
     setSections((current) => {
-      const cardsById = new Map(
+      const items = new Map(
         current
-          .flatMap((section) => section.cards)
-          .map((card) => [card.id, card])
+          .flatMap((section) => section.data)
+          .map((item) => [item.id, item])
       );
-      const sectionsById = new Map(
+      const currentSections = new Map(
         current.map((section) => [section.id, section])
       );
       return event.nextOrder.flatMap((order) => {
         if (order.sectionId == null) return [];
-        const section = sectionsById.get(order.sectionId);
-        if (!section) return [];
+        const section = currentSections.get(order.sectionId);
+        if (section == null) return [];
         return [
           {
             ...section,
-            cards: order.itemIds.flatMap((id) => {
-              const card = cardsById.get(id);
-              return card ? [card] : [];
+            data: order.itemIds.flatMap((id) => {
+              const item = items.get(id);
+              return item == null ? [] : [item];
             }),
           },
         ];
       });
     });
-  };
-
-  const renderedSections = sections.map((section) => (
-    <ReorderableSection
-      header={<Text style={styles.sectionTitle}>{section.title}</Text>}
-      footer={
-        <Text style={styles.sectionFooter}>
-          {section.cards.length === 0
-            ? 'Empty destination'
-            : `${section.cards.length} cards`}
-        </Text>
-      }
-      id={section.id}
-      key={section.id}
-      style={styles.cardSection}
-    >
-      {section.cards.map((card) => {
-        const selected = ['blue', 'yellow', 'pink'].includes(card.id);
-        return (
-          <ReorderableItem
-            accessibilityActions={
-              card.id === 'blue'
-                ? [{ name: 'mark-favorite', label: 'Mark favorite' }]
-                : undefined
-            }
-            accessibilityLabel={`${card.label} card`}
-            accessibilityState={{ selected }}
-            id={card.id}
-            key={card.id}
-            onAccessibilityAction={(event) => {
-              if (event.nativeEvent.actionName === 'mark-favorite') {
-                setAppActionCount((count) => count + 1);
-              }
-            }}
-            style={[
-              styles.card,
-              { backgroundColor: card.color },
-              card.id === 'green' && greenExpanded && styles.expandedCard,
-              selected && styles.reorderSelected,
-            ]}
-            testID={`section-card-${card.id}`}
-          >
-            <Text style={styles.cardLabel}>{card.label}</Text>
-          </ReorderableItem>
-        );
-      })}
-    </ReorderableSection>
-  ));
-
-  const containerProps = {
-    acceptanceMove: {
-      sourceIds: ['blue', 'yellow', 'pink'],
-      destination: { sectionId: 'middle-empty', beforeId: null },
-    },
-    accessibilityLabel: 'Section and selection scenario',
-    onReorder: handleReorder,
-    selectedIds,
-    style: styles.sectionedCards,
-    testID: 'sections-container',
-  } as const;
+  }, []);
 
   return (
-    <>
-      <Text style={styles.outcome} testID="sections-selection">
-        Selected: Blue, Yellow, Pink
+    <View style={styles.scaleScenario} testID="sections-scenario">
+      <Text style={styles.outcome} testID="sections-visible">
+        Visible model: 24 sections, 525 rows, empty 0/12/23
       </Text>
-      <Text style={styles.outcome} testID="sections-order">
+      <Text style={styles.outcome} testID="sections-mounted-count">
+        Mounted/rendered rows: {mountedRows} / 525
+      </Text>
+      <Text style={styles.outcome} testID="sections-selection">
+        Selected: {selectedIds.length === 0 ? 'none' : selectedIds.join(', ')}
+      </Text>
+      <Text style={styles.outcome} numberOfLines={2} testID="sections-order">
         Order:{' '}
         {sections
           .map(
             (section) =>
-              `${section.title}=[${section.cards.map((card) => card.label).join(',')}]`
+              `${section.id}=[${section.data
+                .slice(0, 2)
+                .map((item) => item.id)
+                .join(',')}${section.data.length > 2 ? ',…' : ''}]`
           )
           .join(' | ')}
       </Text>
@@ -539,63 +558,104 @@ function SectionedCollectionExample({
       <Text style={styles.outcome} testID="sections-last-event">
         Last event: {lastEvent}
       </Text>
-      <Text style={styles.outcome} testID="sections-app-action-count">
-        App actions: {appActionCount}
+      <Text style={styles.outcome} testID="sections-geometry-preset">
+        Geometry preset:{' '}
+        {styledGeometry ? '10% top / 18 bottom / 7 row gap' : 'exact anchors'}
       </Text>
       <View style={styles.scenarioActions}>
         <Pressable
-          accessibilityLabel="Toggle Green card size"
+          accessibilityLabel="Toggle percentage padding and row gap"
           accessibilityRole="button"
-          onPress={() => setGreenExpanded((current) => !current)}
+          onPress={() => setStyledGeometry((current) => !current)}
           style={styles.scenarioAction}
+          testID="sections-style-toggle"
+        >
+          <Text style={styles.scenarioActionText}>Toggle styled geometry</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel={
+            enabled
+              ? 'Cancel active section reorder and disable'
+              : 'Enable section reorder'
+          }
+          accessibilityRole="button"
+          onPress={() => setEnabled((current) => !current)}
+          style={styles.scenarioAction}
+          testID="sections-enable"
         >
           <Text style={styles.scenarioActionText}>
-            {greenExpanded ? 'Shrink Green' : 'Expand Green'}
+            {enabled ? 'Cancel / disable' : 'Enable'}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Toggle cross-section selection"
+          accessibilityRole="button"
+          onPress={() => setMultiSelection((current) => !current)}
+          style={styles.scenarioAction}
+          testID="sections-selection-toggle"
+        >
+          <Text style={styles.scenarioActionText}>
+            {multiSelection ? 'Clear selection' : 'Select across sections'}
           </Text>
         </Pressable>
         <Pressable
           accessibilityLabel="Reset section scenario"
           accessibilityRole="button"
-          onPress={() => {
-            setSections(initialSections);
-            setCallbackCount(0);
-            setLastEvent('None');
-            setGreenExpanded(false);
-          }}
+          onPress={reset}
           style={styles.scenarioAction}
+          testID="sections-reset"
         >
           <Text style={styles.scenarioActionText}>Reset</Text>
         </Pressable>
       </View>
-      {__DEV__ && engine === 'fallback' ? (
-        <FallbackCommitAcceptanceContainer
-          {...containerProps}
-          actionContainerId="sections"
-          actionRequest={actionRequest}
-        >
-          {renderedSections}
-        </FallbackCommitAcceptanceContainer>
-      ) : __DEV__ ? (
-        <NativeCommitAcceptanceContainer
-          {...containerProps}
-          actionContainerId="sections"
-          actionRequest={actionRequest}
-        >
-          {renderedSections}
-        </NativeCommitAcceptanceContainer>
-      ) : (
-        <ReorderableContainer
-          accessibilityLabel={containerProps.accessibilityLabel}
-          engine={engine}
-          onReorder={handleReorder}
-          selectedIds={selectedIds}
-          style={styles.sectionedCards}
-          testID="sections-container"
-        >
-          {renderedSections}
-        </ReorderableContainer>
-      )}
-    </>
+      <ReorderableSectionList<SectionRow, ScaleSection>
+        accessibilityLabel="Twenty four virtualized reorderable sections"
+        enabled={enabled}
+        engine={engine}
+        estimatedItemSize={62}
+        contentContainerStyle={
+          styledGeometry ? styles.styledSectionContent : undefined
+        }
+        getItemLayout={styledGeometry ? undefined : getSectionItemLayout}
+        initialNumToRender={8}
+        keyExtractor={(item) => item.id}
+        maxToRenderPerBatch={8}
+        onReorder={handleReorder}
+        removeClippedSubviews
+        renderItem={({ item }) => (
+          <SectionScaleRow
+            item={item}
+            onMountChange={handleMountChange}
+            selected={selectedSet.has(item.id)}
+          />
+        )}
+        renderSectionFooter={({ section }) => (
+          <View
+            style={styles.sectionScaleFooter}
+            testID={`sections-footer-${section.id}`}
+          >
+            <Text style={styles.sectionFooter}>
+              {section.data.length === 0
+                ? 'Empty destination'
+                : `${section.data.length} rows`}
+            </Text>
+          </View>
+        )}
+        renderSectionHeader={({ section }) => (
+          <View
+            style={styles.sectionScaleHeader}
+            testID={`sections-header-${section.id}`}
+          >
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+          </View>
+        )}
+        sections={sections}
+        selectedIds={selectedIds}
+        style={styles.scaleList}
+        testID="sections-container"
+        windowSize={5}
+      />
+    </View>
   );
 }
 
@@ -875,11 +935,7 @@ export default function App() {
             <SingleCollectionExample engine={engine} key={engine} />
           )}
           {demo === 'sections' && (
-            <SectionedCollectionExample
-              actionRequest={actionRequest}
-              engine={engine}
-              key={engine}
-            />
+            <SectionedCollectionExample engine={engine} key={engine} />
           )}
           {demo === 'drop' && (
             <DragDropExample
@@ -901,6 +957,11 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  styledSectionContent: {
+    paddingBottom: 18,
+    paddingTop: '10%',
+    rowGap: 7,
+  },
   root: {
     flex: 1,
   },
@@ -1067,6 +1128,23 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 11,
     textAlign: 'center',
+  },
+  sectionScaleFooter: {
+    backgroundColor: '#1C1C1E',
+    height: 24,
+    justifyContent: 'center',
+  },
+  sectionScaleHeader: {
+    backgroundColor: '#242426',
+    height: 32,
+    justifyContent: 'center',
+  },
+  sectionScaleRow: {
+    alignItems: 'center',
+    backgroundColor: '#2C2C2E',
+    borderBottomColor: '#48484A',
+    borderBottomWidth: 1,
+    justifyContent: 'center',
   },
   dragLayout: {
     alignContent: 'flex-start',

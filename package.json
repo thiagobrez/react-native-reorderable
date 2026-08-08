@@ -36,6 +36,7 @@
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "benchmark:issue34": "yarn prepare && node benchmarks/issue34-geometry.mjs",
+    "benchmark:issue35": "yarn prepare && node benchmarks/issue35-section-geometry.mjs",
     "performance:reassure": "reassure --branch issue-34 --commit-hash staged-tree",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",

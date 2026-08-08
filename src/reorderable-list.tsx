@@ -280,6 +280,14 @@ type ReorderableListComponentProps<Item> = ReorderableListProps<Item> &
 
 export type ReorderableListViewportAdapter = Readonly<{
   component: ComponentType<Record<string, unknown>>;
+  createProps?: (options: {
+    data: readonly unknown[];
+    estimatedItemSize: number | undefined;
+    getItemLayout:
+      | ((data: readonly unknown[], index: number) => ReorderableItemLayout)
+      | undefined;
+    viewportProps: Record<string, unknown>;
+  }) => Record<string, unknown>;
   displayName: string;
   reservedProps: readonly string[];
 }>;
@@ -1013,11 +1021,20 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     viewportProps.renderScrollComponent = ownedScrollComponent;
   }
   const ViewportComponent = viewportAdapter?.component;
+  const adaptedViewportProps =
+    viewportAdapter?.createProps?.({
+      data,
+      estimatedItemSize,
+      getItemLayout: getItemLayout as
+        | ((data: readonly unknown[], index: number) => ReorderableItemLayout)
+        | undefined,
+      viewportProps,
+    }) ?? viewportProps;
   const viewport = createElement(
     (ViewportComponent ?? Animated.FlatList) as ComponentType<
       Record<string, unknown>
     >,
-    viewportProps
+    adaptedViewportProps
   );
 
   return (

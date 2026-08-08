@@ -63,6 +63,7 @@ import {
   remapSectionMeasurementQueue,
 } from './section-list-model';
 import type {
+  ReorderableItemLayout,
   ReorderableListSection,
   ReorderableSectionListProps,
   ReorderableSectionListRenderItemInfo,
@@ -339,9 +340,22 @@ export type SectionListViewportBridge = Readonly<{
 }>;
 
 export type ReorderableSectionListViewportAdapter = Readonly<{
-  bridge: SectionListViewportBridge;
+  bridge?: SectionListViewportBridge;
   component: ComponentType<Record<string, unknown>>;
+  createProps?: (options: {
+    estimatedItemSize: number | undefined;
+    getItemLayout:
+      | ((
+          sections: readonly unknown[],
+          sectionIndex: number,
+          itemIndex: number
+        ) => Omit<ReorderableItemLayout, 'index'>)
+      | undefined;
+    sections: readonly unknown[];
+    viewportProps: Record<string, unknown>;
+  }) => Record<string, unknown>;
   displayName: string;
+  reservedProps?: readonly string[];
 }>;
 
 type ViewportItem<Item> = Readonly<{
@@ -374,9 +388,14 @@ export function unwrapSectionViewability<
   info: {
     changed: readonly ViewabilityToken[];
     viewableItems: readonly ViewabilityToken[];
+    [key: string]: unknown;
   },
   sectionById: ReadonlyMap<string, Section>
-): { changed: ViewabilityToken[]; viewableItems: ViewabilityToken[] } {
+): {
+  changed: ViewabilityToken[];
+  viewableItems: ViewabilityToken[];
+  [key: string]: unknown;
+} {
   const unwrap = (token: ViewabilityToken): ViewabilityToken => {
     const item = token.item as ViewportItem<Item> | undefined;
     const sectionItem =
@@ -394,15 +413,18 @@ export function unwrapSectionViewability<
         item: item.value,
         section: originalSection,
       };
-    return sectionItem == null
+    if (sectionItem != null)
+      return {
+        ...token,
+        item: sectionItem,
+        section: originalSection ?? sectionItem,
+      };
+    return originalSection == null
       ? token
-      : {
-          ...token,
-          item: sectionItem,
-          section: originalSection ?? sectionItem,
-        };
+      : { ...token, section: originalSection };
   };
   return {
+    ...info,
     changed: info.changed.map(unwrap),
     viewableItems: info.viewableItems.map(unwrap),
   };
@@ -425,6 +447,15 @@ export function ReorderableSectionListRuntime<
   viewportAdapter?: ReorderableSectionListViewportAdapter
 ) {
   assertSupportedProps(props as unknown as Record<string, unknown>);
+  if (viewportAdapter != null) {
+    for (const name of viewportAdapter.reservedProps ?? []) {
+      if (Object.prototype.hasOwnProperty.call(props, name)) {
+        throw new Error(
+          `[react-native-reorderable] ${viewportAdapter.displayName} owns the correctness-critical ${name} prop; remove it.`
+        );
+      }
+    }
+  }
   const {
     accessibilityStrings,
     enabled = true,
@@ -576,7 +607,7 @@ export function ReorderableSectionListRuntime<
     ]
   );
   const providerEntries = useMemo<readonly unknown[]>(
-    () => viewportAdapter?.bridge.createEntries(model) ?? [],
+    () => viewportAdapter?.bridge?.createEntries(model) ?? [],
     [model, viewportAdapter]
   );
   const originalSection = useCallback(
@@ -587,19 +618,20 @@ export function ReorderableSectionListRuntime<
         throw new Error(
           `[react-native-reorderable] SectionList returned unknown section id "${id}".`
         );
-      return model.sections[index]!;
+      return sections[index]!;
     },
-    [model.sectionIds, model.sections]
+    [model.sectionIds, sections]
   );
   const safeProps = removeNonSectionListProps(remainingProps);
   const sectionById = useMemo(
-    () => new Map(model.sections.map((section) => [section.id, section])),
-    [model.sections]
+    () => new Map(sections.map((section) => [section.id, section])),
+    [sections]
   );
   const unwrapViewability = useCallback(
     (info: {
       changed: readonly ViewabilityToken[];
       viewableItems: readonly ViewabilityToken[];
+      [key: string]: unknown;
     }) => {
       return unwrapSectionViewability(info, sectionById);
     },
@@ -610,7 +642,7 @@ export function ReorderableSectionListRuntime<
       changed: readonly ViewabilityToken[];
       viewableItems: readonly ViewabilityToken[];
     }) => {
-      if (viewportAdapter == null) return unwrapViewability(info);
+      if (viewportAdapter?.bridge == null) return unwrapViewability(info);
       return viewportAdapter.bridge.unwrapViewability(info, keyExtractor);
     },
     [keyExtractor, unwrapViewability, viewportAdapter]
@@ -1186,7 +1218,7 @@ export function ReorderableSectionListRuntime<
         );
         const itemIndex = order[sectionIndex]?.itemIds.indexOf(id) ?? -1;
         if (sectionIndex >= 0 && itemIndex >= 0) {
-          if (viewportAdapter == null)
+          if (viewportAdapter?.bridge == null)
             sectionListRef.current?.scrollToLocation?.({
               animated: false,
               itemIndex,
@@ -1632,7 +1664,7 @@ export function ReorderableSectionListRuntime<
         animatedRef(value as SectionList<Item, Section>);
       assignViewportRef(
         ref as Ref<unknown>,
-        viewportAdapter == null || value == null
+        viewportAdapter?.bridge == null || value == null
           ? value
           : viewportAdapter.bridge.createRef(
               value as Record<string, (...args: never[]) => unknown>,
@@ -1650,7 +1682,7 @@ export function ReorderableSectionListRuntime<
 
   const renderProviderEntry = useCallback(
     ({ item: entry }: { item: unknown }) =>
-      viewportAdapter?.bridge.renderEntry(entry, {
+      viewportAdapter?.bridge?.renderEntry(entry, {
         renderItem: ({ item, itemIndex, section }) =>
           handleRenderItem({
             item: createSectionViewportItem(
@@ -1729,51 +1761,77 @@ export function ReorderableSectionListRuntime<
   );
 
   let viewport: ReactElement;
-  if (viewportAdapter == null) {
-    viewport = (
-      <AnimatedSectionList<Item, Section>
-        {...safeProps}
-        ItemSeparatorComponent={measuredItemSeparator}
-        ListEmptyComponent={measuredListEmpty}
-        ListFooterComponent={measuredListFooter}
-        ListHeaderComponent={measuredListHeader}
-        SectionSeparatorComponent={measuredSectionSeparator}
-        getItemLayout={
-          getItemLayout == null
-            ? undefined
-            : (
-                _data: ArrayLike<SectionListData<Item, Section>> | null,
-                index: number
-              ) => {
-                const frameIndex =
-                  model.viewportFrameIndices[index] ?? model.geometry.count;
-                const nextFrameIndex =
-                  model.viewportFrameIndices[index + 1] ?? model.geometry.count;
-                return {
-                  index,
-                  length:
-                    itemOffset(model.geometry, nextFrameIndex) -
-                    itemOffset(model.geometry, frameIndex),
-                  offset: itemOffset(model.geometry, frameIndex),
-                };
-              }
-        }
-        keyExtractor={() => {
-          throw new Error(
-            '[react-native-reorderable] SectionList bypassed its owned section-aware key extractor.'
-          );
-        }}
-        onLayout={handleLayout}
-        onScroll={handleScroll}
-        onViewableItemsChanged={wrappedOnViewableItemsChanged as never}
-        ref={handleRef}
-        renderItem={handleRenderItem as never}
-        renderSectionFooter={({ section }) => renderChrome('footer', section)}
-        renderSectionHeader={({ section }) => renderChrome('header', section)}
-        scrollEventThrottle={scrollEventThrottle}
-        sections={viewportSections as Section[]}
-        viewabilityConfigCallbackPairs={wrappedViewabilityPairs as never}
-      />
+  if (viewportAdapter?.bridge == null) {
+    const directViewportProps: Record<string, unknown> = {
+      ...safeProps,
+      ItemSeparatorComponent: measuredItemSeparator,
+      ListEmptyComponent: measuredListEmpty,
+      ListFooterComponent: measuredListFooter,
+      ListHeaderComponent: measuredListHeader,
+      SectionSeparatorComponent: measuredSectionSeparator,
+      keyExtractor: () => {
+        throw new Error(
+          '[react-native-reorderable] SectionList bypassed its owned section-aware key extractor.'
+        );
+      },
+      onLayout: handleLayout,
+      onScroll: handleScroll,
+      onViewableItemsChanged: wrappedOnViewableItemsChanged,
+      ref: handleRef,
+      renderItem: handleRenderItem,
+      renderSectionFooter: ({
+        section,
+      }: {
+        section: SectionListData<Item, Section>;
+      }) => renderChrome('footer', section),
+      renderSectionHeader: ({
+        section,
+      }: {
+        section: SectionListData<Item, Section>;
+      }) => renderChrome('header', section),
+      scrollEventThrottle,
+      sections: viewportSections,
+      viewabilityConfigCallbackPairs: wrappedViewabilityPairs,
+    };
+    if (viewportAdapter == null && getItemLayout != null) {
+      directViewportProps.getItemLayout = (
+        _data: ArrayLike<SectionListData<Item, Section>> | null,
+        index: number
+      ) => {
+        const frameIndex =
+          model.viewportFrameIndices[index] ?? model.geometry.count;
+        const nextFrameIndex =
+          model.viewportFrameIndices[index + 1] ?? model.geometry.count;
+        return {
+          index,
+          length:
+            itemOffset(model.geometry, nextFrameIndex) -
+            itemOffset(model.geometry, frameIndex),
+          offset: itemOffset(model.geometry, frameIndex),
+        };
+      };
+    }
+    if (viewportAdapter != null) {
+      directViewportProps.maintainVisibleContentPosition = false;
+      directViewportProps.renderScrollComponent = ownedScrollComponent;
+    }
+    const adaptedProps =
+      viewportAdapter?.createProps?.({
+        estimatedItemSize,
+        getItemLayout: getItemLayout as
+          | ((
+              sections: readonly unknown[],
+              sectionIndex: number,
+              itemIndex: number
+            ) => Omit<ReorderableItemLayout, 'index'>)
+          | undefined,
+        sections,
+        viewportProps: directViewportProps,
+      }) ?? directViewportProps;
+    const DirectComponent = viewportAdapter?.component ?? AnimatedSectionList;
+    viewport = createElement(
+      DirectComponent as ComponentType<Record<string, unknown>>,
+      adaptedProps
     );
   } else {
     const ProviderComponent = viewportAdapter.component;

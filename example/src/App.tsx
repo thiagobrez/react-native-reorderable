@@ -16,6 +16,11 @@ import {
   ReorderableFlashList,
   ReorderableFlashSectionList,
 } from 'react-native-reorderable/flash-list';
+import {
+  ReorderableLegendList,
+  ReorderableLegendSectionList,
+} from 'react-native-reorderable/legend-list';
+import type { SectionListRef as LegendSectionListRef } from '@legendapp/list/section-list';
 import { NativeCommitAcceptanceContainer } from '../../src/issue25-acceptance';
 import { FallbackCommitAcceptanceContainer } from '../../src/issue26-acceptance';
 import type { SemanticActionRequest } from '../../src/issue31-acceptance';
@@ -30,7 +35,8 @@ type Card = Readonly<{
   label: string;
 }>;
 
-type Demo = 'single' | 'sections' | 'drop' | 'scale' | 'variable' | 'flash';
+type Demo =
+  'single' | 'sections' | 'drop' | 'scale' | 'variable' | 'flash' | 'legend';
 
 const initialCards: readonly Card[] = [
   { id: 'blue', label: 'Blue', color: '#0A84FF' },
@@ -68,6 +74,7 @@ function DemoSelector({
           ['scale', '10k list'],
           ['variable', 'Variable'],
           ['flash', 'Flash'],
+          ['legend', 'Legend'],
         ] as const
       ).map(([value, label]) => {
         const selected = value === demo;
@@ -537,6 +544,204 @@ function FlashListIntegrations({ engine }: { engine: EnginePolicy }) {
           selectedIds={selected ? ['flash-1', 'flash-41'] : []}
           style={styles.scaleList}
           testID="flash-section-list-integration"
+        />
+      )}
+    </View>
+  );
+}
+
+const initialLegendItems = initialFlashItems.map((item, index) => ({
+  ...item,
+  id: `legend-${index}`,
+  label: `Legend row ${index}`,
+}));
+
+function LegendListIntegrations({ engine }: { engine: EnginePolicy }) {
+  const [mode, setMode] = useState<'list' | 'sections'>('list');
+  const [items, setItems] = useState(initialLegendItems);
+  const [callbackCount, setCallbackCount] = useState(0);
+  const [lastEvent, setLastEvent] = useState('none');
+  const [enabled, setEnabled] = useState(true);
+  const [selected, setSelected] = useState(false);
+  const [mountedRows, setMountedRows] = useState(0);
+  const peakMountedRows = useRef(0);
+  const [cancellationArmed, setCancellationArmed] = useState(false);
+  const cancellationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sectionListRef = useRef<LegendSectionListRef>(null);
+  useEffect(
+    () => () => {
+      if (cancellationTimer.current != null)
+        clearTimeout(cancellationTimer.current);
+    },
+    []
+  );
+  const handleReorder = useCallback((event: ReorderEvent) => {
+    const nextIds = event.nextOrder.flatMap((collection) => collection.itemIds);
+    setItems((current) => itemsInOrder(current, nextIds));
+    setCallbackCount((current) => current + 1);
+    setLastEvent(JSON.stringify(event));
+  }, []);
+  const handleMountChange = useCallback((change: number) => {
+    setMountedRows((current) => {
+      const next = current + change;
+      peakMountedRows.current = Math.max(peakMountedRows.current, next);
+      return next;
+    });
+  }, []);
+  const renderRow = ({ item }: { item: VariableItem }) => (
+    <VariableRow item={item} onMountChange={handleMountChange} />
+  );
+  const reset = () => {
+    setItems(initialLegendItems);
+    setCallbackCount(0);
+    setLastEvent('none');
+    setEnabled(true);
+    setSelected(false);
+    setCancellationArmed(false);
+    if (cancellationTimer.current != null)
+      clearTimeout(cancellationTimer.current);
+  };
+  const cancelNextHold = () => {
+    if (cancellationTimer.current != null)
+      clearTimeout(cancellationTimer.current);
+    setEnabled(true);
+    setCancellationArmed(true);
+    cancellationTimer.current = setTimeout(() => {
+      setEnabled(false);
+      setCancellationArmed(false);
+      cancellationTimer.current = null;
+    }, 3000);
+  };
+  const sections = [
+    { id: 'empty-start', title: 'Empty start', data: [] },
+    { id: 'first', title: 'First', data: items.slice(0, 60) },
+    { id: 'empty-middle', title: 'Empty middle', data: [] },
+    { id: 'second', title: 'Second', data: items.slice(60) },
+    { id: 'empty-end', title: 'Empty end', data: [] },
+  ] as const;
+  return (
+    <View style={styles.scaleScenario} testID="legend-integrations">
+      <View style={[styles.engineSelector, styles.flashControls]}>
+        {(['list', 'sections'] as const).map((value) => (
+          <Pressable
+            accessibilityRole="button"
+            key={value}
+            onPress={() => setMode(value)}
+            style={[styles.scenarioAction, styles.flashScenarioAction]}
+            testID={`legend-mode-${value}`}
+          >
+            <Text style={styles.scenarioActionText}>
+              {value === 'list' ? 'List' : 'Sections'}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setSelected((current) => !current)}
+          style={[styles.scenarioAction, styles.flashScenarioAction]}
+          testID="legend-selection-toggle"
+        >
+          <Text style={styles.scenarioActionText}>Select</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={cancelNextHold}
+          style={[styles.scenarioAction, styles.flashScenarioAction]}
+          testID="legend-cancel-next-hold"
+        >
+          <Text style={styles.scenarioActionText}>
+            {cancellationArmed ? 'Armed' : 'Cancel hold'}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setEnabled((current) => !current)}
+          style={[styles.scenarioAction, styles.flashScenarioAction]}
+          testID="legend-cancel-toggle"
+        >
+          <Text style={styles.scenarioActionText}>
+            {enabled ? 'Disable' : 'Enable'}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={reset}
+          style={[styles.scenarioAction, styles.flashScenarioAction]}
+          testID="legend-reset"
+        >
+          <Text style={styles.scenarioActionText}>Reset</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            sectionListRef.current?.scrollToEnd({ animated: false });
+          }}
+          style={[styles.scenarioAction, styles.flashScenarioAction]}
+          testID="legend-sections-bottom"
+        >
+          <Text style={styles.scenarioActionText}>End</Text>
+        </Pressable>
+      </View>
+      <Text style={styles.outcome} testID="legend-mounted-count">
+        Mounted rows: {mountedRows} / 120; peak: {peakMountedRows.current} / 120
+      </Text>
+      <Text style={styles.outcome} testID="legend-reorder-callback-count">
+        Reorder callbacks: {callbackCount}
+      </Text>
+      <Text style={styles.outcome} testID="legend-order">
+        Order:{' '}
+        {items
+          .slice(0, 5)
+          .map((item) => item.id)
+          .join(', ')}
+      </Text>
+      <Text style={styles.outcome} testID="legend-last-reorder-event">
+        Last reorder event: {lastEvent}
+      </Text>
+      <Text style={styles.outcome} testID="legend-selection">
+        Selection:{' '}
+        {selected
+          ? mode === 'list'
+            ? 'legend-7, legend-9'
+            : 'legend-1, legend-61'
+          : 'none'}
+      </Text>
+      {mode === 'list' ? (
+        <ReorderableLegendList
+          data={items}
+          drawDistance={240}
+          enabled={enabled}
+          engine={engine}
+          estimatedItemSize={60}
+          keyExtractor={(item) => item.id}
+          onReorder={handleReorder}
+          recycleItems
+          renderItem={renderRow}
+          selectedIds={selected ? ['legend-7', 'legend-9'] : []}
+          style={styles.scaleList}
+          testID="legend-list-integration"
+        />
+      ) : (
+        <ReorderableLegendSectionList
+          drawDistance={240}
+          enabled={enabled}
+          engine={engine}
+          estimatedItemSize={60}
+          keyExtractor={(item) => item.id}
+          onReorder={handleReorder}
+          recycleItems
+          renderItem={renderRow}
+          renderSectionFooter={({ section }) => (
+            <Text style={styles.sectionFooter}>{section.title} footer</Text>
+          )}
+          renderSectionHeader={({ section }) => (
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+          )}
+          ref={sectionListRef}
+          sections={sections}
+          selectedIds={selected ? ['legend-1', 'legend-61'] : []}
+          style={styles.scaleList}
+          testID="legend-section-list-integration"
         />
       )}
     </View>
@@ -1214,6 +1419,9 @@ export default function App() {
           )}
           {demo === 'flash' && (
             <FlashListIntegrations engine={engine} key={engine} />
+          )}
+          {demo === 'legend' && (
+            <LegendListIntegrations engine={engine} key={engine} />
           )}
         </View>
       </View>

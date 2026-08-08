@@ -3,7 +3,8 @@
     "rootDir": ".",
     "paths": {
       "react-native-reorderable": ["./src/index"],
-      "react-native-reorderable/flash-list": ["./src/flash-list"]
+      "react-native-reorderable/flash-list": ["./src/flash-list"],
+      "react-native-reorderable/legend-list": ["./src/legend-list"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
@@ -7,6 +7,7 @@ import {
   DropZone,
   ReorderableContainer,
   ReorderableItem,
+  ReorderableList,
   ReorderableSection,
   type ReorderEvent,
   type EnginePolicy,
@@ -31,7 +32,7 @@ type CardSection = Readonly<{
   title: string;
 }>;
 
-type Demo = 'single' | 'sections' | 'drop';
+type Demo = 'single' | 'sections' | 'drop' | 'scale';
 
 const initialCards: readonly Card[] = [
   { id: 'blue', label: 'Blue', color: '#0A84FF' },
@@ -78,6 +79,7 @@ function DemoSelector({
           ['single', 'Single'],
           ['sections', 'Sections'],
           ['drop', 'Drop'],
+          ['scale', '10k list'],
         ] as const
       ).map(([value, label]) => {
         const selected = value === demo;
@@ -101,6 +103,102 @@ function DemoSelector({
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+type ScaleItem = Readonly<{ id: string; label: string }>;
+const initialScaleItems: readonly ScaleItem[] = Array.from(
+  { length: 10_000 },
+  (_, index) => ({ id: `row-${index}`, label: `Row ${index}` })
+);
+const SCALE_ITEM_HEIGHT = 50;
+
+function ScaleRow({
+  item,
+  onMountChange,
+}: Readonly<{
+  item: ScaleItem;
+  onMountChange: (change: number) => void;
+}>) {
+  useEffect(() => {
+    onMountChange(1);
+    return () => onMountChange(-1);
+  }, [onMountChange]);
+  return (
+    <View
+      accessibilityLabel={item.label}
+      style={styles.scaleRow}
+      testID={`scale-${item.id}`}
+    >
+      <Text style={styles.scaleRowLabel}>{item.label}</Text>
+    </View>
+  );
+}
+
+function ScaleListExample({ engine }: { engine: EnginePolicy }) {
+  const [items, setItems] = useState(initialScaleItems);
+  const [callbackCount, setCallbackCount] = useState(0);
+  const [mountedRows, setMountedRows] = useState(0);
+  const [enabled, setEnabled] = useState(true);
+  const handleMountChange = useCallback((change: number) => {
+    setMountedRows((current) => current + change);
+  }, []);
+  const handleReorder = (event: ReorderEvent) => {
+    const nextIds = event.nextOrder[0]?.itemIds;
+    if (nextIds == null) return;
+    setItems((current) => itemsInOrder(current, nextIds));
+    setCallbackCount((current) => current + 1);
+  };
+  return (
+    <View style={styles.scaleScenario}>
+      <Text style={styles.outcome} testID="scale-mounted-count">
+        Mounted rows: {mountedRows} / 10000
+      </Text>
+      <Text style={styles.outcome} testID="scale-callback-count">
+        Reorder callbacks: {callbackCount}
+      </Text>
+      <Text style={styles.outcome} testID="scale-order">
+        First rows:{' '}
+        {items
+          .slice(0, 5)
+          .map((item) => item.label)
+          .join(', ')}
+      </Text>
+      <Pressable
+        accessibilityLabel={
+          enabled ? 'Disable list reorder' : 'Enable list reorder'
+        }
+        accessibilityRole="button"
+        onPress={() => setEnabled((current) => !current)}
+        style={styles.scenarioAction}
+      >
+        <Text style={styles.scenarioActionText}>
+          {enabled ? 'Disable list reorder' : 'Enable list reorder'}
+        </Text>
+      </Pressable>
+      <ReorderableList
+        accessibilityLabel="Ten thousand reorderable rows"
+        data={items}
+        enabled={enabled}
+        engine={engine}
+        getItemLayout={(_data, index) => ({
+          index,
+          length: SCALE_ITEM_HEIGHT,
+          offset: index * SCALE_ITEM_HEIGHT,
+        })}
+        initialNumToRender={8}
+        keyExtractor={(item) => item.id}
+        maxToRenderPerBatch={8}
+        onReorder={handleReorder}
+        removeClippedSubviews
+        renderItem={({ item }) => (
+          <ScaleRow item={item} onMountChange={handleMountChange} />
+        )}
+        style={styles.scaleList}
+        testID="scale-list"
+        windowSize={5}
+      />
     </View>
   );
 }
@@ -694,6 +792,9 @@ export default function App() {
               key={engine}
             />
           )}
+          {demo === 'scale' && (
+            <ScaleListExample engine={engine} key={engine} />
+          )}
         </View>
       </View>
     </GestureHandlerRootView>
@@ -770,6 +871,26 @@ const styles = StyleSheet.create({
   verticalCards: {
     gap: 6,
     width: '100%',
+  },
+  scaleList: {
+    flex: 1,
+    marginTop: 8,
+  },
+  scaleRow: {
+    alignItems: 'center',
+    backgroundColor: '#2C2C2E',
+    borderBottomColor: '#48484A',
+    borderBottomWidth: 1,
+    height: SCALE_ITEM_HEIGHT,
+    justifyContent: 'center',
+  },
+  scaleRowLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  scaleScenario: {
+    flex: 1,
   },
   card: {
     alignItems: 'center',

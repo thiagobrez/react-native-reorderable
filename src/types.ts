@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import type { ViewProps } from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
+import type { FlatListProps, ViewProps } from 'react-native';
 
 export type CollectionOrder = Readonly<{
   sectionId: string | null;
@@ -83,4 +83,48 @@ export type DropZoneProps = ViewProps & {
   children: ReactNode;
   id: string;
   canDrop?: (itemIds: readonly string[]) => boolean;
+};
+
+export type ReorderableItemLayout = Readonly<{
+  index: number;
+  length: number;
+  offset: number;
+}>;
+
+export type ReorderableListRenderItemInfo<Item> = Readonly<{
+  item: Item;
+  index: number;
+}>;
+
+type OwnedListProp =
+  | 'CellRendererComponent'
+  | 'data'
+  | 'getItemLayout'
+  | 'horizontal'
+  | 'inverted'
+  | 'keyExtractor'
+  | 'maintainVisibleContentPosition'
+  | 'numColumns'
+  | 'renderItem'
+  | 'renderScrollComponent';
+
+export type ReorderableListProps<Item> = Omit<
+  FlatListProps<Item>,
+  OwnedListProp
+> & {
+  data: readonly Item[];
+  keyExtractor: (item: Item, index: number) => string;
+  renderItem: (
+    info: ReorderableListRenderItemInfo<Item>
+  ) => ReactElement | null;
+  onReorder: (event: ReorderEvent) => void;
+  accessibilityStrings?: Partial<AccessibilityStrings>;
+  enabled?: boolean;
+  engine?: EnginePolicy;
+  selectedIds?: readonly string[];
+  getItemLayout?: (
+    data: readonly Item[],
+    index: number
+  ) => ReorderableItemLayout;
+  estimatedItemSize?: number;
 };

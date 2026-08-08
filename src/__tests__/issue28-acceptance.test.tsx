@@ -196,6 +196,7 @@ describe('issue 28 visible fallback lifecycle contract', () => {
         'DropZone',
         'ReorderableContainer',
         'ReorderableItem',
+        'ReorderableList',
         'ReorderableSection',
       ]);
     } finally {

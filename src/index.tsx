@@ -6,6 +6,7 @@ export {
   ReorderableItem,
   ReorderableSection,
 } from './primitives';
+export { ReorderableList } from './reorderable-list';
 export type {
   AccessibilityStrings,
   CollectionOrder,
@@ -20,5 +21,8 @@ export type {
   ReorderEvent,
   ReorderableContainerProps,
   ReorderableItemProps,
+  ReorderableItemLayout,
+  ReorderableListProps,
+  ReorderableListRenderItemInfo,
   ReorderableSectionProps,
 } from './types';

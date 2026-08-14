@@ -35,6 +35,11 @@ describe('example application scenario catalog', () => {
 
   it('publishes every settled Scenario Lab surface as a named scenario', () => {
     expect(LAB_SCENARIOS.map((scenario) => scenario.id)).toEqual([
+      'free-form',
+      'virtualized-list',
+      'section-list',
+      'multi-selection',
+      'cross-panel-drop',
       'controlled-order',
       'exact-10000',
       'variable-1000',

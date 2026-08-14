@@ -175,6 +175,9 @@ describe('issue 31 portable accessible reorder', () => {
     const announce = jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
       .mockImplementation(() => {});
+    const announcementFinished = jest
+      .spyOn(AccessibilityInfo, 'addEventListener')
+      .mockReturnValue({ remove: jest.fn() });
     const focus = jest
       .spyOn(AccessibilityInfo, 'setAccessibilityFocus')
       .mockImplementation(() => {});
@@ -210,9 +213,54 @@ describe('issue 31 portable accessible reorder', () => {
         { sectionId: 'two', itemIds: [] },
       ],
     });
-    expect(announce).toHaveBeenCalledWith('Moved 2 items to position 1 of 2.');
+    await rendered.rerender(
+      gestureRoot(
+        <ReorderableContainer
+          engine="fallback"
+          onReorder={onReorder}
+          selectedIds={['blue', 'pink']}
+        >
+          <ReorderableSection id="empty-before">
+            {item('blue')}
+            {item('pink')}
+          </ReorderableSection>
+          <ReorderableSection id="one">{item('green')}</ReorderableSection>
+          <ReorderableSection id="empty-middle">{null}</ReorderableSection>
+          <ReorderableSection id="two">{null}</ReorderableSection>
+        </ReorderableContainer>
+      )
+    );
+    await waitFor(
+      () => {
+        expect(announce).toHaveBeenCalledWith(
+          'Moved 2 items to position 1 of 2.'
+        );
+      },
+      { timeout: 4_000 }
+    );
+    expect(focus).not.toHaveBeenCalled();
+    const finishedHandler = announcementFinished.mock.calls.find(
+      ([eventName]) => eventName === 'announcementFinished'
+    )?.[1] as (event: { announcement: string; success: boolean }) => void;
+    finishedHandler({
+      announcement: 'Moved 2 items to position 1 of 2.',
+      success: false,
+    });
+    expect(focus).not.toHaveBeenCalled();
+    await waitFor(() => expect(announce).toHaveBeenCalledTimes(2));
+    finishedHandler({
+      announcement: 'Moved 2 items to position 1 of 2.',
+      success: true,
+    });
     await waitFor(() => expect(focus).toHaveBeenCalled());
+    const successCallIndex = announce.mock.calls.findIndex(
+      ([message]) => message === 'Moved 2 items to position 1 of 2.'
+    );
+    expect(announce.mock.invocationCallOrder[successCallIndex]).toBeLessThan(
+      focus.mock.invocationCallOrder[0]!
+    );
     announce.mockRestore();
+    announcementFinished.mockRestore();
     focus.mockRestore();
   });
 
@@ -221,6 +269,12 @@ describe('issue 31 portable accessible reorder', () => {
       const onReorder = jest.fn<(event: ReorderEvent) => void>();
       const announce = jest
         .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      const announcementFinished = jest
+        .spyOn(AccessibilityInfo, 'addEventListener')
+        .mockReturnValue({ remove: jest.fn() });
+      const focus = jest
+        .spyOn(AccessibilityInfo, 'setAccessibilityFocus')
         .mockImplementation(() => {});
       const rendered = await render(
         <ReorderableContainer engine="auto" onReorder={onReorder}>
@@ -239,8 +293,32 @@ describe('issue 31 portable accessible reorder', () => {
         destination: { sectionId: null, beforeId: 'blue' },
         nextOrder: [{ sectionId: null, itemIds: ['green', 'blue', 'yellow'] }],
       });
-      expect(announce).toHaveBeenCalledWith('Moved item to position 1 of 3.');
+      await rendered.rerender(
+        <ReorderableContainer engine="auto" onReorder={onReorder}>
+          {item('green')}
+          {item('blue')}
+          {item('yellow')}
+        </ReorderableContainer>
+      );
+      await waitFor(
+        () =>
+          expect(announce).toHaveBeenCalledWith(
+            'Moved item to position 1 of 3.'
+          ),
+        { timeout: 4_000 }
+      );
+      expect(focus).not.toHaveBeenCalled();
+      const finishedHandler = announcementFinished.mock.calls.find(
+        ([eventName]) => eventName === 'announcementFinished'
+      )?.[1] as (event: { announcement: string; success: boolean }) => void;
+      finishedHandler({
+        announcement: 'Moved item to position 1 of 3.',
+        success: true,
+      });
+      await waitFor(() => expect(focus).toHaveBeenCalled());
       announce.mockRestore();
+      announcementFinished.mockRestore();
+      focus.mockRestore();
     });
   });
 

@@ -1,0 +1,214 @@
+{
+  "intent": "beforeTarget",
+  "default": {
+    "driver": "detox",
+    "destinationSelector": { "relation": "namedTarget" },
+    "destination": { "normalizedX": 0.5, "normalizedY": 0.25 }
+  },
+  "overrides": {
+    "ios27.native": {
+      "virtualized-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "List row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "List row 4"
+        }
+      },
+      "section-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Section 1, row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Section 1, row 4"
+        }
+      },
+      "free-form-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 4",
+        "canonicalOrder": [
+          {
+            "sectionId": null,
+            "itemIds": [
+              "card-0",
+              "card-1",
+              "card-2",
+              "card-3",
+              "card-4",
+              "card-5"
+            ]
+          }
+        ],
+        "destinationId": "card-3",
+        "labelsById": { "card-2": "Card row 3" },
+        "destinationSelector": {
+          "relation": "predecessorCenter"
+        }
+      },
+      "scoped-drop": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Accepting drop zone",
+        "destinationSelector": {
+          "relation": "namedTargetCenter",
+          "label": "Accepting drop zone"
+        }
+      }
+    },
+    "ios27.fallback": {
+      "free-form-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 4"
+        }
+      },
+      "virtualized-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "List row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "List row 4"
+        }
+      },
+      "section-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Section 1, row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Section 1, row 4"
+        }
+      },
+      "multi-selection-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 6",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 6"
+        }
+      },
+      "scoped-drop": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Accepting drop zone",
+        "destinationSelector": {
+          "relation": "namedTargetCenter",
+          "label": "Accepting drop zone"
+        }
+      }
+    },
+    "ios26.auto-fallback": {
+      "free-form-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 4"
+        }
+      },
+      "virtualized-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "List row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "List row 4"
+        }
+      },
+      "section-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Section 1, row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Section 1, row 4"
+        }
+      },
+      "multi-selection-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 6",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 6"
+        }
+      },
+      "scoped-drop": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Accepting drop zone",
+        "destinationSelector": {
+          "relation": "namedTargetCenter",
+          "label": "Accepting drop zone"
+        }
+      }
+    },
+    "android.fallback": {
+      "free-form-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 4"
+        }
+      },
+      "virtualized-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "List row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "List row 3"
+        }
+      },
+      "section-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Section 1, row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Section 1, row 3"
+        }
+      },
+      "multi-selection-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 6",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 6"
+        }
+      },
+      "scoped-drop": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Accepting drop zone",
+        "destinationSelector": {
+          "relation": "namedTargetCenter",
+          "label": "Accepting drop zone"
+        }
+      }
+    }
+  },
+  "routes": {
+    "ios27.native": {
+      "free-form-reorder": "agent-device",
+      "virtualized-list-reorder": "agent-device",
+      "section-list-reorder": "agent-device",
+      "multi-selection-reorder": "detox",
+      "scoped-drop": "agent-device"
+    },
+    "ios27.fallback": {
+      "free-form-reorder": "agent-device",
+      "virtualized-list-reorder": "agent-device",
+      "section-list-reorder": "agent-device",
+      "multi-selection-reorder": "agent-device",
+      "scoped-drop": "agent-device"
+    },
+    "ios26.auto-fallback": {
+      "free-form-reorder": "agent-device",
+      "virtualized-list-reorder": "agent-device",
+      "section-list-reorder": "agent-device",
+      "multi-selection-reorder": "agent-device",
+      "scoped-drop": "agent-device"
+    },
+    "android.fallback": {
+      "free-form-reorder": "agent-device",
+      "virtualized-list-reorder": "agent-device",
+      "section-list-reorder": "agent-device",
+      "multi-selection-reorder": "agent-device",
+      "scoped-drop": "agent-device"
+    }
+  }
+}

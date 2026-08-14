@@ -1,0 +1,8 @@
+{
+  "sourceHoldMs": 650,
+  "moveBudgetMs": 1200,
+  "settleMarginMs": 1650,
+  "destinationHoldMs": 8000,
+  "sampleCount": 3,
+  "sampleIntervalMs": 700
+}

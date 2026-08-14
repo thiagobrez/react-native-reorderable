@@ -103,14 +103,18 @@ describe('issue 27 shared section and selection contract', () => {
           });
         try {
           native = await render(
-            <NativeCommitAcceptanceContainer
-              acceptanceMove={{ sourceIds: canonicalSources, destination }}
-              onReorder={(event) => events.push(event)}
-              selectedIds={['pink', 'missing', 'blue', 'pink', 'yellow']}
-              testID="native-sections"
-            >
-              {contents()}
-            </NativeCommitAcceptanceContainer>
+            <GestureHandlerRootView>
+              <NativeCommitAcceptanceContainer
+                acceptanceMove={{ sourceIds: canonicalSources, destination }}
+                onReorder={(event) => events.push(event)}
+                // App-owned selections intentionally route to fallback; this
+                // harness isolates native terminal canonicalization.
+                selectedIds={[]}
+                testID="native-sections"
+              >
+                {contents()}
+              </NativeCommitAcceptanceContainer>
+            </GestureHandlerRootView>
           );
           await fireEvent.press(
             native.getByRole('button', { name: 'Apply native reorder' })

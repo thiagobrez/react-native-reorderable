@@ -148,7 +148,7 @@ function ScenarioContent({
   if (scenario === 'free-form')
     return (
       <FreeFormScenario
-        engine="auto"
+        engine={area === 'examples' ? 'auto' : engine}
         onOutcome={onOutcome}
         resetToken={resetToken}
       />
@@ -156,7 +156,7 @@ function ScenarioContent({
   if (scenario === 'multi-selection')
     return (
       <FreeFormScenario
-        engine="auto"
+        engine={area === 'examples' ? 'auto' : engine}
         onOutcome={onOutcome}
         resetToken={resetToken}
         selected
@@ -165,7 +165,7 @@ function ScenarioContent({
   if (scenario === 'section-list')
     return (
       <SectionScenario
-        engine="auto"
+        engine={area === 'examples' ? 'auto' : engine}
         onOutcome={onOutcome}
         resetToken={resetToken}
         teaching
@@ -174,7 +174,7 @@ function ScenarioContent({
   if (scenario === 'cross-panel-drop')
     return (
       <DropScenario
-        engine="auto"
+        engine={area === 'examples' ? 'auto' : engine}
         onOutcome={onOutcome}
         resetToken={resetToken}
       />
@@ -192,6 +192,7 @@ function ScenarioContent({
       <CancellationScenario
         engine={engine}
         onOutcome={onOutcome}
+        preset={preset}
         resetToken={resetToken}
       />
     );

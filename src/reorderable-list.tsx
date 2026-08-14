@@ -5,7 +5,9 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactElement,
+  type ReactNode,
   type ComponentType,
   type Ref,
   type RefAttributes,
@@ -24,6 +26,8 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewProps,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -59,12 +63,17 @@ import {
   createExactGeometry,
   indexAtOffset,
   itemOffset,
+  itemLength,
   type VirtualizedGeometry,
 } from './virtualized-geometry';
 import {
   assignViewportRef,
   useOwnedAnimatedScrollComponent,
 } from './viewport-adapter';
+import {
+  activeFeedbackTranslation as activeListOverlayTranslation,
+  destinationFeedbackPosition as listDestinationFeedbackPosition,
+} from './visual-feedback';
 
 const RESERVED_RUNTIME_PROPS = [
   'CellRendererComponent',
@@ -73,6 +82,8 @@ const RESERVED_RUNTIME_PROPS = [
 ] as const;
 const LONG_PRESS_SLOP = 24;
 const EMPTY_SELECTED_IDS: readonly string[] = [];
+
+export { activeListOverlayTranslation, listDestinationFeedbackPosition };
 
 const NON_FLAT_LIST_PROPS = [
   'accessibilityStrings',
@@ -181,6 +192,7 @@ function uniqueActionName(
 }
 
 type ListCellProps<Item> = Readonly<{
+  activeSourceIds: SharedValue<readonly string[]>;
   id: string;
   item: Item;
   index: number;
@@ -195,12 +207,48 @@ type ListCellProps<Item> = Readonly<{
   onAccessibleMove: (id: string, direction: 'earlier' | 'later') => void;
   registerAccessibleRef: (id: string, value: unknown) => void;
   collectionSize: number;
-  activeSourceIndexes: SharedValue<readonly number[]>;
-  activeTranslationY: SharedValue<number>;
-  anchorCorrection: SharedValue<number>;
 }>;
 
+type ListCellRendererProps = Readonly<{
+  activeSourceIds: SharedValue<readonly string[]>;
+  children: ReactNode;
+  id: string;
+  index: number;
+  onLayout?: ViewProps['onLayout'];
+  style?: StyleProp<ViewStyle>;
+}>;
+
+function ListCellRenderer({
+  activeSourceIds,
+  children,
+  id,
+  index,
+  onLayout,
+  style,
+}: ListCellRendererProps) {
+  const activeStyle = useAnimatedStyle(() => {
+    const active = activeSourceIds.value.includes(id);
+    return {
+      elevation: active ? 8 : 0,
+      opacity: active ? 0.94 : 1,
+      overflow: 'visible',
+      zIndex: active ? 2 : 0,
+    };
+  }, [id]);
+  return (
+    <Animated.View
+      collapsable={false}
+      onLayout={onLayout}
+      style={[style, activeStyle]}
+      testID={`reorderable-list-cell-${index}`}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 function ListCell<Item>({
+  activeSourceIds,
   id,
   item,
   index,
@@ -213,25 +261,7 @@ function ListCell<Item>({
   onAccessibleMove,
   registerAccessibleRef,
   collectionSize,
-  activeSourceIndexes,
-  activeTranslationY,
-  anchorCorrection,
 }: ListCellProps<Item>) {
-  const activeStyle = useAnimatedStyle(() => {
-    const active = activeSourceIndexes.value.includes(index);
-    return {
-      elevation: active ? 8 : 0,
-      opacity: active ? 0.94 : 1,
-      transform: [
-        {
-          translateY: active
-            ? activeTranslationY.value - anchorCorrection.value
-            : 0,
-        },
-      ],
-      zIndex: active ? 2 : 0,
-    };
-  }, [index]);
   const rendered = renderItem({ item, index });
   const renderedProps = isValidElement(rendered)
     ? (rendered.props as ViewProps)
@@ -248,6 +278,12 @@ function ListCell<Item>({
   if (canMoveLater) {
     libraryActions.push({ name: laterName, label: moveLaterLabel });
   }
+  const activeStyle = useAnimatedStyle(() => {
+    const active = activeSourceIds.value.includes(id);
+    return {
+      opacity: active ? 0 : 1,
+    };
+  }, [id]);
   return (
     <Animated.View
       accessible={renderedProps.accessible ?? true}
@@ -263,11 +299,11 @@ function ListCell<Item>({
           renderedProps.onAccessibilityAction?.(event);
         }
       }}
-      style={activeStyle}
       onLayout={(event) =>
         onMeasure(id, index, event.nativeEvent.layout.height)
       }
       ref={(value: unknown) => registerAccessibleRef(id, value)}
+      style={activeStyle}
       testID={`reorderable-list-wrapper-${id}`}
     >
       {rendered}
@@ -363,6 +399,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   );
   const animatedListRef = useAnimatedRef<FlatList<Item>>();
   const currentItemIds = useRef(itemIds);
+  const currentData = useRef(data);
   const onReorderRef = useRef(onReorder);
   const selectedIdsRef = useRef(selectedIds);
   const enabledRef = useRef(enabled);
@@ -373,6 +410,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     [accessibilityStrings]
   );
   currentItemIds.current = itemIds;
+  currentData.current = data;
   onReorderRef.current = onReorder;
   selectedIdsRef.current = selectedIds;
   enabledRef.current = enabled;
@@ -388,10 +426,14 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   const activeSourceIndexes = useSharedValue<readonly number[]>([]);
   const activeTranslationY = useSharedValue(0);
   const anchorCorrection = useSharedValue(0);
+  const activeOverlayOriginY = useSharedValue(0);
+  const activeOverlayLength = useSharedValue(0);
   const interactionStartY = useSharedValue(0);
+  const interactionStartAbsoluteY = useSharedValue(Number.NaN);
   const pointerViewportY = useSharedValue(0);
   const viewportHeight = useSharedValue(0);
   const scrollOffset = useSharedValue(0);
+  const interactionStartScrollOffset = useSharedValue(0);
   const autoScrollOffset = useSharedValue(0);
   const autoScrollActive = useSharedValue(false);
   const destinationIndex = useSharedValue(-1);
@@ -403,6 +445,17 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     indices: number[];
     lengths: number[];
   }>({ cursor: 0, ids: [], indices: [], lengths: [] });
+  const [activeOverlay, setActiveOverlay] = useState<{
+    id: string;
+    index: number;
+    item: Item;
+  } | null>(null);
+  const handleOverlayStart = useCallback((id: string, index: number) => {
+    if (currentItemIds.current[index] !== id) return;
+    const item = currentData.current[index];
+    if (item == null) return;
+    setActiveOverlay({ id, index, item });
+  }, []);
 
   const handlePointerTerminal = useCallback(
     (
@@ -410,6 +463,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
       sourceIds: readonly string[],
       beforeId: string | null
     ) => {
+      setActiveOverlay(null);
       if (cancelled) return;
       const event = reconcileReorder(
         [{ sectionId: null, itemIds: currentItemIds.current }],
@@ -695,8 +749,32 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     },
     [refreshDestination]
   );
+  const updatePointerFromGesture = useCallback(
+    (y: number) => {
+      'worklet';
+      pointerViewportY.value = y;
+      activeTranslationY.value = y - interactionStartY.value;
+      updateAutoScroll();
+      refreshDestination();
+    },
+    [
+      activeTranslationY,
+      interactionStartY,
+      pointerViewportY,
+      refreshDestination,
+      updateAutoScroll,
+    ]
+  );
+  const updatePointerFromTouch = useCallback(
+    (absoluteY: number) => {
+      'worklet';
+      updatePointerFromGesture(
+        interactionStartY.value + (absoluteY - interactionStartAbsoluteY.value)
+      );
+    },
+    [interactionStartAbsoluteY, interactionStartY, updatePointerFromGesture]
+  );
   const viewportGestures = useMemo(() => {
-    const nativeGesture = Gesture.Native();
     const reorderGesture = Gesture.LongPress()
       .withTestId('reorderable-list-viewport')
       .minDuration(350)
@@ -707,6 +785,9 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
         if (touch == null) return;
         gestureOriginX.value = touch.x;
         gestureOriginY.value = touch.y;
+        interactionStartAbsoluteY.value = Number.isFinite(touch.absoluteY)
+          ? touch.absoluteY
+          : touch.y;
       })
       .onStart((event) => {
         'worklet';
@@ -732,10 +813,20 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
           (sourceIndex) => uiItemIds.value[sourceIndex]!
         );
         interactionStartY.value = event.y;
+        interactionStartScrollOffset.value = scrollOffset.value;
+        if (!Number.isFinite(interactionStartAbsoluteY.value)) {
+          interactionStartAbsoluteY.value = Number.isFinite(event.absoluteY)
+            ? event.absoluteY
+            : event.y;
+        }
         pointerViewportY.value = event.y;
         activeTranslationY.value = 0;
         anchorCorrection.value = 0;
+        activeOverlayOriginY.value =
+          itemOffset(geometry.value, index) - scrollOffset.value;
+        activeOverlayLength.value = itemLength(geometry.value, index);
         terminalSent.value = false;
+        scheduleOnRN(handleOverlayStart, id, index);
         updateAutoScroll();
         refreshDestination();
       })
@@ -754,39 +845,43 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
           return;
         }
         if (gestureActivated.value && activeIndex.value >= 0) {
-          pointerViewportY.value = touch.y;
-          activeTranslationY.value = touch.y - interactionStartY.value;
-          updateAutoScroll();
-          refreshDestination();
+          updatePointerFromTouch(
+            Number.isFinite(touch.absoluteY) ? touch.absoluteY : touch.y
+          );
         }
       })
       .onEnd((event) => {
         'worklet';
         if (activeIndex.value < 0 || terminalSent.value) return;
-        pointerViewportY.value = event.y;
-        activeTranslationY.value = event.y - interactionStartY.value;
-        refreshDestination();
+        const releaseAbsoluteY =
+          Number.isFinite(event.absoluteY) && event.absoluteY > 0
+            ? event.absoluteY
+            : interactionStartAbsoluteY.value +
+              (event.y - interactionStartY.value);
+        updatePointerFromTouch(releaseAbsoluteY);
         const index = destinationIndex.value;
         const sourceIds = activeSourceIds.value;
         const beforeId = index < 0 ? null : (uiItemIds.value[index] ?? null);
         const cancelled =
-          event.y < 0 || event.y > viewportHeight.value || index < 0;
+          pointerViewportY.value < 0 ||
+          pointerViewportY.value > viewportHeight.value ||
+          index < 0;
         finishPointerInteraction(cancelled, sourceIds, beforeId);
       })
       .onFinalize((_event, success) => {
         'worklet';
         gestureActivated.value = false;
         if (!success) finishPointerInteraction(true, [], null);
-      })
-      .simultaneousWithExternalGesture(nativeGesture);
-    nativeGesture.simultaneousWithExternalGesture(reorderGesture);
-    return { nativeGesture, reorderGesture };
+      });
+    return { reorderGesture };
   }, [
     activeId,
     activeIndex,
     activeSourceIds,
     activeSourceIndexes,
     activeTranslationY,
+    activeOverlayLength,
+    activeOverlayOriginY,
     anchorCorrection,
     destinationIndex,
     enabled,
@@ -795,7 +890,10 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     gestureOriginX,
     gestureOriginY,
     finishPointerInteraction,
+    handleOverlayStart,
     interactionStartY,
+    interactionStartAbsoluteY,
+    interactionStartScrollOffset,
     pointerViewportY,
     refreshDestination,
     scrollOffset,
@@ -803,6 +901,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     uiItemIds,
     uiSelectedIds,
     updateAutoScroll,
+    updatePointerFromTouch,
     viewportHeight,
   ]);
 
@@ -961,16 +1060,55 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   }, [itemIds, selectedIds]);
   const feedbackStyle = useAnimatedStyle(() => ({
     opacity: destinationIndex.value < 0 ? 0 : 1,
-    transform: [{ translateY: feedbackViewportY.value }],
+    transform: [
+      {
+        translateY: listDestinationFeedbackPosition(
+          Platform.OS,
+          feedbackViewportY.value
+        ),
+      },
+    ],
   }));
+  const activeOverlayStyle = useAnimatedStyle(() => ({
+    height: activeOverlayLength.value,
+    transform: [
+      {
+        translateY: activeListOverlayTranslation(
+          Platform.OS,
+          destinationIndex.value >= 0,
+          feedbackViewportY.value,
+          0,
+          activeOverlayLength.value,
+          activeOverlayOriginY.value +
+            activeTranslationY.value +
+            (scrollOffset.value - interactionStartScrollOffset.value) -
+            anchorCorrection.value
+        ),
+      },
+    ],
+  }));
+  const cellRenderer = useCallback(
+    (cellProps: {
+      children: ReactNode;
+      index: number;
+      item: Item;
+      onLayout?: ViewProps['onLayout'];
+      style?: StyleProp<ViewStyle>;
+    }) => (
+      <ListCellRenderer
+        {...cellProps}
+        activeSourceIds={activeSourceIds}
+        id={keyExtractor(cellProps.item, cellProps.index)}
+      />
+    ),
+    [activeSourceIds, keyExtractor]
+  );
   const handleRenderItem = useCallback(
     ({ item, index }: { item: Item; index: number }) => {
       const id = keyExtractor(item, index);
       return (
         <ListCell
-          activeSourceIndexes={activeSourceIndexes}
-          activeTranslationY={activeTranslationY}
-          anchorCorrection={anchorCorrection}
+          activeSourceIds={activeSourceIds}
           id={id}
           index={index}
           item={item}
@@ -989,10 +1127,8 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     [
       handleMeasure,
       handleAccessibleMove,
-      activeSourceIndexes,
-      activeTranslationY,
-      anchorCorrection,
       accessibilityAvailability,
+      activeSourceIds,
       enabled,
       itemIds,
       keyExtractor,
@@ -1004,6 +1140,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
 
   const viewportProps: Record<string, unknown> = {
     ...flatListProps,
+    CellRendererComponent: cellRenderer,
     data: data as Item[],
     keyExtractor,
     onLayout: handleLayout,
@@ -1041,11 +1178,23 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     <View style={styles.viewportContainer}>
       <GestureDetector gesture={viewportGestures.reorderGesture}>
         <View collapsable={false} style={styles.gestureSurface}>
-          <GestureDetector gesture={viewportGestures.nativeGesture}>
-            {viewport}
-          </GestureDetector>
+          {viewport}
         </View>
       </GestureDetector>
+      {activeOverlay == null ? null : (
+        <Animated.View
+          accessibilityElementsHidden
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={[styles.activeOverlay, activeOverlayStyle]}
+        >
+          {renderItem({
+            index: activeOverlay.index,
+            item: activeOverlay.item,
+          })}
+        </Animated.View>
+      )}
       <Animated.View
         pointerEvents="none"
         style={[styles.destinationFeedback, feedbackStyle]}
@@ -1056,6 +1205,16 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
 }
 
 const styles = StyleSheet.create({
+  activeOverlay: {
+    borderColor: '#0A84FF',
+    borderWidth: 3,
+    elevation: 12,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 4,
+  },
   destinationFeedback: {
     backgroundColor: '#0A84FF',
     height: 3,
@@ -1063,7 +1222,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: 0,
-    zIndex: 3,
+    zIndex: 5,
   },
   gestureSurface: {
     flex: 1,

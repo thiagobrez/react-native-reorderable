@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Platform, Pressable, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView, State } from 'react-native-gesture-handler';
 import {
   fireGestureHandler,
@@ -8,6 +8,10 @@ import {
 } from 'react-native-gesture-handler/jest-utils';
 
 import { ReorderableContainer, ReorderableItem, type ReorderEvent } from '..';
+import {
+  activePreviewTranslation,
+  destinationFeedbackPosition,
+} from '../fallback';
 import { FallbackCommitAcceptanceContainer } from '../issue26-acceptance';
 
 async function withPlatform(
@@ -59,6 +63,20 @@ function cards(onReorder: (event: ReorderEvent) => void, engine?: 'fallback') {
 }
 
 describe('issue 26 fallback engine contract', () => {
+  it('aligns the Android preview center with the live insertion position', () => {
+    expect(
+      activePreviewTranslation('android', { height: 100, y: 20 }, 300, 140)
+    ).toBe(230);
+    expect(
+      activePreviewTranslation('android', { height: 52, y: 20 }, 300, 140)
+    ).toBe(254);
+    expect(
+      activePreviewTranslation('ios', { height: 100, y: 20 }, 300, 140)
+    ).toBe(128);
+    expect(destinationFeedbackPosition('android', 300)).toBe(312);
+    expect(destinationFeedbackPosition('ios', 300)).toBe(300);
+  });
+
   it('renders forced fallback on capable iOS and auto fallback on Android', async () => {
     await withPlatform('ios', 27, async () => {
       const rendered = await render(cards(() => undefined, 'fallback'));
@@ -273,6 +291,43 @@ describe('issue 26 fallback engine contract', () => {
       sourceIds: ['yellow'],
       destination: { sectionId: null, beforeId: 'green' },
       nextOrder: [{ sectionId: null, itemIds: ['blue', 'yellow', 'green'] }],
+    });
+  });
+
+  it('keeps a center-only predecessor preview visibly inside the destination band', async () => {
+    const view = () => (
+      <GestureHandlerRootView>
+        <ReorderableContainer engine="fallback" onReorder={() => undefined}>
+          {['blue', 'green', 'yellow', 'orange'].map((id) => (
+            <ReorderableItem id={id} key={id}>
+              <Text>{id}</Text>
+            </ReorderableItem>
+          ))}
+        </ReorderableContainer>
+      </GestureHandlerRootView>
+    );
+    const rendered = await render(view());
+    const handler = getByGestureTestId('fallback-item-blue') as unknown as {
+      handlers: {
+        onStart?: () => void;
+        onUpdate?: (event: { translationY: number }) => void;
+      };
+    };
+
+    await act(async () => {
+      handler.handlers.onStart?.();
+      handler.handlers.onUpdate?.({ translationY: 100 });
+    });
+    await rendered.rerender(view());
+
+    expect(rendered.getAllByText('blue')).toHaveLength(1);
+    expect(
+      StyleSheet.flatten(
+        rendered.getByTestId('fallback-wrapper-blue').props.style
+      )
+    ).toMatchObject({
+      borderWidth: 3,
+      transform: [{ translateY: 88 }, { scale: 1.03 }],
     });
   });
 

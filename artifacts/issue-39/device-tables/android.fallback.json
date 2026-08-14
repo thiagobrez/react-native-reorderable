@@ -1,0 +1,104 @@
+{
+  "configuration": "android.fallback",
+  "platform": "android",
+  "table": [
+    {
+      "id": "free-form-reorder",
+      "durationMs": 26682,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "virtualized-list-reorder",
+      "durationMs": 26481,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "section-list-reorder",
+      "durationMs": 26058,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "multi-selection-reorder",
+      "durationMs": 26729,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "scoped-drop",
+      "durationMs": 26145,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "invalid-outside-release",
+      "durationMs": 11384,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "gesture-system-interruption",
+      "durationMs": 11864,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "android-app-state",
+      "durationMs": 11670,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "android-blur",
+      "durationMs": 11934,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "android-back",
+      "durationMs": 11809,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "enabled-false",
+      "durationMs": 11722,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "unmount",
+      "durationMs": 11760,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "accessible-reorder",
+      "durationMs": 6307,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "accessible-drop",
+      "durationMs": 6314,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    }
+  ]
+}

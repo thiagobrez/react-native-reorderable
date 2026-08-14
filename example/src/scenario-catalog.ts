@@ -57,6 +57,7 @@ export const EXAMPLE_SCENARIOS: readonly ScenarioDefinition[] = [
 ];
 
 export const LAB_SCENARIOS: readonly ScenarioDefinition[] = [
+  ...EXAMPLE_SCENARIOS,
   {
     id: 'controlled-order',
     title: 'Controlled order',
@@ -143,9 +144,29 @@ export function presetsFor(
 ): readonly string[] {
   if (area === 'examples') return ['teaching'];
   if (area === 'integrations') return ['focused'];
+  if (
+    scenario === 'free-form' ||
+    scenario === 'virtualized-list' ||
+    scenario === 'section-list' ||
+    scenario === 'multi-selection' ||
+    scenario === 'cross-panel-drop'
+  )
+    return ['teaching'];
   if (scenario === 'controlled-order') return ['accept', 'delay', 'restore'];
   if (scenario === 'selection')
     return ['contiguous', 'noncontiguous', 'cross-section'];
+  if (scenario === 'cancellation')
+    return [
+      'outside',
+      'gesture-interruption',
+      'ios-inactive',
+      'ios-background',
+      'android-app-state',
+      'android-blur',
+      'android-back',
+      'enabled-false',
+      'unmount',
+    ];
   return ['default'];
 }
 

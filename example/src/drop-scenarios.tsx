@@ -118,13 +118,17 @@ export function DropScenario({ engine, onOutcome, resetToken }: Props) {
   );
 }
 
-export function CancellationScenario({ engine, onOutcome, resetToken }: Props) {
+export function CancellationScenario({
+  engine,
+  onOutcome,
+  preset,
+  resetToken,
+}: Props & Readonly<{ preset?: string }>) {
   const [enabled, setEnabled] = useState(true);
   const [mounted, setMounted] = useState(true);
   const [order, setOrder] = useState(itemIds as readonly string[]);
   const [count, setCount] = useState(0);
   const [event, setEvent] = useState('None');
-  const [armed, setArmed] = useState<'none' | 'disable' | 'unmount'>('none');
   const lifecycleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     setEnabled(true);
@@ -132,7 +136,6 @@ export function CancellationScenario({ engine, onOutcome, resetToken }: Props) {
     setOrder(itemIds);
     setCount(0);
     setEvent('None');
-    setArmed('none');
     if (lifecycleTimer.current) clearTimeout(lifecycleTimer.current);
   }, [resetToken]);
   useEffect(
@@ -156,55 +159,30 @@ export function CancellationScenario({ engine, onOutcome, resetToken }: Props) {
     setCount((value) => value + 1);
     setEvent(formatReorderEvent(result));
   };
-  const armLifecycleChange = (change: 'disable' | 'unmount') => {
+  const scheduleLifecycleCancellation = () => {
+    const change =
+      preset === 'enabled-false'
+        ? 'disable'
+        : preset === 'unmount'
+          ? 'unmount'
+          : null;
+    if (change == null || lifecycleTimer.current != null) return;
     if (lifecycleTimer.current) clearTimeout(lifecycleTimer.current);
-    setEnabled(true);
-    setMounted(true);
-    setArmed(change);
     lifecycleTimer.current = setTimeout(() => {
       if (change === 'disable') setEnabled(false);
       else setMounted(false);
-      setArmed('none');
       lifecycleTimer.current = null;
-    }, 1800);
+    }, 900);
   };
   return (
     <>
       <Text style={styles.instruction}>
-        Disable or unmount the live container during a long press. The armed
-        controls schedule that same lifecycle change for a hands-free hold. A
-        cancelled reorder leaves all public outcomes unchanged.
+        This named preset applies its lifecycle input during the real pointer
+        hold. A cancelled reorder leaves all public outcomes unchanged.
       </Text>
-      <View style={styles.actions}>
-        <Action
-          danger
-          id="cancellation-disable"
-          label={enabled ? 'Disable container' : 'Enable container'}
-          onPress={() => setEnabled((value) => !value)}
-        />
-        <Action
-          danger
-          id="cancellation-unmount"
-          label={mounted ? 'Unmount container' : 'Mount container'}
-          onPress={() => setMounted((value) => !value)}
-        />
-        <Action
-          danger
-          id="cancellation-arm-disable"
-          label={
-            armed === 'disable' ? 'Disable armed' : 'Arm disable during hold'
-          }
-          onPress={() => armLifecycleChange('disable')}
-        />
-        <Action
-          danger
-          id="cancellation-arm-unmount"
-          label={
-            armed === 'unmount' ? 'Unmount armed' : 'Arm unmount during hold'
-          }
-          onPress={() => armLifecycleChange('unmount')}
-        />
-      </View>
+      {!enabled ? (
+        <Text accessibilityRole="alert">Container disabled</Text>
+      ) : null}
       {mounted ? (
         <ReorderableContainer
           accessibilityLabel="Lifecycle cancellation cards"
@@ -219,6 +197,7 @@ export function CancellationScenario({ engine, onOutcome, resetToken }: Props) {
               accessibilityLabel={`${id} cancellation card`}
               id={id}
               key={id}
+              onTouchStart={scheduleLifecycleCancellation}
               style={styles.card}
               testID={`cancellation-${id}`}
             >

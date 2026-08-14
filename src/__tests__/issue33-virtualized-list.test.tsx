@@ -5,6 +5,7 @@ import {
   AccessibilityInfo,
   FlatList,
   Platform,
+  StyleSheet,
   Text,
   type NativeScrollEvent,
 } from 'react-native';
@@ -16,6 +17,10 @@ import {
 } from 'react-native-gesture-handler/jest-utils';
 
 import { ReorderableList, type ReorderableListRenderItemInfo } from '..';
+import {
+  activeListOverlayTranslation,
+  listDestinationFeedbackPosition,
+} from '../reorderable-list';
 import { VirtualizedReorderEngine } from '../virtualized-reorder-engine';
 
 const items = Array.from({ length: 100 }, (_, index) => ({
@@ -28,6 +33,148 @@ const getItemLayout = (
 ) => ({ index, length: 50, offset: index * 50 });
 
 describe('ReorderableList component contract', () => {
+  it('aligns Android overlay feedback without changing iOS pointer tracking', () => {
+    expect(activeListOverlayTranslation('android', true, 150, 0, 50, 180)).toBe(
+      125
+    );
+    expect(activeListOverlayTranslation('ios', true, 150, 0, 50, 180)).toBe(
+      168
+    );
+    expect(
+      activeListOverlayTranslation('android', false, 150, 0, 50, 180)
+    ).toBe(168);
+    expect(listDestinationFeedbackPosition('android', 150)).toBe(162);
+    expect(listDestinationFeedbackPosition('ios', 150)).toBe(150);
+  });
+
+  it('keeps rendered destination feedback aligned with the terminal public identity', async () => {
+    const onReorder = jest.fn();
+    const view = () => (
+      <GestureHandlerRootView>
+        <ReorderableList
+          data={items}
+          getItemLayout={getItemLayout}
+          keyExtractor={(item) => item.id}
+          onReorder={onReorder}
+          renderItem={({ item }) => <Text>{item.label}</Text>}
+          testID="feedback-list"
+        />
+      </GestureHandlerRootView>
+    );
+    const rendered = await render(view());
+    await fireEvent(rendered.getByTestId('feedback-list'), 'layout', {
+      nativeEvent: { layout: { height: 200, width: 300, x: 0, y: 0 } },
+    });
+    const handler = getByGestureTestId(
+      'reorderable-list-viewport'
+    ) as unknown as {
+      handlers: {
+        onTouchesDown?: (event: {
+          allTouches: { absoluteY: number; x: number; y: number }[];
+        }) => void;
+        onStart?: (event: { absoluteY: number; y: number }) => void;
+        onTouchesMove?: (
+          event: {
+            allTouches: { absoluteY: number; x: number; y: number }[];
+          },
+          state: { fail: () => void }
+        ) => void;
+        onEnd?: (event: { absoluteY: number; y: number }) => void;
+      };
+    };
+
+    await act(async () => {
+      handler.handlers.onTouchesDown?.({
+        allTouches: [{ absoluteY: 500, x: 20, y: 25 }],
+      });
+      handler.handlers.onStart?.({ absoluteY: 550, y: 25 });
+    });
+    await rendered.rerender(view());
+    const sourceCopies = rendered.getAllByText('Item 0', {
+      includeHiddenElements: true,
+    });
+    const floatingSource = sourceCopies.find(
+      ({ parent }) => parent?.props.accessibilityElementsHidden === true
+    );
+    expect(sourceCopies).toHaveLength(2);
+    expect(floatingSource?.parent?.props).toMatchObject({
+      accessibilityElementsHidden: true,
+      accessible: false,
+      importantForAccessibility: 'no-hide-descendants',
+    });
+    expect(floatingSource?.parent?.props).not.toHaveProperty('testID');
+    expect(
+      StyleSheet.flatten(
+        rendered.getByTestId('reorderable-list-wrapper-item-0').props.style
+      ).opacity
+    ).toBe(0);
+    const stationaryFeedback = StyleSheet.flatten(
+      rendered.getByTestId('reorderable-list-destination-feedback').props.style
+    );
+    expect(stationaryFeedback.transform).toEqual([{ translateY: 50 }]);
+
+    await act(async () => {
+      // Touch-stream coordinates are not the gesture-local coordinates used
+      // at release on iOS. The update and terminal phases must share event.y.
+      handler.handlers.onTouchesMove?.(
+        { allTouches: [{ absoluteY: 630, x: 20, y: 0 }] },
+        { fail: jest.fn() }
+      );
+    });
+    await rendered.rerender(view());
+    const feedback = StyleSheet.flatten(
+      rendered.getByTestId('reorderable-list-destination-feedback').props.style
+    );
+    expect(feedback.transform).toEqual([{ translateY: 150 }]);
+
+    await fireEvent.scroll(rendered.getByTestId('feedback-list'), {
+      nativeEvent: { contentOffset: { x: 0, y: 50 } } as NativeScrollEvent,
+    });
+    await act(async () => {
+      handler.handlers.onTouchesMove?.(
+        { allTouches: [{ absoluteY: 630, x: 20, y: 0 }] },
+        { fail: jest.fn() }
+      );
+    });
+    await rendered.rerender(view());
+    const activeSource = StyleSheet.flatten(
+      rendered.getByTestId('reorderable-list-cell-0').props.style
+    );
+    const activeSourceContent = StyleSheet.flatten(
+      rendered.getByTestId('reorderable-list-wrapper-item-0').props.style
+    );
+    const floatingSourceStyle = StyleSheet.flatten(
+      floatingSource?.parent?.props.style
+    );
+    const scrolledFeedback = StyleSheet.flatten(
+      rendered.getByTestId('reorderable-list-destination-feedback').props.style
+    );
+    expect(activeSource).toMatchObject({
+      opacity: 0.94,
+      overflow: 'visible',
+      zIndex: 2,
+    });
+    expect(activeSourceContent.opacity).toBe(0);
+    expect(floatingSourceStyle).toMatchObject({
+      borderWidth: 3,
+      height: 50,
+      transform: [{ translateY: 168 }],
+    });
+    expect(scrolledFeedback.transform).toEqual([{ translateY: 150 }]);
+
+    await act(async () => handler.handlers.onEnd?.({ absoluteY: 630, y: 999 }));
+    expect(onReorder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destination: { sectionId: null, beforeId: 'item-4' },
+      })
+    );
+    await rendered.rerender(view());
+    expect(
+      rendered.getAllByText('Item 0', { includeHiddenElements: true })
+    ).toHaveLength(1);
+    await rendered.unmount();
+  });
+
   it('retains the FlatList viewport, safe props, callbacks, and typed ref', async () => {
     const ref = createRef<FlatList<(typeof items)[number]>>();
     const onScroll = jest.fn();
@@ -105,7 +252,7 @@ describe('ReorderableList component contract', () => {
     expect(() => ReorderableList(props as never)).toThrow('ReorderableList');
   });
 
-  it('leaves a pre-activation drag available to ordinary list scrolling', async () => {
+  it('gives an activated reorder priority while leaving pre-activation scrolling available', async () => {
     const onReorder = jest.fn();
     const onScroll = jest.fn();
     const rendered = await render(
@@ -132,6 +279,16 @@ describe('ReorderableList component contract', () => {
       nativeEvent: { contentOffset: { x: 0, y: 50 } } as NativeScrollEvent,
     });
 
+    const reorderGesture = getByGestureTestId('reorderable-list-viewport');
+    expect(reorderGesture.config).toMatchObject({
+      cancelsTouchesInView: true,
+      testId: 'reorderable-list-viewport',
+    });
+    expect(reorderGesture.config.simultaneousWith).toEqual([]);
+    expect(reorderGesture.config.blocksHandlers).toEqual([]);
+    expect(() => getByGestureTestId('reorderable-list-native-scroll')).toThrow(
+      /cannot be found/
+    );
     expect(onReorder).not.toHaveBeenCalled();
     expect(onScroll).toHaveBeenCalledTimes(1);
     await rendered.unmount();
@@ -441,6 +598,55 @@ describe('ReorderableList component contract', () => {
 });
 
 describe('virtualized reorder engine contract', () => {
+  it.each([
+    {
+      name: 'stationary hold',
+      scrollOffset: 0,
+      sourceId: 'item-0',
+      translationY: 0,
+      beforeId: 'item-1',
+      feedbackViewportY: 50,
+    },
+    {
+      name: 'movement',
+      scrollOffset: 0,
+      sourceId: 'item-0',
+      translationY: 130,
+      beforeId: 'item-3',
+      feedbackViewportY: 150,
+    },
+    {
+      name: 'movement after scroll',
+      scrollOffset: 50,
+      sourceId: 'item-1',
+      translationY: 130,
+      beforeId: 'item-4',
+      feedbackViewportY: 150,
+    },
+  ])(
+    'keeps $name feedback and release on the same public destination',
+    ({ beforeId, feedbackViewportY, scrollOffset, sourceId, translationY }) => {
+      const onCommit = jest.fn();
+      const engine = new VirtualizedReorderEngine({
+        itemIds: items.map((item) => item.id),
+        layouts: items.map((_item, index) => getItemLayout(items, index)),
+        onCommit,
+      });
+      engine.setViewport(200, scrollOffset);
+      expect(engine.start(sourceId, [])).toBe(true);
+      engine.move(translationY);
+      const hold = engine.snapshot();
+
+      expect(hold.destination).toEqual({ sectionId: null, beforeId });
+      expect(hold.feedbackViewportY).toBe(feedbackViewportY);
+      engine.finish(true);
+      expect(onCommit).toHaveBeenCalledWith({
+        sourceIds: [sourceId],
+        destination: { sectionId: null, beforeId },
+      });
+    }
+  );
+
   it('uses exact geometry and identities to traverse several viewports', () => {
     const onCommit =
       jest.fn<

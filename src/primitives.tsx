@@ -248,27 +248,128 @@ function ReorderableContainerImplementation({
   const accessibilityStringsRef = useRef(resolvedAccessibilityStrings);
   accessibilityStringsRef.current = resolvedAccessibilityStrings;
   const accessibleItemRefs = useRef(new Map<string, unknown>());
-  const pendingAccessibleOrder = useRef<string | null>(null);
+  const accessibilityTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const accessibilitySubscriptions = useRef(
+    new Set<ReturnType<typeof AccessibilityInfo.addEventListener>>()
+  );
+  useEffect(
+    () => () => {
+      for (const timer of accessibilityTimers.current) clearTimeout(timer);
+      accessibilityTimers.current.clear();
+      for (const subscription of accessibilitySubscriptions.current) {
+        subscription.remove();
+      }
+      accessibilitySubscriptions.current.clear();
+    },
+    []
+  );
+  const scheduleAccessibilityTask = (task: () => void, delay: number) => {
+    const timer = setTimeout(() => {
+      accessibilityTimers.current.delete(timer);
+      task();
+    }, delay);
+    accessibilityTimers.current.add(timer);
+    return timer;
+  };
+  const cancelAccessibilityTask = (
+    timer: ReturnType<typeof setTimeout> | undefined
+  ) => {
+    if (timer == null) return;
+    clearTimeout(timer);
+    accessibilityTimers.current.delete(timer);
+  };
+  const pendingAccessibleCompletion = useRef<{
+    activatedId: string;
+    announcement: string;
+    expectedOrder: string;
+  } | null>(null);
   const currentOrderSignature = collectionOrderSignature(normalized.order);
   const currentOrderSignatureRef = useRef(currentOrderSignature);
   currentOrderSignatureRef.current = currentOrderSignature;
 
   const focusAccessibleItem = (id: string) => {
-    setTimeout(() => {
+    scheduleAccessibilityTask(() => {
       const tag = findNodeHandle(accessibleItemRefs.current.get(id));
       if (tag != null) AccessibilityInfo.setAccessibilityFocus(tag);
     }, 0);
   };
 
-  const settlePendingAccessibleOrder = () => {
-    const expectedOrder = pendingAccessibleOrder.current;
-    if (expectedOrder == null) return;
-    pendingAccessibleOrder.current = null;
-    if (expectedOrder !== currentOrderSignatureRef.current) {
-      AccessibilityInfo.announceForAccessibility(
-        accessibilityStringsRef.current.orderCorrectedAnnouncement
-      );
+  const announceThenFocusAccessibleItem = (
+    id: string,
+    announcement: string
+  ) => {
+    if (Platform.OS !== 'ios') {
+      AccessibilityInfo.announceForAccessibility(announcement);
+      focusAccessibleItem(id);
+      return;
     }
+    let fallback: ReturnType<typeof setTimeout> | undefined;
+    let initial: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const announce = () =>
+      AccessibilityInfo.announceForAccessibility(announcement);
+    const subscription = AccessibilityInfo.addEventListener(
+      'announcementFinished',
+      (event) => {
+        if (event.announcement !== announcement) return;
+        if (!event.success) {
+          if (retry == null) {
+            retry = scheduleAccessibilityTask(() => {
+              retry = undefined;
+              announce();
+            }, 250);
+          }
+          return;
+        }
+        subscription.remove();
+        accessibilitySubscriptions.current.delete(subscription);
+        cancelAccessibilityTask(fallback);
+        cancelAccessibilityTask(initial);
+        cancelAccessibilityTask(retry);
+        focusAccessibleItem(id);
+      }
+    );
+    accessibilitySubscriptions.current.add(subscription);
+    initial = scheduleAccessibilityTask(() => {
+      initial = undefined;
+      announce();
+    }, 3_000);
+    fallback = scheduleAccessibilityTask(() => {
+      subscription.remove();
+      accessibilitySubscriptions.current.delete(subscription);
+      cancelAccessibilityTask(initial);
+      cancelAccessibilityTask(retry);
+      focusAccessibleItem(id);
+    }, 15_000);
+  };
+
+  const settlePendingAccessibleOrder = () => {
+    const pending = pendingAccessibleCompletion.current;
+    if (pending == null) return;
+    if (pending.expectedOrder === currentOrderSignatureRef.current) {
+      pendingAccessibleCompletion.current = null;
+      announceThenFocusAccessibleItem(
+        pending.activatedId,
+        pending.announcement
+      );
+      return;
+    }
+    scheduleAccessibilityTask(() => {
+      if (pendingAccessibleCompletion.current !== pending) return;
+      if (currentOrderSignatureRef.current === pending.expectedOrder) {
+        pendingAccessibleCompletion.current = null;
+        announceThenFocusAccessibleItem(
+          pending.activatedId,
+          pending.announcement
+        );
+      } else {
+        pendingAccessibleCompletion.current = null;
+        AccessibilityInfo.announceForAccessibility(
+          accessibilityStringsRef.current.orderCorrectedAnnouncement
+        );
+        focusAccessibleItem(pending.activatedId);
+      }
+    }, 750);
   };
 
   useEffect(settlePendingAccessibleOrder);
@@ -297,24 +398,24 @@ function ReorderableContainerImplementation({
       focusAccessibleItem(activatedId);
       return;
     }
-    pendingAccessibleOrder.current = collectionOrderSignature(
-      committedEvent.nextOrder
-    );
-    onReorderRef.current(committedEvent);
+    const expectedOrder = collectionOrderSignature(committedEvent.nextOrder);
     const destinationCollection = committedEvent.nextOrder.find(
       (collection) =>
         collection.sectionId === committedEvent.destination.sectionId
     )!;
-    AccessibilityInfo.announceForAccessibility(
-      accessibilityStringsRef.current.reorderAnnouncement({
+    pendingAccessibleCompletion.current = {
+      activatedId,
+      announcement: accessibilityStringsRef.current.reorderAnnouncement({
         event: committedEvent,
         position:
           destinationCollection.itemIds.indexOf(committedEvent.sourceIds[0]!) +
           1,
         collectionSize: destinationCollection.itemIds.length,
-      })
-    );
-    focusAccessibleItem(activatedId);
+      }),
+      expectedOrder,
+    };
+    onReorderRef.current(committedEvent);
+    settlePendingAccessibleOrder();
   };
 
   const accessibleChildren = normalized.children.map((child, index) => {
@@ -482,7 +583,14 @@ function ReorderableContainerImplementation({
       terminal.destinationBeforeId
     );
   };
-  if (engine === 'fallback' || !isNativeReorderingAvailable()) {
+  // SwiftUI's reorderContainer reports only the pressed item even when an
+  // app-owned selection is visible. Atomic selected reorders therefore use
+  // the portable gesture engine; native remains eligible for single sources.
+  if (
+    engine === 'fallback' ||
+    normalizedSelectedIds.length > 0 ||
+    !isNativeReorderingAvailable()
+  ) {
     if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
       throw new Error(
         `[react-native-reorderable] No reorder engine can fulfill the portable contract for this enabled ${Platform.OS} container.`

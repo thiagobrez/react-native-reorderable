@@ -33,6 +33,10 @@ import type { EntryKind } from './normalize';
 import { InteractionLifecycle } from './lifecycle';
 import { canonicalMoveSet } from './semantic';
 import type { CollectionOrder } from './types';
+import {
+  activeFeedbackTranslation,
+  destinationFeedbackPosition,
+} from './visual-feedback';
 
 let nextFallbackInteractionId = 0;
 
@@ -55,6 +59,36 @@ export type FallbackAcceptanceMove = Readonly<{
 }>;
 
 type LayoutSlot = Readonly<{ height: number; y: number }>;
+
+export function activePreviewTranslation(
+  platform: typeof Platform.OS,
+  activeLayout: LayoutSlot | undefined,
+  destinationFeedbackY: number,
+  pointerTranslation: number
+): number {
+  'worklet';
+  if (activeLayout != null && destinationFeedbackY >= 0) {
+    return activeFeedbackTranslation(
+      platform,
+      true,
+      destinationFeedbackY,
+      activeLayout.y,
+      activeLayout.height,
+      pointerTranslation
+    );
+  }
+  return activeFeedbackTranslation(
+    platform,
+    false,
+    destinationFeedbackY,
+    0,
+    0,
+    pointerTranslation
+  );
+}
+
+export { destinationFeedbackPosition };
+
 type DragState = Readonly<{
   activeInteractionId: SharedValue<number>;
   activatedEntryIndex: SharedValue<number>;
@@ -248,6 +282,12 @@ function useMeasuredEntry(
       };
       const previousSlot = dragState.layouts.value[index];
       if (
+        dragState.activatedEntryIndex.value === index &&
+        previousSlot != null
+      ) {
+        return;
+      }
+      if (
         previousSlot?.height === nextSlot.height &&
         previousSlot.y === nextSlot.y
       ) {
@@ -379,14 +419,21 @@ function FallbackItem({
   const animatedStyle = useAnimatedStyle(() => {
     const isMoved = dragState.activeSourceIds.value.includes(id);
     if (!isMoved) return { transform: [{ translateY: 0 }] };
+    const activeLayout = dragState.layouts.value[index];
     return {
+      borderColor: '#0A84FF',
+      borderWidth: 3,
       elevation: 8,
       opacity: 0.94,
       transform: [
         {
-          translateY:
+          translateY: activePreviewTranslation(
+            Platform.OS,
+            activeLayout,
+            dragState.destinationFeedbackY.value,
             dragState.pointerTranslation.value +
-            dragState.pointerCorrection.value,
+              dragState.pointerCorrection.value
+          ),
         },
         { scale: withTiming(1.03, { duration: 100 }) },
       ],
@@ -438,9 +485,16 @@ function MeasuredStructuralEntry({
 function DestinationFeedback({ dragState }: { dragState: DragState }) {
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: dragState.activatedEntryIndex.value < 0 ? 0 : 1,
-    top: withTiming(Math.max(0, dragState.destinationFeedbackY.value), {
-      duration: 120,
-    }),
+    top: withTiming(
+      Math.max(
+        0,
+        destinationFeedbackPosition(
+          Platform.OS,
+          dragState.destinationFeedbackY.value
+        )
+      ),
+      { duration: 120 }
+    ),
   }));
   return (
     <Animated.View

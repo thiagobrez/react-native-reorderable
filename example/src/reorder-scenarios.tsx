@@ -21,6 +21,28 @@ import { styles } from './theme';
 
 type OutcomeWriter = (outcome: PublicOutcome) => void;
 
+const SECTION_HEADER_HEIGHT = 34;
+const SECTION_FOOTER_HEIGHT = 26;
+
+export function getSectionItemLayout(
+  sections: readonly ScenarioSection[],
+  sectionIndex: number,
+  itemIndex: number
+) {
+  let offset = 0;
+  for (let index = 0; index < sectionIndex; index += 1) {
+    offset += SECTION_HEADER_HEIGHT + SECTION_FOOTER_HEIGHT;
+    for (const item of sections[index]!.data) offset += item.height;
+  }
+  offset += SECTION_HEADER_HEIGHT;
+  for (let index = 0; index < itemIndex; index += 1)
+    offset += sections[sectionIndex]!.data[index]!.height;
+  return {
+    length: sections[sectionIndex]!.data[itemIndex]!.height,
+    offset,
+  };
+}
+
 function flatOrder(
   event: ReorderEvent,
   current: readonly ScenarioRow[]
@@ -81,6 +103,7 @@ function Row({
 }: Readonly<{ item: ScenarioRow; selected?: boolean }>) {
   return (
     <View
+      accessible
       accessibilityLabel={`${item.label}${selected ? ', selected' : ''}`}
       style={[
         styles.row,
@@ -89,7 +112,14 @@ function Row({
       ]}
       testID={`row-${item.id}`}
     >
-      <Text style={styles.rowText}>{item.label}</Text>
+      <Text
+        accessible={false}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+        style={styles.rowText}
+      >
+        {item.label}
+      </Text>
       <Text
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
@@ -376,7 +406,7 @@ export function SectionScenario({
               : 'Twenty four sections of twenty five rows with empty sections at the beginning, middle, and end'
         }
         engine={engine}
-        estimatedItemSize={52}
+        getItemLayout={getSectionItemLayout}
         initialNumToRender={8}
         keyExtractor={(item) => item.id}
         maxToRenderPerBatch={8}

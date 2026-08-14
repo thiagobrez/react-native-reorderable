@@ -51,7 +51,7 @@ describe('issue 38 example application', () => {
     expect(rendered.queryByTestId('lab-engine-policy')).toBeNull();
 
     await fireEvent.press(rendered.getByTestId('area-tab-lab'));
-    expect(rendered.getAllByTestId(/^open-/)).toHaveLength(9);
+    expect(rendered.getAllByTestId(/^open-/)).toHaveLength(14);
     await fireEvent.press(rendered.getByTestId('area-tab-integrations'));
     expect(rendered.getAllByTestId(/^open-/)).toHaveLength(4);
     expect(rendered.queryByTestId('lab-engine-policy')).toBeNull();

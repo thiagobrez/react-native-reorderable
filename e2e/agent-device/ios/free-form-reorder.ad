@@ -1,0 +1,15 @@
+context platform=ios kind=simulator timeout=60000
+
+env APP_TARGET="reorderable.example"
+env ENGINE="auto"
+
+open "${APP_TARGET}" --relaunch
+wait "Scenario Lab" 15000
+open "reorderable://lab/free-form?preset=teaching&engine=${ENGINE}"
+wait "Current order: card-0, card-1, card-2, card-3, card-4, card-5" 15000
+wait "Callback count: 0" 5000
+
+gesture drag "label=\"Card row 1\"" "label=\"Card row 4\"" 650 1200 8000
+wait "Callback count: 1" 5000
+
+close

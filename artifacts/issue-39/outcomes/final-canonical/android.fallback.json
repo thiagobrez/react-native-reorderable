@@ -1,0 +1,118 @@
+{
+  "configuration": "android.fallback",
+  "platform": "android",
+  "outcomes": {
+    "free-form-reorder": {
+      "labels": [
+        "Current order: card-1, card-2, card-0, card-3, card-4, card-5",
+        "Current selection: none",
+        "Last committed event: {\"sourceIds\":[\"card-0\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"card-3\"}}",
+        "Callback count: 1"
+      ]
+    },
+    "virtualized-list-reorder": {
+      "labels": [
+        "Current order: list-1, list-2, list-0, list-3, list-4, list-5 … (60)",
+        "Current selection: none",
+        "Last committed event: {\"sourceIds\":[\"list-0\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"list-3\"}}",
+        "Callback count: 1"
+      ]
+    },
+    "section-list-reorder": {
+      "labels": [
+        "Current order: empty-beginning[empty] · section-1[section-1-row-2, section-1-row-3, section-1-row-1, section-1-row-4, section-1-row-5, section-1-row-6, section-1-row-7, section-1-row-8, section-1-row-9, section-1-row-10, section-1-row-11, section-1-row-12, section-1-row-13, section-1-row-14, section-1-row-15, section-1-row-16, section-1-row-17, section-1-row-18, section-1-row-19, section-1-row-20, section-1-row-21, section-1-row-22, section-1-row-23, section-1-row-24, section-1-row-25] · section-2[section-2-row-1, section-2-row-2, section-2-row-3, section-2-row-4, section-2-row-5, section-2-row-6, section-2-row-7, section-2-row-8, section-2-row-9, section-2-row-10, section-2-row-11, section-2-row-12, section-2-row-13, section-2-row-14, section-2-row-15, section-2-row-16, section-2-row-17, section-2-row-18, section-2-row-19, section-2-row-20, section-2-row-21, section-2-row-22, section-2-row-23, section-2-row-24, section-2-row-25] · section-3[section-3-row-1, section-3-row-2, section-3-row-3, section-3-row-4, section-3-row-5, section-3-row-6, section-3-row-7, section-3-row-8, section-3-row-9, section-3-row-10, section-3-row-11, section-3-row-12, section-3-row-13, section-3-row-14, section-3-row-15, section-3-row-16, section-3-row-17, section-3-row-18, section-3-row-19, section-3-row-20, section-3-row-21, section-3-row-22, section-3-row-23, section-3-row-24, section-3-row-25]",
+        "Current selection: none",
+        "Last committed event: {\"sourceIds\":[\"section-1-row-1\"],\"destination\":{\"sectionId\":\"section-1\",\"beforeId\":\"section-1-row-4\"}}",
+        "Callback count: 1"
+      ]
+    },
+    "multi-selection-reorder": {
+      "labels": [
+        "Current order: card-0, card-3, card-1, card-2, card-4, card-5",
+        "Current selection: card-1, card-2, card-4",
+        "Last committed event: {\"sourceIds\":[\"card-1\",\"card-2\",\"card-4\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"card-5\"}}",
+        "Callback count: 1"
+      ]
+    },
+    "scoped-drop": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: blue, yellow",
+        "Last committed event: {\"itemIds\":[\"blue\",\"yellow\"],\"destinationId\":\"accepting\"}",
+        "Callback count: 1"
+      ]
+    },
+    "invalid-outside-release": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "gesture-system-interruption": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "android-app-state": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "android-blur": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "android-back": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "enabled-false": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "unmount": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "accessible-reorder": {
+      "labels": [
+        "Current order: yellow, blue, green",
+        "Current selection: blue, green",
+        "Last committed event: {\"sourceIds\":[\"blue\",\"green\"],\"destination\":{\"sectionId\":null,\"beforeId\":null}}",
+        "Callback count: 1"
+      ]
+    },
+    "accessible-drop": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: blue, green",
+        "Last committed event: {\"itemIds\":[\"blue\",\"green\"],\"destinationId\":\"accessible-zone\"}",
+        "Callback count: 1"
+      ]
+    }
+  }
+}

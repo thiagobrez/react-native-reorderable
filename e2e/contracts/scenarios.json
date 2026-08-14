@@ -1,0 +1,461 @@
+[
+  {
+    "id": "free-form-reorder",
+    "deepLink": "reorderable://lab/free-form?preset=teaching&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "drag",
+      "destinationPlacement": "beforeTarget",
+      "sourceLabel": "Card row 1",
+      "targetLabel": "Card row 4",
+      "holdDurationMs": 8000
+    },
+    "covers": ["free-form"],
+    "selectors": [
+      { "label": "Card row 1", "testID": "card-card-0" },
+      { "label": "Card row 4", "testID": "card-card-3" }
+    ],
+    "initial": {
+      "labels": [
+        "Current order: card-0, card-1, card-2, card-3, card-4, card-5",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["card-0"],
+      "selection": "none",
+      "labels": [
+        "Current order: card-1, card-2, card-0, card-3, card-4, card-5",
+        "Current selection: none",
+        "Last committed event: {\"sourceIds\":[\"card-0\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"card-3\"}}",
+        "Callback count: 1"
+      ]
+    }
+  },
+  {
+    "id": "virtualized-list-reorder",
+    "deepLink": "reorderable://lab/virtualized-list?preset=teaching&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "drag",
+      "destinationPlacement": "beforeTarget",
+      "sourceLabel": "List row 1",
+      "targetLabel": "List row 4",
+      "holdDurationMs": 8000
+    },
+    "covers": ["list"],
+    "selectors": [
+      { "label": "List row 1", "testID": "row-list-0" },
+      { "label": "List row 4", "testID": "row-list-3" }
+    ],
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["list-0"],
+      "selection": "none",
+      "labels": [
+        "Current order: list-1, list-2, list-0, list-3, list-4, list-5 … (60)",
+        "Current selection: none",
+        "Last committed event: {\"sourceIds\":[\"list-0\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"list-3\"}}",
+        "Callback count: 1"
+      ]
+    }
+  },
+  {
+    "id": "section-list-reorder",
+    "deepLink": "reorderable://lab/section-list?preset=teaching&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "drag",
+      "destinationPlacement": "beforeTarget",
+      "sourceLabel": "Section 1, row 1",
+      "targetLabel": "Section 1, row 4",
+      "holdDurationMs": 8000
+    },
+    "covers": ["section-list"],
+    "selectors": [
+      { "label": "Section 1, row 1", "testID": "row-section-1-row-1" },
+      { "label": "Section 1, row 4", "testID": "row-section-1-row-4" }
+    ],
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["section-1-row-1"],
+      "selection": "none",
+      "labels": [
+        "Current order: empty-beginning[empty] · section-1[section-1-row-2, section-1-row-3, section-1-row-1, section-1-row-4, section-1-row-5, section-1-row-6, section-1-row-7, section-1-row-8, section-1-row-9, section-1-row-10, section-1-row-11, section-1-row-12, section-1-row-13, section-1-row-14, section-1-row-15, section-1-row-16, section-1-row-17, section-1-row-18, section-1-row-19, section-1-row-20, section-1-row-21, section-1-row-22, section-1-row-23, section-1-row-24, section-1-row-25] · section-2[section-2-row-1, section-2-row-2, section-2-row-3, section-2-row-4, section-2-row-5, section-2-row-6, section-2-row-7, section-2-row-8, section-2-row-9, section-2-row-10, section-2-row-11, section-2-row-12, section-2-row-13, section-2-row-14, section-2-row-15, section-2-row-16, section-2-row-17, section-2-row-18, section-2-row-19, section-2-row-20, section-2-row-21, section-2-row-22, section-2-row-23, section-2-row-24, section-2-row-25] · section-3[section-3-row-1, section-3-row-2, section-3-row-3, section-3-row-4, section-3-row-5, section-3-row-6, section-3-row-7, section-3-row-8, section-3-row-9, section-3-row-10, section-3-row-11, section-3-row-12, section-3-row-13, section-3-row-14, section-3-row-15, section-3-row-16, section-3-row-17, section-3-row-18, section-3-row-19, section-3-row-20, section-3-row-21, section-3-row-22, section-3-row-23, section-3-row-24, section-3-row-25]",
+        "Current selection: none",
+        "Last committed event: {\"sourceIds\":[\"section-1-row-1\"],\"destination\":{\"sectionId\":\"section-1\",\"beforeId\":\"section-1-row-4\"}}",
+        "Callback count: 1"
+      ]
+    }
+  },
+  {
+    "id": "multi-selection-reorder",
+    "deepLink": "reorderable://lab/multi-selection?preset=teaching&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "drag",
+      "destinationPlacement": "beforeTarget",
+      "sourceLabel": "Card row 2",
+      "targetLabel": "Card row 6",
+      "holdDurationMs": 8000
+    },
+    "covers": ["multi-selection"],
+    "selectors": [
+      { "label": "Card row 2", "testID": "card-card-1" },
+      { "label": "Card row 6", "testID": "card-card-5" }
+    ],
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["card-1", "card-2", "card-4"],
+      "selection": "card-1, card-2, card-4",
+      "labels": [
+        "Current order: card-0, card-3, card-1, card-2, card-4, card-5",
+        "Current selection: card-1, card-2, card-4",
+        "Last committed event: {\"sourceIds\":[\"card-1\",\"card-2\",\"card-4\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"card-5\"}}",
+        "Callback count: 1"
+      ]
+    }
+  },
+  {
+    "id": "scoped-drop",
+    "deepLink": "reorderable://lab/cross-panel-drop?preset=teaching&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "drag",
+      "destinationPlacement": "beforeTarget",
+      "sourceLabel": "blue draggable card, selected",
+      "targetLabel": "Accepting drop zone",
+      "holdDurationMs": 8000
+    },
+    "covers": ["scoped-drag-drop"],
+    "selectors": [
+      { "label": "blue draggable card, selected", "testID": "draggable-blue" },
+      { "label": "Accepting drop zone", "testID": "drop-zone-accepting" }
+    ],
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["blue", "yellow"],
+      "selection": "blue, yellow",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: blue, yellow",
+        "Last committed event: {\"itemIds\":[\"blue\",\"yellow\"],\"destinationId\":\"accepting\"}",
+        "Callback count: 1"
+      ]
+    }
+  },
+  {
+    "id": "invalid-outside-release",
+    "deepLink": "reorderable://lab/cancellation?preset=outside&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "cancelOutside",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "Reset",
+      "holdDurationMs": 2500
+    },
+    "covers": ["invalid-outside-release"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "Reset", "testID": "scenario-cancellation-reset" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "gesture-system-interruption",
+    "deepLink": "reorderable://lab/cancellation?preset=gesture-interruption&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "interrupt",
+      "interrupt": "rotate",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["gesture-system-interruption"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "ios-inactive",
+    "deepLink": "reorderable://lab/cancellation?preset=ios-inactive&engine=${ENGINE}",
+    "platforms": ["ios"],
+    "action": {
+      "kind": "interrupt",
+      "interrupt": "inactive",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["ios-inactive"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "ios-background",
+    "deepLink": "reorderable://lab/cancellation?preset=ios-background&engine=${ENGINE}",
+    "platforms": ["ios"],
+    "action": {
+      "kind": "interrupt",
+      "interrupt": "background",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["ios-background"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "android-app-state",
+    "deepLink": "reorderable://lab/cancellation?preset=android-app-state&engine=${ENGINE}",
+    "platforms": ["android"],
+    "action": {
+      "kind": "interrupt",
+      "interrupt": "background",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["android-app-state"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "android-blur",
+    "deepLink": "reorderable://lab/cancellation?preset=android-blur&engine=${ENGINE}",
+    "platforms": ["android"],
+    "action": {
+      "kind": "interrupt",
+      "interrupt": "notification",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["android-blur"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "android-back",
+    "deepLink": "reorderable://lab/cancellation?preset=android-back&engine=${ENGINE}",
+    "platforms": ["android"],
+    "action": {
+      "kind": "interrupt",
+      "interrupt": "back",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["android-back"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    }
+  },
+  {
+    "id": "enabled-false",
+    "deepLink": "reorderable://lab/cancellation?preset=enabled-false&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "timedCancellation",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["enabled-false"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ],
+      "visible": "Container disabled"
+    }
+  },
+  {
+    "id": "unmount",
+    "deepLink": "reorderable://lab/cancellation?preset=unmount&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "timedCancellation",
+      "sourceLabel": "blue cancellation card",
+      "targetLabel": "green cancellation card",
+      "holdDurationMs": 3000
+    },
+    "covers": ["unmount"],
+    "selectors": [
+      { "label": "blue cancellation card", "testID": "cancellation-blue" },
+      { "label": "green cancellation card", "testID": "cancellation-green" }
+    ],
+    "expected": {
+      "callbackCount": 0,
+      "selection": "none",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: none",
+        "Last committed event: None",
+        "Callback count: 0"
+      ],
+      "visible": "Container unmounted"
+    }
+  },
+  {
+    "id": "accessible-reorder",
+    "deepLink": "reorderable://lab/accessibility?preset=default&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "accessibilityAction",
+      "sourceLabel": "blue accessible card, selected",
+      "actionName": "reorder-move-later"
+    },
+    "covers": ["accessibility-reorder"],
+    "selectors": [
+      { "label": "blue accessible card, selected", "testID": "accessible-blue" }
+    ],
+    "initial": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: blue, green",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["blue", "green"],
+      "selection": "blue, green",
+      "labels": [
+        "Current order: yellow, blue, green",
+        "Current selection: blue, green",
+        "Last committed event: {\"sourceIds\":[\"blue\",\"green\"],\"destination\":{\"sectionId\":null,\"beforeId\":null}}",
+        "Callback count: 1"
+      ]
+    }
+  },
+  {
+    "id": "accessible-drop",
+    "deepLink": "reorderable://lab/accessibility?preset=default&engine=${ENGINE}",
+    "platforms": ["ios", "android"],
+    "action": {
+      "kind": "accessibilityAction",
+      "sourceLabel": "Accessible accepting drop zone",
+      "actionName": "drag-drop-drop-selected"
+    },
+    "covers": ["accessibility-drop"],
+    "selectors": [
+      {
+        "label": "Accessible accepting drop zone",
+        "testID": "accessible-drop-zone"
+      }
+    ],
+    "initial": {
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: blue, green",
+        "Last committed event: None",
+        "Callback count: 0"
+      ]
+    },
+    "expected": {
+      "callbackCount": 1,
+      "sourceIds": ["blue", "green"],
+      "selection": "blue, green",
+      "labels": [
+        "Current order: blue, green, yellow",
+        "Current selection: blue, green",
+        "Last committed event: {\"itemIds\":[\"blue\",\"green\"],\"destinationId\":\"accessible-zone\"}",
+        "Callback count: 1"
+      ]
+    }
+  }
+]

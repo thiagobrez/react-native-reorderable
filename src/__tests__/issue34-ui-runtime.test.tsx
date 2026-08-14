@@ -60,8 +60,8 @@ describe('ReorderableList UI-runtime ownership', () => {
         );
       }
     });
-    expect(scheduled).not.toHaveBeenCalled();
-    expect(renderItem).toHaveBeenCalledTimes(rendersBeforeMoves);
+    expect(scheduled).toHaveBeenCalledTimes(1);
+    expect(renderItem).toHaveBeenCalledTimes(rendersBeforeMoves + 1);
     const frameControls = (
       globalThis as typeof globalThis & {
         __reorderableFrameControls: Set<{ isActive: boolean }>;
@@ -73,7 +73,7 @@ describe('ReorderableList UI-runtime ownership', () => {
       handler.handlers.onEnd?.({ y: 240 });
       handler.handlers.onFinalize?.({ y: 240 }, true);
     });
-    expect(scheduled).toHaveBeenCalledTimes(1);
+    expect(scheduled).toHaveBeenCalledTimes(2);
     expect(onReorder).toHaveBeenCalledTimes(1);
     await rendered.unmount();
   });

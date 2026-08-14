@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    "ios27.native",
+    "ios27.fallback",
+    "ios26.auto-fallback",
+    "android.fallback"
+  ],
+  "scenarios": {
+    "free-form-reorder": {
+      "kind": "reorder",
+      "sourceLabel": "Card row 1",
+      "predecessorLabel": "Card row 3",
+      "targetLabel": "Card row 4"
+    },
+    "virtualized-list-reorder": {
+      "kind": "reorder",
+      "sourceLabel": "List row 1",
+      "predecessorLabel": "List row 3",
+      "targetLabel": "List row 4"
+    },
+    "section-list-reorder": {
+      "kind": "reorder",
+      "sourceLabel": "Section 1, row 1",
+      "predecessorLabel": "Section 1, row 3",
+      "targetLabel": "Section 1, row 4"
+    },
+    "multi-selection-reorder": {
+      "kind": "reorder",
+      "sourceLabel": "Card row 2",
+      "predecessorLabel": "Card row 4",
+      "targetLabel": "Card row 6"
+    },
+    "scoped-drop": {
+      "kind": "drop",
+      "targetLabel": "Accepting drop zone",
+      "visualTargetLabel": "Acceptin",
+      "visualTargetLabelsByConfiguration": {
+        "ios27.fallback": "Drop selected items here",
+        "ios26.auto-fallback": "Drop selected items here",
+        "android.fallback": "Drop selected items here"
+      }
+    }
+  }
+}

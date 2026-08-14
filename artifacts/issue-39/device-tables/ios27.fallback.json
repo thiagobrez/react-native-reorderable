@@ -1,0 +1,97 @@
+{
+  "configuration": "ios27.fallback",
+  "platform": "ios",
+  "table": [
+    {
+      "id": "free-form-reorder",
+      "durationMs": 27340,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "virtualized-list-reorder",
+      "durationMs": 26099,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "section-list-reorder",
+      "durationMs": 26123,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "multi-selection-reorder",
+      "durationMs": 26770,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "scoped-drop",
+      "durationMs": 26800,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "invalid-outside-release",
+      "durationMs": 16001,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "gesture-system-interruption",
+      "durationMs": 17876,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "ios-inactive",
+      "durationMs": 18856,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "ios-background",
+      "durationMs": 17357,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "enabled-false",
+      "durationMs": 16314,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "unmount",
+      "durationMs": 16087,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "accessible-reorder",
+      "durationMs": 12538,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "accessible-drop",
+      "durationMs": 12486,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    }
+  ]
+}

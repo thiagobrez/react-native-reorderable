@@ -1,0 +1,16 @@
+context platform=android kind=emulator timeout=60000
+
+env APP_TARGET="reorderable.example"
+env ENGINE="fallback"
+
+open "${APP_TARGET}" --relaunch
+wait "Scenario Lab" 15000
+open "reorderable://lab/cross-panel-drop?preset=teaching&engine=${ENGINE}"
+wait "Current selection: blue, yellow" 15000
+wait "Callback count: 0" 5000
+
+gesture drag "label=\"blue draggable card, selected\"" "label=\"Accepting drop zone\"" 650 1200 8000
+wait "Current selection: blue, yellow" 5000
+wait "Callback count: 1" 5000
+
+close

@@ -29,7 +29,9 @@ import {
   remapSectionMeasurementQueue,
 } from '../section-list-model';
 import {
+  activeSectionPreviewTranslation,
   createSectionViewportItem,
+  sectionDestinationFeedbackPosition,
   unwrapSectionViewability,
 } from '../reorderable-section-list';
 import {
@@ -83,6 +85,20 @@ function exactLayout(
 }
 
 describe('ReorderableSectionList public contract', () => {
+  it('aligns Android source feedback without changing iOS pointer tracking', () => {
+    expect(
+      activeSectionPreviewTranslation('android', true, 150, 20, 50, 180)
+    ).toBe(105);
+    expect(activeSectionPreviewTranslation('ios', true, 150, 20, 50, 180)).toBe(
+      168
+    );
+    expect(
+      activeSectionPreviewTranslation('android', false, 150, 20, 50, 180)
+    ).toBe(168);
+    expect(sectionDestinationFeedbackPosition('android', 150)).toBe(162);
+    expect(sectionDestinationFeedbackPosition('ios', 150)).toBe(150);
+  });
+
   it('retains the SectionList viewport, section render information, chrome, safe callbacks, and typed ref', async () => {
     const ref = createRef<SectionList<Item, Section>>();
     const onScroll = jest.fn();
@@ -939,6 +955,61 @@ describe('ReorderableSectionList public contract', () => {
     expect(onReorder.mock.calls[0]?.[0]).toMatchObject({
       sourceIds: ['a'],
       destination: { sectionId: 'one', beforeId: null },
+    });
+    await rendered.unmount();
+  });
+
+  it('keeps one lifted source identity visibly inside the destination band', async () => {
+    const view = () => (
+      <GestureHandlerRootView>
+        <ReorderableSectionList<Item, Section>
+          sections={[sections[1]!]}
+          estimatedItemSize={50}
+          keyExtractor={(item) => item.id}
+          onReorder={jest.fn()}
+          renderItem={({ item }) => <Text>{item.label}</Text>}
+          testID="lifted-section-list"
+        />
+      </GestureHandlerRootView>
+    );
+    const rendered = await render(view());
+    await fireEvent(rendered.getByTestId('lifted-section-list'), 'layout', {
+      nativeEvent: { layout: { height: 200, width: 300, x: 0, y: 0 } },
+    });
+    const handler = getByGestureTestId(
+      'reorderable-section-list-viewport'
+    ) as unknown as {
+      handlers: {
+        onTouchesDown?: (event: {
+          allTouches: { x: number; y: number }[];
+        }) => void;
+        onStart?: (event: { y: number }) => void;
+        onTouchesMove?: (
+          event: { allTouches: { x: number; y: number }[] },
+          state: { fail: () => void }
+        ) => void;
+      };
+    };
+    await act(async () => {
+      handler.handlers.onTouchesDown?.({
+        allTouches: [{ x: 20, y: 25 }],
+      });
+      handler.handlers.onStart?.({ y: 25 });
+      handler.handlers.onTouchesMove?.(
+        { allTouches: [{ x: 20, y: 125 }] },
+        { fail: jest.fn() }
+      );
+    });
+    await rendered.rerender(view());
+
+    expect(rendered.getAllByText('A')).toHaveLength(1);
+    expect(
+      StyleSheet.flatten(
+        rendered.getByTestId('reorderable-section-list-wrapper-a').props.style
+      )
+    ).toMatchObject({
+      borderWidth: 3,
+      transform: [{ translateY: 88 }],
     });
     await rendered.unmount();
   });

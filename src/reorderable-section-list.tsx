@@ -74,15 +74,22 @@ import {
   indexAtOffset,
   itemLength,
   itemOffset,
+  type VirtualizedGeometry,
 } from './virtualized-geometry';
 import {
   assignViewportRef,
   useOwnedAnimatedScrollComponent,
 } from './viewport-adapter';
+import {
+  activeFeedbackTranslation as activeSectionPreviewTranslation,
+  destinationFeedbackPosition as sectionDestinationFeedbackPosition,
+} from './visual-feedback';
 
 const EMPTY_SELECTED_IDS: readonly string[] = [];
 const LONG_PRESS_SLOP = 10;
 const VIEWPORT_ITEM = Symbol('reorderable-section-list-item');
+
+export { activeSectionPreviewTranslation, sectionDestinationFeedbackPosition };
 
 function resolveVerticalLength(
   value: unknown,
@@ -172,13 +179,17 @@ function uniqueActionName(
 }
 
 type CellProps<Item, Section> = Readonly<{
+  activeFrameIndex: SharedValue<number>;
   activeFrameIndexes: SharedValue<readonly number[]>;
   activeTranslationY: SharedValue<number>;
   anchorCorrection: SharedValue<number>;
   canMoveEarlier: boolean;
   canMoveLater: boolean;
   collectionSize: number;
+  destinationFrameIndex: SharedValue<number>;
+  feedbackViewportY: SharedValue<number>;
   frameIndex: number;
+  geometry: SharedValue<VirtualizedGeometry>;
   id: string;
   index: number;
   item: Item;
@@ -192,16 +203,21 @@ type CellProps<Item, Section> = Readonly<{
   ) => ReactElement | null;
   section: Section;
   selected: boolean;
+  scrollOffset: SharedValue<number>;
 }>;
 
 function SectionCell<Item, Section>({
+  activeFrameIndex,
   activeFrameIndexes,
   activeTranslationY,
   anchorCorrection,
   canMoveEarlier,
   canMoveLater,
   collectionSize,
+  destinationFrameIndex,
+  feedbackViewportY,
   frameIndex,
+  geometry,
   id,
   index,
   item,
@@ -213,16 +229,27 @@ function SectionCell<Item, Section>({
   renderItem,
   section,
   selected,
+  scrollOffset,
 }: CellProps<Item, Section>) {
   const activeStyle = useAnimatedStyle(() => {
     const active = activeFrameIndexes.value.includes(frameIndex);
     return {
+      borderColor: active ? '#0A84FF' : 'transparent',
+      borderWidth: active ? 3 : 0,
       elevation: active ? 8 : 0,
       opacity: active ? 0.94 : 1,
       transform: [
         {
           translateY: active
-            ? activeTranslationY.value - anchorCorrection.value
+            ? activeSectionPreviewTranslation(
+                Platform.OS,
+                destinationFrameIndex.value >= 0,
+                feedbackViewportY.value,
+                itemOffset(geometry.value, activeFrameIndex.value) -
+                  scrollOffset.value,
+                itemLength(geometry.value, activeFrameIndex.value),
+                activeTranslationY.value - anchorCorrection.value
+              )
             : 0,
         },
       ],
@@ -1599,6 +1626,7 @@ export function ReorderableSectionListRuntime<
         ).renderItem ?? renderItem;
       return (
         <SectionCell
+          activeFrameIndex={activeFrameIndex}
           activeFrameIndexes={activeFrameIndexes}
           activeTranslationY={activeTranslationY}
           anchorCorrection={anchorCorrection}
@@ -1612,7 +1640,10 @@ export function ReorderableSectionListRuntime<
             accessibleReorderMove(model.order, id, selectedIds, 'later') != null
           }
           collectionSize={collection.itemIds.length}
+          destinationFrameIndex={destinationFrameIndex}
+          feedbackViewportY={feedbackViewportY}
           frameIndex={frameIndex}
+          geometry={geometry}
           id={id}
           index={item.index}
           item={item.value}
@@ -1624,14 +1655,19 @@ export function ReorderableSectionListRuntime<
           renderItem={applicationRenderItem}
           section={typedSection}
           selected={selectedIds.includes(id)}
+          scrollOffset={scrollOffset}
         />
       );
     },
     [
       activeFrameIndexes,
+      activeFrameIndex,
       activeTranslationY,
       anchorCorrection,
+      destinationFrameIndex,
       enabled,
+      feedbackViewportY,
+      geometry,
       handleAccessibleMove,
       handleMeasure,
       model,
@@ -1640,6 +1676,7 @@ export function ReorderableSectionListRuntime<
       renderItem,
       resolvedStrings,
       selectedIds,
+      scrollOffset,
     ]
   );
   const handleLayout = useCallback(
@@ -1677,7 +1714,14 @@ export function ReorderableSectionListRuntime<
   const ownedScrollComponent = useOwnedAnimatedScrollComponent(animatedRef);
   const feedbackStyle = useAnimatedStyle(() => ({
     opacity: destinationFrameIndex.value < 0 ? 0 : 1,
-    transform: [{ translateY: feedbackViewportY.value }],
+    transform: [
+      {
+        translateY: sectionDestinationFeedbackPosition(
+          Platform.OS,
+          feedbackViewportY.value
+        ),
+      },
+    ],
   }));
 
   const renderProviderEntry = useCallback(

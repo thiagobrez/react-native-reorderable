@@ -1,0 +1,156 @@
+name: Portable device contract
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: ${{ matrix.configuration }} / RN 0.85
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: ios27.native
+            runner: xcode-27
+            runtime: iOS 27.0
+          - configuration: ios27.fallback
+            runner: xcode-27
+            runtime: iOS 27.0
+          - configuration: ios26.auto-fallback
+            runner: macos-26
+            runtime: iOS 26.5
+          - configuration: android.fallback
+            runner: ubuntu-latest
+            runtime: Android API 36
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Verify designated React Native baseline
+        run: node -e "if(require('./package.json').devDependencies['react-native']!=='0.85.0')process.exit(1)"
+
+      - name: Verify Apple runtime and prepare native app
+        if: runner.os == 'macOS'
+        run: |
+          xcrun simctl list runtimes | grep -F '${{ matrix.runtime }}'
+          brew tap wix/brew
+          brew trust --formula wix/brew/applesimutils
+          brew install wix/brew/applesimutils
+          bundle install --gemfile example/Gemfile
+          bundle exec pod install --project-directory=example/ios
+          yarn detox build --configuration '${{ matrix.configuration }}'
+
+      - name: Run Apple contract with one retained whole-job retry
+        if: runner.os == 'macOS'
+        run: node scripts/run-device-contract-job.mjs '${{ matrix.configuration }}'
+
+      - name: Enable KVM
+        if: runner.os == 'Linux'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android contract with one retained whole-job retry
+        if: runner.os == 'Linux'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7_pro
+          avd-name: Pixel_10_Pro
+          disable-animations: false
+          script: |
+            yarn detox build --configuration '${{ matrix.configuration }}'
+            node scripts/run-device-contract-job.mjs '${{ matrix.configuration }}'
+
+      - name: Upload exact device artifacts and recordings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-39-${{ matrix.configuration }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/issue-39/detox/${{ matrix.configuration }}/
+            artifacts/issue-39/device-tables/${{ matrix.configuration }}*.json
+            artifacts/issue-39/outcomes-by-case/${{ matrix.configuration }}/
+            artifacts/issue-39/outcomes/${{ matrix.configuration }}.json
+            artifacts/issue-39/feedback/${{ matrix.configuration }}/
+            artifacts/issue-39/agent-device/${{ matrix.configuration }}/
+
+  feedback:
+    name: Verify continuous public destination feedback
+    if: always()
+    needs: contract
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download four-engine feedback artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: issue-39-*
+          path: artifacts/issue-39/downloads
+          merge-multiple: true
+
+      - name: Fail if any producer failed
+        if: needs.contract.result != 'success'
+        run: exit 1
+
+      - name: Extract public labels and destination visual change
+        run: |
+          swift scripts/analyze-device-feedback.swift \
+            artifacts/issue-39/downloads/feedback \
+            e2e/contracts/feedback-specs.json \
+            artifacts/issue-39/feedback-report.json
+
+      - name: Verify every held-pointer sample
+        run: node scripts/verify-device-feedback.mjs artifacts/issue-39/feedback-report.json
+
+      - name: Upload semantic feedback report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-39-feedback-report
+          if-no-files-found: error
+          retention-days: 14
+          path: artifacts/issue-39/feedback-report.json
+
+  parity:
+    name: Compare four-engine public outcomes
+    if: always()
+    needs: contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download retained attempts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: issue-39-*
+          path: artifacts/issue-39/downloads
+          merge-multiple: true
+
+      - name: Fail if any matrix job failed or coverage was lost
+        if: needs.contract.result != 'success'
+        run: exit 1
+
+      - name: Assert identical public outcomes
+        run: node scripts/compare-device-contract-outcomes.mjs artifacts/issue-39/downloads/outcomes

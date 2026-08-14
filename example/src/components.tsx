@@ -116,7 +116,7 @@ export function ScenarioFrame({
         <Action id={`${prefix}-reset`} label="Reset" onPress={onReset} />
       </View>
       <View
-        accessibilityLabel="Public scenario outcome"
+        accessibilityLabel={`Public scenario outcome. Current order: ${outcome.order}. Current selection: ${outcome.selection}. Last committed event: ${outcome.event}. Callback count: ${outcome.callbackCount}`}
         style={styles.status}
         testID={`${prefix}-outcome`}
       >
@@ -127,21 +127,35 @@ export function ScenarioFrame({
           style={styles.orderViewport}
           testID={`${prefix}-order-scroll`}
         >
-          <Text selectable style={styles.statusText} testID={`${prefix}-order`}>
+          <Text
+            accessibilityLabel={`Current order: ${outcome.order}`}
+            selectable
+            style={styles.statusText}
+            testID={`${prefix}-order`}
+          >
             Order: {outcome.order}
           </Text>
         </ScrollView>
-        <Text style={styles.statusText} testID={`${prefix}-selection`}>
+        <Text
+          accessibilityLabel={`Current selection: ${outcome.selection}`}
+          style={styles.statusText}
+          testID={`${prefix}-selection`}
+        >
           Selection: {outcome.selection}
         </Text>
         <Text
+          accessibilityLabel={`Last committed event: ${outcome.event}`}
           numberOfLines={2}
           style={styles.statusText}
           testID={`${prefix}-last-event`}
         >
           Last committed event: {outcome.event}
         </Text>
-        <Text style={styles.statusText} testID={`${prefix}-callback-count`}>
+        <Text
+          accessibilityLabel={`Callback count: ${outcome.callbackCount}`}
+          style={styles.statusText}
+          testID={`${prefix}-callback-count`}
+        >
           Callback count: {outcome.callbackCount}
         </Text>
       </View>

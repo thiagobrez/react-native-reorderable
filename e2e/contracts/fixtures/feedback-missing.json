@@ -1,0 +1,13 @@
+{
+  "runs": [
+    {
+      "configuration": "ios27.native",
+      "scenario": "free-form-reorder",
+      "kind": "reorder",
+      "sourceLabel": "Card row 1",
+      "predecessorLabel": "Card row 3",
+      "targetLabel": "Card row 4",
+      "samples": []
+    }
+  ]
+}

@@ -41,6 +41,9 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      - name: Build package
+        run: yarn prepare
+
       - name: Run unit tests
         run: yarn test --maxWorkers=2 --coverage
 

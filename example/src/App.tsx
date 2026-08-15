@@ -30,6 +30,11 @@ import {
   type ScenarioId,
 } from './scenario-catalog';
 import { styles } from './theme';
+import {
+  Issue40PerformanceHarness,
+  parseIssue40PerformanceLink,
+  type Issue40PerformanceMode,
+} from './issue40-performance';
 
 const EMPTY_OUTCOME: PublicOutcome = {
   order: 'Seeded initial order',
@@ -42,10 +47,12 @@ function Catalog({
   area,
   onAreaChange,
   onOpen,
+  onOpenPerformance,
 }: Readonly<{
   area: AreaId;
   onAreaChange: (area: AreaId) => void;
   onOpen: (scenario: ScenarioId) => void;
+  onOpenPerformance: () => void;
 }>) {
   const definition = AREAS.find((candidate) => candidate.id === area)!;
   return (
@@ -92,6 +99,17 @@ function Catalog({
           <CatalogCard key={scenario.id} onOpen={onOpen} scenario={scenario} />
         ))}
       </ScrollView>
+      {area === 'lab' ? (
+        <Pressable
+          accessibilityLabel="Open physical performance harness"
+          accessibilityRole="button"
+          onPress={onOpenPerformance}
+          style={styles.back}
+          testID="issue40-performance-launch"
+        >
+          <Text style={styles.backText}>Physical performance harness</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -236,6 +254,8 @@ function ScenarioContent({
 }
 
 export default function App() {
+  const [performanceMode, setPerformanceMode] =
+    useState<Issue40PerformanceMode | null>(null);
   const [area, setArea] = useState<AreaId>('examples');
   const [scenario, setScenario] = useState<ScenarioId | null>(null);
   const [engine, setEngine] = useState<EnginePolicy>('auto');
@@ -244,8 +264,14 @@ export default function App() {
   const [outcome, setOutcome] = useState<PublicOutcome>(EMPTY_OUTCOME);
   const applyLink = useCallback((url: string | null | undefined) => {
     if (url == null) return;
+    const nextPerformanceMode = parseIssue40PerformanceLink(url);
+    if (nextPerformanceMode != null) {
+      setPerformanceMode(nextPerformanceMode);
+      return;
+    }
     const parsed = parseExampleLink(url);
     if (parsed == null) return;
+    setPerformanceMode(null);
     setArea(parsed.area);
     setScenario(parsed.scenario);
     setPreset(parsed.preset);
@@ -292,11 +318,19 @@ export default function App() {
     <GestureHandlerRootView style={styles.root}>
       <View style={[styles.safe, styles.safeTop]}>
         <StatusBar barStyle="light-content" />
-        {scenario == null || definition == null ? (
+        {performanceMode != null ? (
+          <Issue40PerformanceHarness
+            key={performanceMode}
+            mode={performanceMode}
+            onBack={() => setPerformanceMode(null)}
+            onModeChange={setPerformanceMode}
+          />
+        ) : scenario == null || definition == null ? (
           <Catalog
             area={area}
             onAreaChange={changeArea}
             onOpen={openScenario}
+            onOpenPerformance={() => setPerformanceMode('control')}
           />
         ) : (
           <ScenarioFrame

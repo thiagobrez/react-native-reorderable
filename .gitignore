@@ -96,3 +96,6 @@ artifacts/issue-39/agent-device/
 artifacts/issue-39/detox/
 artifacts/issue-39/feedback/
 artifacts/issue-39/outcomes-by-case/
+
+# Issue 40 physical performance jobs (uploaded by CI, not committed)
+artifacts/issue-40/

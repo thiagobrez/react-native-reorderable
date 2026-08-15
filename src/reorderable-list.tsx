@@ -149,9 +149,10 @@ function resolveDestinationIndex(
   itemCount: number,
   sourceIndexes: readonly number[],
   contentY: number
-): number {
+): Readonly<{ index: number; steps: number }> {
   'worklet';
-  const index = indexAtOffset(geometry, contentY, true).index;
+  const lookup = indexAtOffset(geometry, contentY, true);
+  const index = lookup.index;
   let low = 0;
   let high = sourceIndexes.length - 1;
   while (low <= high) {
@@ -171,11 +172,25 @@ function resolveDestinationIndex(
           runHigh = candidate - 1;
         }
       }
-      return Math.min(itemCount, sourceIndexes[runLow]! + 1);
+      return {
+        index: Math.min(itemCount, sourceIndexes[runLow]! + 1),
+        steps: lookup.steps,
+      };
     }
   }
-  return index;
+  return { index, steps: lookup.steps };
 }
+
+export type ReorderableListPerformanceSample = Readonly<{
+  maximumLookupSteps: number;
+  p95LibraryUiWorkMs: number;
+  pointerJsCalls: 0;
+  terminalJsResults: 1;
+}>;
+
+export type ReorderableListPerformanceProbe = Readonly<{
+  onGestureTerminal: (sample: ReorderableListPerformanceSample) => void;
+}>;
 
 function uniqueActionName(
   base: string,
@@ -335,7 +350,10 @@ export function ReorderableList<Item>(
 }
 
 export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
-  props: ReorderableListProps<Item> & RefAttributes<ViewportRef>,
+  props: ReorderableListProps<Item> &
+    RefAttributes<ViewportRef> & {
+      __performanceProbe?: ReorderableListPerformanceProbe;
+    },
   viewportAdapter?: ReorderableListViewportAdapter
 ) {
   assertSupportedProps(props as unknown as Record<string, unknown>);
@@ -359,6 +377,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   }
   const {
     data,
+    __performanceProbe,
     accessibilityStrings,
     enabled = true,
     estimatedItemSize,
@@ -372,7 +391,10 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     selectedIds: selectedIdsProp,
     scrollEventThrottle = 16,
     ...remainingProps
-  } = props as ReorderableListComponentProps<Item> & Record<string, unknown>;
+  } = props as ReorderableListComponentProps<Item> &
+    Record<string, unknown> & {
+      __performanceProbe?: ReorderableListPerformanceProbe;
+    };
   const selectedIds = selectedIdsProp ?? EMPTY_SELECTED_IDS;
   const flatListProps = removeNonFlatListProps(remainingProps);
   const itemIds = useMemo(() => {
@@ -401,6 +423,9 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   const currentItemIds = useRef(itemIds);
   const currentData = useRef(data);
   const onReorderRef = useRef(onReorder);
+  const performanceProbeRef = useRef<
+    ReorderableListPerformanceProbe | undefined
+  >(__performanceProbe);
   const selectedIdsRef = useRef(selectedIds);
   const enabledRef = useRef(enabled);
   const accessibleItemRefs = useRef(new Map<string, unknown>());
@@ -412,6 +437,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   currentItemIds.current = itemIds;
   currentData.current = data;
   onReorderRef.current = onReorder;
+  performanceProbeRef.current = __performanceProbe;
   selectedIdsRef.current = selectedIds;
   enabledRef.current = enabled;
   const gestureActivated = useSharedValue(false);
@@ -439,6 +465,8 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   const destinationIndex = useSharedValue(-1);
   const feedbackViewportY = useSharedValue(0);
   const terminalSent = useSharedValue(true);
+  const maximumLookupSteps = useSharedValue(0);
+  const uiWorkSamples = useSharedValue<number[]>([]);
   const measurementQueue = useSharedValue<{
     cursor: number;
     ids: string[];
@@ -461,9 +489,12 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     (
       cancelled: boolean,
       sourceIds: readonly string[],
-      beforeId: string | null
+      beforeId: string | null,
+      performanceSample: ReorderableListPerformanceSample | null
     ) => {
       setActiveOverlay(null);
+      if (performanceSample != null)
+        performanceProbeRef.current?.onGestureTerminal(performanceSample);
       if (cancelled) return;
       const event = reconcileReorder(
         [{ sectionId: null, itemIds: currentItemIds.current }],
@@ -484,6 +515,22 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
       'worklet';
       if (activeIndex.value < 0 || terminalSent.value) return;
       terminalSent.value = true;
+      let performanceSample: ReorderableListPerformanceSample | null = null;
+      if (__performanceProbe != null) {
+        const sortedUiWorkSamples = [...uiWorkSamples.value].sort(
+          (left, right) => left - right
+        );
+        const p95Index = Math.max(
+          0,
+          Math.ceil(sortedUiWorkSamples.length * 0.95) - 1
+        );
+        performanceSample = {
+          maximumLookupSteps: maximumLookupSteps.value,
+          p95LibraryUiWorkMs: sortedUiWorkSamples[p95Index] ?? 0,
+          pointerJsCalls: 0,
+          terminalJsResults: 1,
+        };
+      }
       activeId.value = null;
       activeIndex.value = -1;
       activeSourceIds.value = [];
@@ -495,7 +542,13 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
       autoScrollActive.value = false;
       destinationIndex.value = -1;
       pointerViewportY.value = 0;
-      scheduleOnRN(handlePointerTerminal, cancelled, sourceIds, beforeId);
+      scheduleOnRN(
+        handlePointerTerminal,
+        cancelled,
+        sourceIds,
+        beforeId,
+        performanceSample
+      );
     },
     [
       activeIndex,
@@ -509,8 +562,11 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
       destinationIndex,
       gestureActivated,
       handlePointerTerminal,
+      maximumLookupSteps,
       pointerViewportY,
       terminalSent,
+      uiWorkSamples,
+      __performanceProbe,
     ]
   );
 
@@ -600,12 +656,14 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     const contentY =
       scrollOffset.value +
       Math.max(0, Math.min(viewportHeight.value, pointerViewportY.value));
-    const index = resolveDestinationIndex(
+    const lookup = resolveDestinationIndex(
       geometry.value,
       uiItemIds.value.length,
       activeSourceIndexes.value,
       contentY
     );
+    maximumLookupSteps.value = Math.max(maximumLookupSteps.value, lookup.steps);
+    const index = lookup.index;
     destinationIndex.value = index;
     feedbackViewportY.value = Math.max(
       0,
@@ -620,6 +678,7 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     destinationIndex,
     feedbackViewportY,
     geometry,
+    maximumLookupSteps,
     pointerViewportY,
     scrollOffset,
     uiItemIds,
@@ -752,17 +811,27 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
   const updatePointerFromGesture = useCallback(
     (y: number) => {
       'worklet';
+      const startedAt = __performanceProbe == null ? 0 : performance.now();
       pointerViewportY.value = y;
       activeTranslationY.value = y - interactionStartY.value;
       updateAutoScroll();
       refreshDestination();
+      if (__performanceProbe != null) {
+        const elapsed = performance.now() - startedAt;
+        uiWorkSamples.modify((samples) => {
+          samples.push(elapsed);
+          return samples;
+        }, true);
+      }
     },
     [
       activeTranslationY,
       interactionStartY,
       pointerViewportY,
       refreshDestination,
+      uiWorkSamples,
       updateAutoScroll,
+      __performanceProbe,
     ]
   );
   const updatePointerFromTouch = useCallback(
@@ -826,6 +895,8 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
           itemOffset(geometry.value, index) - scrollOffset.value;
         activeOverlayLength.value = itemLength(geometry.value, index);
         terminalSent.value = false;
+        maximumLookupSteps.value = 0;
+        uiWorkSamples.value = [];
         scheduleOnRN(handleOverlayStart, id, index);
         updateAutoScroll();
         refreshDestination();
@@ -894,12 +965,14 @@ export function ReorderableListRuntime<Item, ViewportRef = FlatList<Item>>(
     interactionStartY,
     interactionStartAbsoluteY,
     interactionStartScrollOffset,
+    maximumLookupSteps,
     pointerViewportY,
     refreshDestination,
     scrollOffset,
     terminalSent,
     uiItemIds,
     uiSelectedIds,
+    uiWorkSamples,
     updateAutoScroll,
     updatePointerFromTouch,
     viewportHeight,

@@ -77,6 +77,20 @@ describe('issue 38 example application', () => {
     );
   });
 
+  it('opens the physical publication harness outside the named Lab scenarios', async () => {
+    const rendered = await render(<App />);
+    await fireEvent.press(rendered.getByTestId('area-tab-lab'));
+    expect(rendered.getAllByTestId(/^open-/)).toHaveLength(14);
+
+    await fireEvent.press(rendered.getByTestId('issue40-performance-launch'));
+    expect(
+      rendered.getByTestId('issue40-performance-harness')
+    ).toBeOnTheScreen();
+    expect(rendered.getByText('Mode: control')).toBeOnTheScreen();
+    await fireEvent.press(rendered.getByTestId('issue40-mode-fallback'));
+    expect(rendered.getByText('Mode: fallback')).toBeOnTheScreen();
+  });
+
   it('gives every visible scenario the public outcome and reset surface', async () => {
     const rendered = await render(<App />);
     await fireEvent.press(rendered.getByTestId('open-free-form'));

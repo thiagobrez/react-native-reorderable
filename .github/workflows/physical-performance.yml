@@ -1,0 +1,138 @@
+name: Minimum physical-device performance
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ios:
+    name: Minimum physical iOS
+    runs-on: [self-hosted, macOS, physical-ios-minimum]
+    timeout-minutes: 120
+    env:
+      AGENT_DEVICE_IOS_TEAM_ID: ${{ vars.ISSUE40_IOS_TEAM_ID }}
+      AGENT_DEVICE_IOS_BUNDLE_ID: ${{ vars.ISSUE40_IOS_RUNNER_BUNDLE_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build signed Release app
+        run: |
+          yarn prepare
+          bundle install --gemfile example/Gemfile
+          bundle exec pod install --project-directory=example/ios
+          xcodebuild \
+            -workspace example/ios/ReorderableExample.xcworkspace \
+            -scheme ReorderableExample \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath example/ios/build-issue40 \
+            "DEVELOPMENT_TEAM=$AGENT_DEVICE_IOS_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            build
+
+      - name: Install exact Release app
+        run: |
+          yarn agent-device reinstall \
+            reorderable.example \
+            example/ios/build-issue40/Build/Products/Release-iphoneos/ReorderableExample.app \
+            --platform ios \
+            --device '${{ vars.ISSUE40_IOS_DEVICE }}'
+
+      - name: Collect paired physical measurements
+        run: |
+          yarn performance:physical:collect \
+            --platform ios \
+            --device '${{ vars.ISSUE40_IOS_DEVICE }}' \
+            --model '${{ vars.ISSUE40_IOS_MODEL }}' \
+            --os-version '${{ vars.ISSUE40_IOS_VERSION }}' \
+            --minimum-supported true \
+            --out artifacts/issue-40/ios.json
+
+      - name: Upload retained iOS evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-40-ios
+          if-no-files-found: error
+          retention-days: 30
+          path: artifacts/issue-40/
+
+  android:
+    name: Minimum physical Android
+    runs-on: [self-hosted, Linux, physical-android-minimum]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build Release app
+        env:
+          JAVA_OPTS: '-XX:MaxHeapSize=6g'
+        run: |
+          yarn prepare
+          yarn workspace react-native-reorderable-example react-native build-android \
+            --mode release \
+            --extra-params "--no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a"
+
+      - name: Install exact Release app
+        run: |
+          yarn agent-device reinstall \
+            reorderable.example \
+            example/android/app/build/outputs/apk/release/app-release.apk \
+            --platform android \
+            --device '${{ vars.ISSUE40_ANDROID_DEVICE }}'
+
+      - name: Collect paired physical measurements
+        run: |
+          yarn performance:physical:collect \
+            --platform android \
+            --device '${{ vars.ISSUE40_ANDROID_DEVICE }}' \
+            --model '${{ vars.ISSUE40_ANDROID_MODEL }}' \
+            --os-version '${{ vars.ISSUE40_ANDROID_VERSION }}' \
+            --minimum-supported true \
+            --out artifacts/issue-40/android.json
+
+      - name: Upload retained Android evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-40-android
+          if-no-files-found: error
+          retention-days: 30
+          path: artifacts/issue-40/
+
+  verify:
+    name: Enforce physical-device budgets
+    if: always()
+    needs: [ios, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download physical reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: issue-40-*
+          path: artifacts/issue-40/downloads
+
+      - name: Reject producer failures
+        if: needs.ios.result != 'success' || needs.android.result != 'success'
+        run: exit 1
+
+      - name: Enforce both physical reports
+        run: |
+          node scripts/verify-physical-performance.mjs \
+            artifacts/issue-40/downloads/issue-40-ios/ios.json \
+            artifacts/issue-40/downloads/issue-40-android/android.json

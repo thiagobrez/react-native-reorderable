@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "agentDeviceVersion": "0.20.6",
+  "rowCount": 10000,
+  "minimumOsVersion": {
+    "ios": "15.1",
+    "android": "24"
+  },
+  "virtualizationCellDelta": 2,
+  "idleCpuDeltaPercentagePoints": 1,
+  "idleMissedFrameDeltaPercentagePoints": 0,
+  "settleRatio": 2,
+  "settleDeltaMs": {
+    "ios": 25,
+    "android": 50
+  },
+  "warmGeometryFixedBytes": 8388608,
+  "warmGeometryBytesPerItem": 64,
+  "coldWorkletsActivationBytes": 62914560,
+  "maximumLookupSteps": 15,
+  "activeMissedDeadlinePercent": 5,
+  "activeMissedDeadlineDeltaPercentagePoints": 2,
+  "p95LibraryUiWorkMs": 4,
+  "maximumCorrectionMs": 1,
+  "maximumCorrectionsPerFrame": 4,
+  "maximumAnchorDisplacementPx": 2,
+  "terminalJsResults": 1,
+  "maximumReorderCommits": 1
+}

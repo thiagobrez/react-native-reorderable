@@ -1,0 +1,16 @@
+{
+  "regressions": [
+    {
+      "name": "paired plain FlatList critical render path",
+      "metric": "duration",
+      "baselineCommit": "32a77966672938a7bae208f5ef7a9e9965b09ead",
+      "reason": "The untouched FlatList control moved by 0.103 ms while the production list path was not significant; accepted as runner variance for this baseline only."
+    },
+    {
+      "name": "paired plain children critical render path",
+      "metric": "duration",
+      "baselineCommit": "32a77966672938a7bae208f5ef7a9e9965b09ead",
+      "reason": "The untouched children control moved by 0.036 ms while the production container path improved; accepted as runner variance for this baseline only."
+    }
+  ]
+}

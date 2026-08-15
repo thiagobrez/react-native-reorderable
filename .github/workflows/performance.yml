@@ -1,0 +1,88 @@
+name: Performance publication gates
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  geometry:
+    name: Production geometry budgets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Enforce lookup, correction, anchor, and memory budgets
+        run: yarn benchmark:issue40
+
+  render-regressions:
+    name: Reassure children, list, and section-list paths
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate with baseline history
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup candidate
+        uses: ./.github/actions/setup
+
+      - name: Resolve baseline commit
+        id: baseline
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "sha=$PR_BASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Measure baseline in an isolated worktree
+        env:
+          BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+          BASELINE_ROOT: ${{ runner.temp }}/reassure-baseline
+        run: |
+          git worktree add --detach "$BASELINE_ROOT" "$BASELINE_SHA"
+          cp \
+            "$GITHUB_WORKSPACE/src/__perf__/issue34.perf-test.tsx" \
+            "$GITHUB_WORKSPACE/src/__perf__/issue35.perf-test.tsx" \
+            "$GITHUB_WORKSPACE/src/__perf__/issue40.perf-test.tsx" \
+            "$BASELINE_ROOT/src/__perf__/"
+          cd "$BASELINE_ROOT"
+          corepack enable
+          yarn install --immutable
+          yarn reassure --baseline \
+            --testMatch '**/src/__perf__/issue34.perf-test.tsx' \
+            '**/src/__perf__/issue35.perf-test.tsx' \
+            '**/src/__perf__/issue40.perf-test.tsx'
+          mkdir -p "$GITHUB_WORKSPACE/.reassure"
+          cp .reassure/baseline.perf "$GITHUB_WORKSPACE/.reassure/baseline.perf"
+
+      - name: Measure and compare candidate
+        run: yarn performance:reassure
+
+      - name: Fail render increases or unaccepted significant slowdowns
+        run: yarn performance:reassure:verify
+
+      - name: Upload Reassure report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reassure-performance-report
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            .reassure/output.json
+            .reassure/output.md

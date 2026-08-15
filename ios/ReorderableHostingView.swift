@@ -327,6 +327,7 @@ private final class RNReorderableModel: ObservableObject {
       destinationID(from: difference.destination.position)
     )
   }
+  #endif
 
   func emitDrop(_ itemIDs: [String], destinationID: String) {
     dropHandler?(itemIDs, destinationID)
@@ -428,6 +429,7 @@ private final class RNReorderableModel: ObservableObject {
   }
   #endif
 
+  #if compiler(>=6.4)
   @available(iOS 27.0, *)
   private func applyMove<CollectionID>(
     sourceIDs: [String],
@@ -453,6 +455,7 @@ private final class RNReorderableModel: ObservableObject {
     items.insert(contentsOf: movedEntries, at: destinationIndex)
     return movedEntries.map(\.itemID)
   }
+  #endif
 
   private func resolveMoveSet(
     sourceIDs: [String],
@@ -468,6 +471,7 @@ private final class RNReorderableModel: ObservableObject {
     return movedEntries
   }
 
+  #if compiler(>=6.4)
   @available(iOS 27.0, *)
   private func destinationID<CollectionID>(
     from position: ReorderDifference<String, CollectionID>.Destination.Position

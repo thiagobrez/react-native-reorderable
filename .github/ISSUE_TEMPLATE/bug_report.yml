@@ -1,16 +1,12 @@
-name: 🐛 Bug report
+name: Bug report
 description: Report a reproducible bug or regression in this library.
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        # Bug report
-
-        👋 Hi!
-
-        **Please fill the following carefully before opening a new issue ❗**
-        *(Your issue may be closed if it doesn't provide the required pieces of information)*
+        Thanks for reporting a reproducible failure of the documented public contract.
+        Usage questions and feature ideas belong in GitHub Discussions.
   - type: checkboxes
     attributes:
       label: Before submitting a new issue
@@ -18,7 +14,7 @@ body:
       options:
         - label: I tested using the latest version of the library, as the bug might be already fixed.
           required: true
-        - label: I tested using a [supported version](https://github.com/reactwg/react-native-releases/blob/main/docs/support.md) of react native.
+        - label: I tested a combination in the [public compatibility matrix](https://thiagobrez.github.io/react-native-reorderable/guide/getting-started).
           required: true
         - label: I checked for possible duplicate issues, with possible answers.
           required: true
@@ -29,6 +25,15 @@ body:
       description: |
         Provide a clear and concise description of what the bug is.
         If needed, you can also provide other samples: error messages / stack traces, screenshots, gifs, etc.
+    validations:
+      required: true
+  - type: dropdown
+    id: engine-policy
+    attributes:
+      label: Engine policy
+      options:
+        - auto
+        - fallback
     validations:
       required: true
   - type: input
@@ -43,7 +48,7 @@ body:
     id: react-native-info
     attributes:
       label: Environment info
-      description: Run `react-native info` in your terminal and paste the results here.
+      description: Run `npx react-native info` and include iOS/Android runtime versions and whether this is an Expo development build.
       render: shell
     validations:
       required: true
@@ -62,6 +67,6 @@ body:
     id: reproducible-example
     attributes:
       label: Reproducible example repository 
-      description: Please provide a link to a repository on GitHub with a reproducible example.
+      description: Link a minimal reproduction repository.
     validations:
       required: true

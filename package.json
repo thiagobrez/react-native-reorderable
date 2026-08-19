@@ -58,6 +58,11 @@
     "verify:flash-package": "node scripts/verify-flash-list-package.mjs",
     "verify:legend-package": "node scripts/verify-legend-list-package.mjs",
     "verify:legend-device": "node scripts/verify-legend-list-device.mjs",
+    "docs:api": "node scripts/generate-api-docs.mjs",
+    "docs:api:check": "node scripts/generate-api-docs.mjs --check",
+    "docs:dev": "yarn docs:api && yarn workspace react-native-reorderable-docs dev",
+    "docs:build": "yarn docs:api:check && yarn workspace react-native-reorderable-docs build",
+    "docs:preview": "yarn workspace react-native-reorderable-docs preview",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest"
@@ -137,7 +142,8 @@
     }
   },
   "workspaces": [
-    "example"
+    "example",
+    "docs/site"
   ],
   "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {

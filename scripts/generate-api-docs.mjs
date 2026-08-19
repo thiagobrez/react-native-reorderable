@@ -1,0 +1,172 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import ts from 'typescript';
+
+const root = process.cwd();
+const outputPath = path.join(root, 'docs/site/content/api/reference.md');
+const entries = [
+  {
+    importPath: 'react-native-reorderable',
+    source: 'src/index.tsx',
+    symbols: {
+      AccessibilityStrings: 'Localized labels and announcement formatters for semantic actions.',
+      CollectionOrder: 'One collection in application order: its section identity and item identities.',
+      DragDropContainer: 'Coordinates one drag-and-drop scope and emits accepted drop commits.',
+      DragDropContainerProps: 'Props accepted by `DragDropContainer`.',
+      DraggableItem: 'Declares a draggable identity inside a drag-and-drop scope.',
+      DraggableItemProps: 'Props accepted by `DraggableItem`.',
+      DropAnnouncementContext: 'Context passed to the accessible drop announcement formatter.',
+      DropEvent: 'A committed move set and semantic drop-zone destination.',
+      DropZone: 'Declares a semantic destination in a drag-and-drop scope.',
+      DropZoneProps: 'Props accepted by `DropZone`, including the activation-time acceptance predicate.',
+      EnginePolicy: 'Caller policy: prefer native when available (`auto`) or require `fallback`.',
+      ReorderAnnouncementContext: 'Context passed to the accessible reorder announcement formatter.',
+      ReorderDestination: 'Identity-based insertion point: collection plus following item, or collection end.',
+      ReorderEvent: 'One reorder commit with its canonical move set, destination, and proposed complete order.',
+      ReorderableContainer: 'Coordinates fully mounted, free-form reorderable children.',
+      ReorderableContainerProps: 'Props accepted by `ReorderableContainer`.',
+      ReorderableItem: 'Declares a stable item identity in a free-form reorder container.',
+      ReorderableItemLayout: 'Exact virtualized item geometry in content coordinates.',
+      ReorderableItemProps: 'Props accepted by `ReorderableItem`.',
+      ReorderableList: 'A controlled, vertically virtualized FlatList-shaped reorder viewport.',
+      ReorderableListProps: 'Props accepted by `ReorderableList`; correctness-critical FlatList props are omitted.',
+      ReorderableListRenderItemInfo: 'The item and index passed to a reorderable list renderer.',
+      ReorderableListSection: 'Minimum section shape: a stable section identity and readonly item data.',
+      ReorderableSection: 'Declares a collection, header, and footer in a free-form container.',
+      ReorderableSectionList: 'A controlled, vertically virtualized SectionList-shaped reorder viewport.',
+      ReorderableSectionListProps: 'Props accepted by `ReorderableSectionList`; correctness-critical props are omitted.',
+      ReorderableSectionListRenderItemInfo: 'The item, index, and section passed to a section-list renderer.',
+      ReorderableSectionProps: 'Props accepted by `ReorderableSection`.',
+    },
+  },
+  {
+    importPath: 'react-native-reorderable/flash-list',
+    source: 'src/flash-list.tsx',
+    symbols: {
+      ReorderableFlashList: 'Certified FlashList 2.3 wrapper for flat virtualized reorder.',
+      ReorderableFlashListProps: 'FlashList props with reorder-critical ownership and portable reorder props.',
+      ReorderableFlashSectionList: 'Certified FlashList 2.3 wrapper for sectioned virtualized reorder.',
+      ReorderableFlashSectionListProps: 'FlashList props for sectioned data with reorder-critical ownership.',
+    },
+  },
+  {
+    importPath: 'react-native-reorderable/legend-list',
+    source: 'src/legend-list.tsx',
+    symbols: {
+      ReorderableLegendList: 'Certified Legend List 3.3 wrapper for flat virtualized reorder.',
+      ReorderableLegendListProps: 'Legend List props with reorder-critical ownership and portable reorder props.',
+      ReorderableLegendSectionList: 'Certified Legend List 3.3 SectionList wrapper.',
+      ReorderableLegendSectionListProps: 'Legend SectionList props with reorder-critical ownership.',
+    },
+  },
+];
+
+const configPath = ts.findConfigFile(root, ts.sys.fileExists, 'tsconfig.json');
+if (configPath == null) throw new Error('Could not find tsconfig.json.');
+const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, root);
+const program = ts.createProgram({
+  rootNames: entries.map(({ source }) => path.join(root, source)),
+  options: parsed.options,
+});
+const checker = program.getTypeChecker();
+
+for (const entry of entries) {
+  const sourceFile = program.getSourceFile(path.join(root, entry.source));
+  if (sourceFile == null) throw new Error(`Could not load ${entry.source}.`);
+  const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+  if (moduleSymbol == null) throw new Error(`Could not inspect ${entry.source}.`);
+  const actual = checker
+    .getExportsOfModule(moduleSymbol)
+    .map(({ name }) => name)
+    .filter((name) => name !== 'default')
+    .sort();
+  const documented = Object.keys(entry.symbols).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(documented)) {
+    throw new Error(
+      `${entry.importPath} export drift.\nActual: ${actual.join(', ')}\nDocumented: ${documented.join(', ')}`
+    );
+  }
+}
+
+const lines = [
+  '---',
+  'sidebar: false',
+  '---',
+  '',
+  '<!-- Generated by scripts/generate-api-docs.mjs. Do not edit. -->',
+  '',
+  '# API reference',
+  '',
+];
+
+for (const entry of entries) {
+  lines.push(`## \`${entry.importPath}\``, '');
+  if (entry.importPath.includes('flash-list')) {
+    lines.push('Install `@shopify/flash-list@^2.3.2` to use this optional entrypoint.', '');
+  }
+  if (entry.importPath.includes('legend-list')) {
+    lines.push('Install `@legendapp/list@^3.3.3` to use this optional entrypoint.', '');
+  }
+  lines.push('| Export | Description |', '| --- | --- |');
+  for (const [name, description] of Object.entries(entry.symbols).sort()) {
+    lines.push(`| \`${name}\` | ${description} |`);
+  }
+  lines.push('');
+}
+
+lines.push(
+  '## Shared container props',
+  '',
+  '| Prop | Contract |',
+  '| --- | --- |',
+  '| `engine?: \'auto\' | \'fallback\'` | `auto` prefers native reorder when the runtime has that capability and otherwise selects fallback. `fallback` requires the fallback engine. |',
+  '| `enabled?: boolean` | Defaults to `true`. Changing to `false` during a drag cancels it and emits no callback. |',
+  '| `selectedIds?: readonly string[]` | Application-owned reorder selection. Starting on a selected item moves the canonical selected move set; starting elsewhere moves only that item. |',
+  '| `accessibilityStrings?: Partial<AccessibilityStrings>` | Overrides library-owned action labels and announcements. Item and zone labels remain application-owned. |',
+  '',
+  '## Reorder callback',
+  '',
+  '```ts',
+  'type ReorderEvent = Readonly<{',
+  '  sourceIds: readonly string[];',
+  '  destination: { sectionId: string | null; beforeId: string | null };',
+  '  nextOrder: readonly {',
+  '    sectionId: string | null;',
+  '    itemIds: readonly string[];',
+  '  }[];',
+  '}>;',
+  '```',
+  '',
+  '`sourceIds` is canonical pre-move collection/item order, not selection chronology. `beforeId: null` means the end of the destination collection. `nextOrder` is a proposal computed against the latest rendered order; render it to accept the commit, delay it, or keep the prior order to restore.',
+  '',
+  '## Drop callback',
+  '',
+  '```ts',
+  'type DropEvent = Readonly<{',
+  '  itemIds: readonly string[];',
+  '  destinationId: string;',
+  '}>;',
+  '```',
+  '',
+  '`canDrop(itemIds)` is evaluated once when a pointer drag activates and that result remains fixed for the interaction. Accessible drop evaluates it when the action is invoked. `onDrop` reports a completed delivery; it is not a veto point.',
+  '',
+  '## Virtualized geometry',
+  '',
+  '`getItemLayout` supplies exact `{ index, length, offset }` geometry for flat lists. Section-list callbacks supply `{ length, offset }`, where `offset` includes every preceding row plus section headers and footers. Without exact geometry the wrappers adapt measured sizes, using `estimatedItemSize` (default `64`) until measurement is available.',
+  '',
+  'The wrappers own vertical orientation, cell rendering, scrolling, stable identity, and other correctness-critical props. Horizontal, inverted, masonry, and multi-column layouts are deliberate v1 exclusions.',
+  ''
+);
+
+const generated = `${lines.join('\n')}\n`;
+if (process.argv.includes('--check')) {
+  const current = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : '';
+  if (current !== generated) {
+    throw new Error('Generated API reference is stale. Run yarn docs:api.');
+  }
+} else {
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, generated);
+}

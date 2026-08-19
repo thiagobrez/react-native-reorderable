@@ -1,0 +1,207 @@
+.compatibility-yes {
+  background-color: rgb(22 163 74 / 18%);
+  border-radius: 4px;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+.compatibility-no {
+  background-color: rgb(220 38 38 / 18%);
+  border-radius: 4px;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+#api-reference + h2::before {
+  display: none;
+}
+
+.platform-demos {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 2rem 0;
+}
+
+.platform-demos figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.platform-demos video {
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border: 1px solid var(--rp-c-divider);
+  border-radius: 0.75rem;
+  display: block;
+  max-height: 38rem;
+  object-fit: contain;
+  width: 100%;
+}
+
+.platform-demos figcaption {
+  color: var(--rp-c-text-2);
+  font-size: 0.875rem;
+  margin-top: 0.625rem;
+  text-align: center;
+}
+
+/* Keep the homepage closer to a quiet documentation index than a product
+   landing page. */
+.rp-home-background {
+  display: none;
+}
+
+.rp-home-hero {
+  margin: 0 auto;
+  max-width: 64rem;
+  padding: 7rem 1.5rem 4.5rem;
+}
+
+.rp-home-hero--no-image .rp-home-hero__container {
+  align-items: center;
+  margin: 0 auto;
+  max-width: 48rem;
+  text-align: center;
+}
+
+.rp-home-hero__container {
+  gap: 1.75rem;
+}
+
+.rp-home-hero__title {
+  font-size: clamp(2.75rem, 7vw, 4.75rem);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.rp-home-hero__title-brand {
+  background: none;
+  color: var(--rp-c-text-0);
+  width: auto;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+}
+
+.rp-home-hero__tagline {
+  color: var(--rp-c-text-2);
+  font-size: 1.125rem;
+  line-height: 1.65;
+  max-width: 42rem;
+}
+
+.rp-home-hero__actions {
+  gap: 0.75rem;
+}
+
+.rp-home-hero__action.rp-button {
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  height: 2.625rem;
+  min-width: auto;
+  padding: 0 1.125rem;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.rp-home-hero__action.rp-button--brand {
+  background: var(--rp-c-text-0);
+  color: var(--rp-c-bg);
+}
+
+.rp-home-hero__action.rp-button--brand:hover {
+  opacity: 0.82;
+}
+
+.rp-home-hero__action.rp-button--alt {
+  background: transparent;
+  border-color: var(--rp-c-divider);
+}
+
+.rp-home-hero__action.rp-button--alt:hover {
+  background: var(--rp-c-bg-soft);
+  opacity: 1;
+}
+
+.rp-home-feature {
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 auto 5rem;
+  max-width: 64rem;
+  overflow: visible;
+  padding: 0 1.5rem;
+}
+
+.rp-home-feature__item,
+.rp-home-feature__item--span-4 {
+  width: auto;
+}
+
+.rp-home-feature__item,
+.rp-home-feature__item-wrapper,
+.rp-home-feature__card {
+  transform: none !important;
+}
+
+.rp-home-feature__card {
+  backdrop-filter: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--rp-c-divider);
+  color: var(--rp-c-text-1);
+  padding: 1.25rem 0 0;
+  transition: none;
+}
+
+.rp-home-feature__card:hover {
+  border: 0;
+  border-top: 1px solid var(--rp-c-divider);
+  color: var(--rp-c-text-1);
+}
+
+.rp-home-feature__title {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.rp-home-feature__detail {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.65;
+  padding-top: 0.625rem;
+}
+
+.rp-home-feature__item__shine {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .platform-demos {
+    grid-template-columns: 1fr;
+  }
+
+  .rp-home-hero {
+    padding: 4.5rem 1.25rem 3.5rem;
+  }
+
+  .rp-home-hero--no-image .rp-home-hero__container {
+    align-items: center;
+    text-align: center;
+  }
+
+  .rp-home-hero__actions {
+    align-items: stretch;
+    flex-direction: row;
+    width: auto;
+  }
+
+  .rp-home-feature {
+    gap: 2rem;
+    grid-template-columns: 1fr;
+    padding: 0 1.25rem;
+  }
+}

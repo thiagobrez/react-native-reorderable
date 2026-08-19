@@ -1,0 +1,5 @@
+[
+  { "text": "Guide", "link": "/guide/introduction" },
+  { "text": "Examples", "link": "/examples/" },
+  { "text": "API", "link": "/api/reference" }
+]

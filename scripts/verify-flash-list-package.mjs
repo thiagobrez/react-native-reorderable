@@ -5,7 +5,11 @@ import { join, resolve } from 'node:path';
 
 const repository = resolve(import.meta.dirname, '..');
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'reorderable-flash-package-'));
-const tarball = join(temporaryRoot, 'react-native-reorderable.tgz');
+const suppliedTarball = process.argv[2];
+const tarball =
+  suppliedTarball == null
+    ? join(temporaryRoot, 'react-native-reorderable.tgz')
+    : resolve(suppliedTarball);
 
 function run(command, args, cwd) {
   execFileSync(command, args, { cwd, stdio: 'inherit' });
@@ -23,6 +27,7 @@ const runtimeDependencies = [
   'react-native-reanimated@4.3.0',
   'react-native-worklets@0.8.1',
   'jest@29.7.0',
+  '@babel/core@7.29.0',
   '@react-native/jest-preset@0.85.0',
   '@react-native/babel-preset@0.85.0',
 ];
@@ -50,7 +55,10 @@ function createConsumer(name, extraDependencies = []) {
   );
   writeFileSync(
     join(directory, 'babel.config.cjs'),
-    `module.exports = { presets: ['module:@react-native/babel-preset'] };\n`
+    `module.exports = {
+  presets: ['module:@react-native/babel-preset'],
+  plugins: ['react-native-worklets/plugin'],
+};\n`
   );
   writeFileSync(
     join(directory, 'jest.config.cjs'),
@@ -81,17 +89,38 @@ require('react-native-reanimated').setUpTests();
 }
 
 try {
-  run('yarn', ['pack', '--filename', tarball], repository);
+  if (suppliedTarball == null) {
+    run('yarn', ['pack', '--filename', tarball], repository);
+  }
 
   const rootConsumer = createConsumer('root-without-flash-list');
   writeFileSync(
     join(rootConsumer, 'package.test.js'),
     `test('root entry loads without the optional peer', () => {
   expect(() => require.resolve('@shopify/flash-list')).toThrow();
+  expect(() => require.resolve('@legendapp/list/react-native')).toThrow();
   const root = require('react-native-reorderable');
-  expect(root.ReorderableList).toBeDefined();
-  expect(root.ReorderableFlashList).toBeUndefined();
-  expect(root.ReorderableFlashSectionList).toBeUndefined();
+  expect(Object.keys(root).sort()).toEqual(${JSON.stringify([
+    'DragDropContainer',
+    'DraggableItem',
+    'DropZone',
+    'ReorderableContainer',
+    'ReorderableItem',
+    'ReorderableList',
+    'ReorderableSection',
+    'ReorderableSectionList',
+  ].sort())});
+});
+
+test('bare Babel setup compiles a worklet', () => {
+  const { transformFileSync } = require('@babel/core');
+  const { dirname, join } = require('node:path');
+  const packageJson = require.resolve('react-native-reorderable/package.json');
+  const source = join(dirname(packageJson), 'src/virtualized-geometry.ts');
+  const output = transformFileSync(source, {
+    configFile: require.resolve('./babel.config.cjs'),
+  });
+  expect(output.code).toContain('__workletHash');
 });
 `
   );

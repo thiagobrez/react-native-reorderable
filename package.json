@@ -58,6 +58,8 @@
     "verify:flash-package": "node scripts/verify-flash-list-package.mjs",
     "verify:legend-package": "node scripts/verify-legend-list-package.mjs",
     "verify:legend-device": "node scripts/verify-legend-list-device.mjs",
+    "pack:candidate": "node scripts/pack-candidate.mjs",
+    "verify:candidate": "node scripts/verify-package-artifact.mjs artifacts/candidate/react-native-reorderable.tgz",
     "docs:api": "node scripts/generate-api-docs.mjs",
     "docs:api:check": "node scripts/generate-api-docs.mjs --check",
     "docs:dev": "yarn docs:api && yarn workspace react-native-reorderable-docs dev",
@@ -127,10 +129,10 @@
   "peerDependencies": {
     "@legendapp/list": "^3.3.3",
     "@shopify/flash-list": "^2.3.2",
-    "react": "*",
-    "react-native": "*",
-    "react-native-gesture-handler": "^3.0.0",
-    "react-native-reanimated": "^4.3.0",
+    "react": ">=19.1 <20",
+    "react-native": ">=0.82 <0.87",
+    "react-native-gesture-handler": ">=3 <4",
+    "react-native-reanimated": ">=4.3 <5",
     "react-native-worklets": ">=0.8.0 <0.13.0"
   },
   "peerDependenciesMeta": {
@@ -146,6 +148,14 @@
     "docs/site"
   ],
   "packageManager": "yarn@4.11.0",
+  "react-native-reorderable": {
+    "architecture": "new",
+    "jsEngine": "hermes",
+    "platforms": {
+      "android": ">=24",
+      "ios": ">=15.1"
+    }
+  },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",

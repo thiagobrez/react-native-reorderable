@@ -102,3 +102,6 @@ artifacts/issue-39/outcomes-by-case/
 
 # Issue 40 physical performance jobs (uploaded by CI, not committed)
 artifacts/issue-40/
+
+# Exact release candidate generated and uploaded by CI
+artifacts/candidate/

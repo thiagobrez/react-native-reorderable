@@ -1,0 +1,695 @@
+name: Exact package candidate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Validation channel recorded with the candidate
+        required: true
+        default: nightly
+        type: choice
+        options:
+          - nightly
+          - prerelease
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: Pack and inspect the candidate once
+    runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.manifest.outputs.sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build and pack once
+        run: |
+          yarn prepare
+          yarn pack:candidate
+
+      - name: Inspect metadata, contents, entrypoints, and type surfaces
+        env:
+          CANDIDATE_CHANNEL: ${{ inputs.channel || (github.event_name == 'schedule' && 'nightly') || 'pull-request' }}
+        run: |
+          node scripts/verify-package-artifact.mjs \
+            artifacts/candidate/react-native-reorderable.tgz \
+            --manifest artifacts/candidate/manifest.json
+
+      - name: Record immutable candidate identity
+        id: manifest
+        run: |
+          echo "sha256=$(node -p "require('./artifacts/candidate/manifest.json').sha256")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload only the inspected candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate
+          if-no-files-found: error
+          retention-days: 30
+          path: artifacts/candidate/
+
+  clean-package-consumers:
+    name: Clean root and optional package consumers
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Recheck candidate identity
+        env:
+          EXPECTED_SHA: ${{ needs.candidate.outputs.sha256 }}
+        run: test "$(sha256sum artifacts/candidate/react-native-reorderable.tgz | cut -d' ' -f1)" = "$EXPECTED_SHA"
+
+      - name: Verify root without either optional peer and FlashList alone
+        run: node scripts/verify-flash-list-package.mjs artifacts/candidate/react-native-reorderable.tgz
+
+      - name: Verify Legend List alone
+        run: node scripts/verify-legend-list-package.mjs artifacts/candidate/react-native-reorderable.tgz
+
+  quality:
+    name: Required quality and performance gates
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Verify source and packed API stay aligned
+        run: |
+          yarn lint
+          yarn typecheck
+          yarn test --maxWorkers=2 --coverage
+          yarn docs:api:check
+          node scripts/verify-package-artifact.mjs artifacts/candidate/react-native-reorderable.tgz
+
+      - name: Enforce production geometry budgets
+        run: |
+          mkdir -p "$RUNNER_TEMP/candidate-package"
+          tar -xzf artifacts/candidate/react-native-reorderable.tgz -C "$RUNNER_TEMP/candidate-package"
+          test ! -e "$GITHUB_WORKSPACE/lib"
+          cp -R "$RUNNER_TEMP/candidate-package/package/lib" "$GITHUB_WORKSPACE/lib"
+          node benchmarks/issue34-geometry.mjs
+          node benchmarks/issue35-section-geometry.mjs
+
+  render-regressions:
+    name: Candidate Reassure render gates
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout candidate with baseline history
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup candidate
+        uses: ./.github/actions/setup
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Resolve baseline commit
+        id: baseline
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "sha=$PR_BASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Measure baseline in an isolated worktree
+        env:
+          BASELINE_SHA: ${{ steps.baseline.outputs.sha }}
+          BASELINE_ROOT: ${{ runner.temp }}/reassure-baseline
+        run: |
+          git worktree add --detach "$BASELINE_ROOT" "$BASELINE_SHA"
+          cp "$GITHUB_WORKSPACE"/src/__perf__/*.perf-test.tsx "$BASELINE_ROOT/src/__perf__/"
+          cd "$BASELINE_ROOT"
+          corepack enable
+          yarn install --immutable
+          yarn performance:reassure:baseline
+          mkdir -p "$GITHUB_WORKSPACE/.reassure"
+          cp .reassure/baseline.perf "$GITHUB_WORKSPACE/.reassure/baseline.perf"
+
+      - name: Replace candidate source with the source carried by the tarball
+        run: |
+          mkdir -p "$RUNNER_TEMP/candidate-package"
+          tar -xzf artifacts/candidate/react-native-reorderable.tgz -C "$RUNNER_TEMP/candidate-package"
+          mv "$GITHUB_WORKSPACE/src" "$RUNNER_TEMP/repository-source"
+          cp -R "$RUNNER_TEMP/candidate-package/package/src" "$GITHUB_WORKSPACE/src"
+          mkdir -p "$GITHUB_WORKSPACE/src/__perf__"
+          cp "$RUNNER_TEMP/repository-source"/__perf__/*.perf-test.tsx "$GITHUB_WORKSPACE/src/__perf__/"
+
+      - name: Measure and enforce candidate regressions
+        run: |
+          yarn performance:reassure
+          yarn performance:reassure:verify
+
+      - name: Upload Reassure report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-reassure-performance-report
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            .reassure/output.json
+            .reassure/output.md
+
+  clean-native-consumers:
+    name: ${{ matrix.kind }} / RN ${{ matrix.versions.reactNative }} / ${{ matrix.platform }}
+    needs: candidate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: bare
+            profile: minimum
+            platform: android
+            runner: ubuntu-latest
+            versions:
+              {
+                react: '19.1.1',
+                reactNative: '0.82.1',
+                reactNativeGestureHandler: '3.0.0',
+                reactNativeReanimated: '4.3.0',
+                reactNativeWorklets: '0.8.1',
+              }
+          - kind: bare
+            profile: maximum
+            platform: android
+            runner: ubuntu-latest
+            versions:
+              {
+                react: '19.2.3',
+                reactNative: '0.86.2',
+                reactNativeGestureHandler: '3.2.1',
+                reactNativeReanimated: '4.5.3',
+                reactNativeWorklets: '0.11.4',
+              }
+          - kind: bare
+            profile: minimum
+            platform: ios
+            runner: macos-26
+            versions:
+              {
+                react: '19.1.1',
+                reactNative: '0.82.1',
+                reactNativeGestureHandler: '3.0.0',
+                reactNativeReanimated: '4.3.0',
+                reactNativeWorklets: '0.8.1',
+              }
+          - kind: bare
+            profile: maximum
+            platform: ios
+            runner: macos-26
+            versions:
+              {
+                react: '19.2.3',
+                reactNative: '0.86.2',
+                reactNativeGestureHandler: '3.2.1',
+                reactNativeReanimated: '4.5.3',
+                reactNativeWorklets: '0.11.4',
+              }
+          - kind: expo
+            profile: maximum
+            platform: android
+            runner: ubuntu-latest
+            versions:
+              {
+                react: '19.2.3',
+                reactNative: '0.86.2',
+                reactNativeGestureHandler: '3.2.1',
+                reactNativeReanimated: '4.5.3',
+                reactNativeWorklets: '0.11.4',
+              }
+          - kind: expo
+            profile: maximum
+            platform: ios
+            runner: macos-26
+            versions:
+              {
+                react: '19.2.3',
+                reactNative: '0.86.2',
+                reactNativeGestureHandler: '3.2.1',
+                reactNativeReanimated: '4.5.3',
+                reactNativeWorklets: '0.11.4',
+              }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install JDK
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Create a clean bare React Native application
+        if: matrix.kind == 'bare'
+        env:
+          RN_VERSION: ${{ matrix.versions.reactNative }}
+          FIXTURE: ${{ runner.temp }}/ReorderableConsumer
+        run: >-
+          npx --yes @react-native-community/cli@20.2.0 init ReorderableConsumer
+          --version "$RN_VERSION" --directory "$FIXTURE" --skip-install --pm npm
+
+      - name: Create a clean Expo development-build application
+        if: matrix.kind == 'expo'
+        env:
+          FIXTURE: ${{ runner.temp }}/ReorderableConsumer
+        run: >-
+          npx --yes create-expo-app@4.0.0 "$FIXTURE"
+          --template blank-typescript --no-install --yes
+
+      - name: Install the exact candidate and interaction stack
+        env:
+          FIXTURE: ${{ runner.temp }}/ReorderableConsumer
+          VERSIONS: ${{ toJSON(matrix.versions) }}
+        run: |
+          node scripts/configure-clean-consumer.mjs \
+            "$FIXTURE" \
+            "$GITHUB_WORKSPACE/artifacts/candidate/react-native-reorderable.tgz" \
+            '${{ matrix.kind }}' \
+            "$VERSIONS"
+          npm install --prefix "$FIXTURE" --legacy-peer-deps --no-audit --no-fund
+
+      - name: Install Expo development client and generate native projects
+        if: matrix.kind == 'expo'
+        working-directory: ${{ runner.temp }}/ReorderableConsumer
+        run: |
+          npx expo install expo-dev-client --npm
+          npx expo prebuild --no-install
+
+      - name: Prove TypeScript, Babel, and autolinking setup
+        working-directory: ${{ runner.temp }}/ReorderableConsumer
+        run: |
+          npx tsc --noEmit
+          npx react-native config | node "$GITHUB_WORKSPACE/scripts/verify-consumer-autolinking.mjs"
+          node -e "const output=require('@babel/core').transformFileSync('worklet-smoke.ts',{configFile:require('node:path').resolve('babel.config.js')}).code;if(!output.includes('__workletHash'))process.exit(1)"
+
+      - name: Compile Android with New Architecture and Hermes
+        if: matrix.platform == 'android'
+        working-directory: ${{ runner.temp }}/ReorderableConsumer/android
+        run: ./gradlew app:assembleDebug --no-daemon -PnewArchEnabled=true -PhermesEnabled=true
+
+      - name: Install pods and compile iOS with New Architecture and Hermes
+        if: matrix.platform == 'ios'
+        working-directory: ${{ runner.temp }}/ReorderableConsumer
+        env:
+          RCT_NEW_ARCH_ENABLED: 1
+          USE_HERMES: 1
+        run: |
+          npx pod-install
+          xcodebuild \
+            -workspace ios/ReorderableConsumer.xcworkspace \
+            -scheme ReorderableConsumer \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+  minimum-android-runtime:
+    name: Nightly minimum Android API 24
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install JDK
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Create minimum clean consumer
+        env:
+          FIXTURE: ${{ runner.temp }}/ReorderableConsumer
+        run: |
+          npx --yes @react-native-community/cli@20.2.0 init ReorderableConsumer \
+            --version 0.82.1 --directory "$FIXTURE" --skip-install --pm npm
+          node scripts/configure-clean-consumer.mjs \
+            "$FIXTURE" \
+            "$GITHUB_WORKSPACE/artifacts/candidate/react-native-reorderable.tgz" \
+            bare \
+            '{"react":"19.1.1","reactNative":"0.82.1","reactNativeGestureHandler":"3.0.0","reactNativeReanimated":"4.3.0","reactNativeWorklets":"0.8.1"}'
+          npm install --prefix "$FIXTURE" --legacy-peer-deps --no-audit --no-fund
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Build, install, and launch on Android API 24
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 24
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          script: |
+            cd "$RUNNER_TEMP/ReorderableConsumer/android"
+            ./gradlew app:installDebug --no-daemon -PnewArchEnabled=true -PhermesEnabled=true
+            adb shell am start -W -n com.reorderableconsumer/.MainActivity
+
+  minimum-ios-runtime:
+    name: Nightly minimum iOS 15.1
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: candidate
+    runs-on: [self-hosted, macOS, ios-15.1]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Create minimum clean consumer
+        env:
+          FIXTURE: ${{ runner.temp }}/ReorderableConsumer
+        run: |
+          xcrun simctl list runtimes | grep -F 'iOS 15.1'
+          npx --yes @react-native-community/cli@20.2.0 init ReorderableConsumer \
+            --version 0.82.1 --directory "$FIXTURE" --skip-install --pm npm
+          node scripts/configure-clean-consumer.mjs \
+            "$FIXTURE" \
+            "$GITHUB_WORKSPACE/artifacts/candidate/react-native-reorderable.tgz" \
+            bare \
+            '{"react":"19.1.1","reactNative":"0.82.1","reactNativeGestureHandler":"3.0.0","reactNativeReanimated":"4.3.0","reactNativeWorklets":"0.8.1"}'
+          npm install --prefix "$FIXTURE" --legacy-peer-deps --no-audit --no-fund
+
+      - name: Build, install, and launch on iOS 15.1
+        working-directory: ${{ runner.temp }}/ReorderableConsumer
+        env:
+          RCT_NEW_ARCH_ENABLED: 1
+          USE_HERMES: 1
+        run: |
+          npx pod-install
+          SIMULATOR_ID=$(xcrun simctl create \
+            Reorderable-iOS-15-1 \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-13 \
+            com.apple.CoreSimulator.SimRuntime.iOS-15-1)
+          xcrun simctl boot "$SIMULATOR_ID"
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcodebuild \
+            -workspace ios/ReorderableConsumer.xcworkspace \
+            -scheme ReorderableConsumer \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath ios/build-issue42 \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          xcrun simctl install \
+            "$SIMULATOR_ID" \
+            ios/build-issue42/Build/Products/Debug-iphonesimulator/ReorderableConsumer.app
+          xcrun simctl launch \
+            "$SIMULATOR_ID" \
+            org.reactjs.native.example.ReorderableConsumer
+
+  contract:
+    name: ${{ matrix.configuration }} / RN 0.85
+    needs: candidate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: ios27.native
+            runner: xcode-27
+            runtime: iOS 27.0
+          - configuration: ios27.fallback
+            runner: xcode-27
+            runtime: iOS 27.0
+          - configuration: ios26.auto-fallback
+            runner: macos-26
+            runtime: iOS 26.5
+          - configuration: android.fallback
+            runner: ubuntu-latest
+            runtime: Android API 36
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Download inspected candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Install the inspected tarball into the Scenario Lab
+        run: |
+          node scripts/install-candidate-in-example.mjs artifacts/candidate/react-native-reorderable.tgz
+          yarn install
+          test "$(node -p "require('./example/node_modules/react-native-reorderable/package.json').name")" = react-native-reorderable
+
+      - name: Verify designated React Native baseline
+        run: node -e "if(require('./package.json').devDependencies['react-native']!=='0.85.0')process.exit(1)"
+
+      - name: Verify Apple runtime and prepare native app
+        if: runner.os == 'macOS'
+        run: |
+          xcrun simctl list runtimes | grep -F '${{ matrix.runtime }}'
+          brew tap wix/brew
+          brew trust --formula wix/brew/applesimutils
+          brew install wix/brew/applesimutils
+          bundle install --gemfile example/Gemfile
+          bundle exec pod install --project-directory=example/ios
+          yarn detox build --configuration '${{ matrix.configuration }}'
+
+      - name: Run Apple contract with one retained whole-job retry
+        if: runner.os == 'macOS'
+        run: node scripts/run-device-contract-job.mjs '${{ matrix.configuration }}'
+
+      - name: Enable KVM
+        if: runner.os == 'Linux'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android contract with one retained whole-job retry
+        if: runner.os == 'Linux'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7_pro
+          avd-name: Pixel_10_Pro
+          disable-animations: false
+          script: |
+            yarn detox build --configuration '${{ matrix.configuration }}'
+            node scripts/run-device-contract-job.mjs '${{ matrix.configuration }}'
+
+      - name: Upload exact device artifacts and recordings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-39-${{ matrix.configuration }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            artifacts/issue-39/detox/${{ matrix.configuration }}/
+            artifacts/issue-39/device-tables/${{ matrix.configuration }}*.json
+            artifacts/issue-39/outcomes-by-case/${{ matrix.configuration }}/
+            artifacts/issue-39/outcomes/${{ matrix.configuration }}.json
+            artifacts/issue-39/feedback/${{ matrix.configuration }}/
+            artifacts/issue-39/agent-device/${{ matrix.configuration }}/
+
+  feedback:
+    name: Verify continuous public destination feedback
+    if: always()
+    needs: contract
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download four-engine feedback artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: issue-39-*
+          path: artifacts/issue-39/downloads
+          merge-multiple: true
+
+      - name: Fail if any producer failed
+        if: needs.contract.result != 'success'
+        run: exit 1
+
+      - name: Extract public labels and destination visual change
+        run: |
+          swift scripts/analyze-device-feedback.swift \
+            artifacts/issue-39/downloads/feedback \
+            e2e/contracts/feedback-specs.json \
+            artifacts/issue-39/feedback-report.json
+
+      - name: Verify every held-pointer sample
+        run: node scripts/verify-device-feedback.mjs artifacts/issue-39/feedback-report.json
+
+      - name: Upload semantic feedback report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: issue-39-feedback-report
+          if-no-files-found: error
+          retention-days: 14
+          path: artifacts/issue-39/feedback-report.json
+
+  parity:
+    name: Compare four-engine public outcomes
+    if: always()
+    needs: contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download retained attempts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: issue-39-*
+          path: artifacts/issue-39/downloads
+          merge-multiple: true
+
+      - name: Fail if any matrix job failed or coverage was lost
+        if: needs.contract.result != 'success'
+        run: exit 1
+
+      - name: Assert identical public outcomes
+        run: node scripts/compare-device-contract-outcomes.mjs artifacts/issue-39/downloads/outcomes
+
+  approve-candidate:
+    name: Approve exact tarball for publication workflow
+    if: >-
+      always() &&
+      needs.candidate.result == 'success' &&
+      needs.clean-package-consumers.result == 'success' &&
+      needs.quality.result == 'success' &&
+      needs.render-regressions.result == 'success' &&
+      needs.clean-native-consumers.result == 'success' &&
+      needs.contract.result == 'success' &&
+      needs.feedback.result == 'success' &&
+      needs.parity.result == 'success' &&
+      (
+        (github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' &&
+          needs.minimum-android-runtime.result == 'skipped' &&
+          needs.minimum-ios-runtime.result == 'skipped') ||
+        (needs.minimum-android-runtime.result == 'success' &&
+          needs.minimum-ios-runtime.result == 'success')
+      )
+    needs:
+      - candidate
+      - clean-package-consumers
+      - quality
+      - render-regressions
+      - clean-native-consumers
+      - minimum-android-runtime
+      - minimum-ios-runtime
+      - contract
+      - feedback
+      - parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download candidate that passed every required gate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate
+          path: artifacts/candidate
+
+      - name: Recheck immutable candidate identity
+        env:
+          EXPECTED_SHA: ${{ needs.candidate.outputs.sha256 }}
+        run: |
+          test "$(sha256sum artifacts/candidate/react-native-reorderable.tgz | cut -d' ' -f1)" = "$EXPECTED_SHA"
+          test "$(node -p "require('./artifacts/candidate/manifest.json').sha256")" = "$EXPECTED_SHA"
+
+      - name: Expose the verified bytes to release automation
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-release-candidate
+          if-no-files-found: error
+          retention-days: 30
+          path: artifacts/candidate/

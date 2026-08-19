@@ -649,7 +649,7 @@ console.log(JSON.stringify({
 
   it('pins the exact four engine/runtime configurations and retains recordings', () => {
     const config = read('.detoxrc.cjs');
-    const workflow = read('.github/workflows/device-contract.yml');
+    const workflow = read('.github/workflows/exact-package-candidate.yml');
     const isolatedRunner = read('scripts/run-device-contract-isolated.mjs');
     const jobRunner = read('scripts/run-device-contract-job.mjs');
 
@@ -729,7 +729,7 @@ console.log(JSON.stringify({
     const runner = read('e2e/contracts/portable-contract.e2e.cjs');
     const isolatedRunner = read('scripts/run-device-contract-isolated.mjs');
     const jobRunner = read('scripts/run-device-contract-job.mjs');
-    const workflow = read('.github/workflows/device-contract.yml');
+    const workflow = read('.github/workflows/exact-package-candidate.yml');
 
     expect(runner.indexOf('onActionStarted?.();')).toBeLessThan(
       runner.indexOf('await actionStarted;')

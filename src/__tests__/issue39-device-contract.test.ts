@@ -115,6 +115,20 @@ describe('issue 39 portable device contract', () => {
       'free-form-reorder': { driver: 'detox' },
       'multi-selection-reorder': { driver: 'detox' },
     });
+    expect(pointerDrivers.routes['android.fallback']).toEqual({
+      'free-form-reorder': 'detox',
+      'virtualized-list-reorder': 'detox',
+      'section-list-reorder': 'detox',
+      'multi-selection-reorder': 'detox',
+      'scoped-drop': 'detox',
+    });
+    expect(pointerDrivers.overrides['android.fallback']).toMatchObject({
+      'free-form-reorder': { driver: 'detox' },
+      'virtualized-list-reorder': { driver: 'detox' },
+      'section-list-reorder': { driver: 'detox' },
+      'multi-selection-reorder': { driver: 'detox' },
+      'scoped-drop': { driver: 'detox' },
+    });
     expect(runner).toContain("scenario.action.kind === 'drag'");
     expect(runner).toContain("destinationPlacement !== 'beforeTarget'");
     expect(pointerScenarios).not.toHaveLength(0);

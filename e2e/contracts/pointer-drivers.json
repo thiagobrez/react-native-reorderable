@@ -140,7 +140,7 @@
     },
     "android.fallback": {
       "free-form-reorder": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "Card row 4",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -148,7 +148,7 @@
         }
       },
       "virtualized-list-reorder": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "List row 4",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -156,7 +156,7 @@
         }
       },
       "section-list-reorder": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "Section 1, row 4",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -164,7 +164,7 @@
         }
       },
       "multi-selection-reorder": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "Card row 6",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -172,7 +172,7 @@
         }
       },
       "scoped-drop": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "Accepting drop zone",
         "destinationSelector": {
           "relation": "namedTargetCenter",
@@ -204,11 +204,11 @@
       "scoped-drop": "agent-device"
     },
     "android.fallback": {
-      "free-form-reorder": "agent-device",
-      "virtualized-list-reorder": "agent-device",
-      "section-list-reorder": "agent-device",
-      "multi-selection-reorder": "agent-device",
-      "scoped-drop": "agent-device"
+      "free-form-reorder": "detox",
+      "virtualized-list-reorder": "detox",
+      "section-list-reorder": "detox",
+      "multi-selection-reorder": "detox",
+      "scoped-drop": "detox"
     }
   }
 }

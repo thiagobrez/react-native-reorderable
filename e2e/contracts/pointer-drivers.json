@@ -98,7 +98,7 @@
     },
     "ios26.auto-fallback": {
       "free-form-reorder": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "Card row 4",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -122,7 +122,7 @@
         }
       },
       "multi-selection-reorder": {
-        "driver": "agent-device",
+        "driver": "detox",
         "semanticTargetLabel": "Card row 6",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -197,10 +197,10 @@
       "scoped-drop": "agent-device"
     },
     "ios26.auto-fallback": {
-      "free-form-reorder": "agent-device",
+      "free-form-reorder": "detox",
       "virtualized-list-reorder": "agent-device",
       "section-list-reorder": "agent-device",
-      "multi-selection-reorder": "agent-device",
+      "multi-selection-reorder": "detox",
       "scoped-drop": "agent-device"
     },
     "android.fallback": {

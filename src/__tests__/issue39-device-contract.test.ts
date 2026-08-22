@@ -104,6 +104,17 @@ describe('issue 39 portable device contract', () => {
       destination: { normalizedX: 0.5, normalizedY: 0.25 },
       driver: 'detox',
     });
+    expect(pointerDrivers.routes['ios26.auto-fallback']).toMatchObject({
+      'free-form-reorder': 'detox',
+      'multi-selection-reorder': 'detox',
+      'scoped-drop': 'agent-device',
+      'section-list-reorder': 'agent-device',
+      'virtualized-list-reorder': 'agent-device',
+    });
+    expect(pointerDrivers.overrides['ios26.auto-fallback']).toMatchObject({
+      'free-form-reorder': { driver: 'detox' },
+      'multi-selection-reorder': { driver: 'detox' },
+    });
     expect(runner).toContain("scenario.action.kind === 'drag'");
     expect(runner).toContain("destinationPlacement !== 'beforeTarget'");
     expect(pointerScenarios).not.toHaveLength(0);

@@ -53,7 +53,14 @@ const environment = {
 };
 const runAgentDevice = (...args) =>
   run(agentDevice, args, { env: environment });
+const defaultEnvironment = { ...process.env };
+delete defaultEnvironment.AGENT_DEVICE_STATE_DIR;
+const stopDefaultDaemon = () => {
+  if (process.env.CI !== 'true') return;
+  run(agentDevice, ['daemon', 'stop'], { env: defaultEnvironment });
+};
 
+stopDefaultDaemon();
 runAgentDevice('daemon', 'stop');
 try {
   const prepareResult = runAgentDevice(
@@ -74,4 +81,5 @@ try {
     );
 } finally {
   runAgentDevice('daemon', 'stop');
+  stopDefaultDaemon();
 }

@@ -116,6 +116,16 @@ const replayStateRoot = resolve(
   configuration,
   'replay-daemon-state'
 );
+await mkdir(replayStateRoot, { recursive: true });
+const deepLinkConfirmationMarker = resolve(
+  replayStateRoot,
+  'deep-link-confirmed'
+);
+const acceptDeepLinkPrompt =
+  platform === 'ios' &&
+  !(await stat(deepLinkConfirmationMarker)
+    .then(() => true)
+    .catch(() => false));
 const replayEnvironment = {
   ...process.env,
   AGENT_DEVICE_STATE_DIR: replayStateRoot,
@@ -178,6 +188,7 @@ try {
   await writeFile(
     replayPath,
     agentDeviceReplayScript({
+      acceptDeepLinkPrompt,
       baselinePath,
       deepLink: scenario.deepLink.replace('${ENGINE}', engine),
       destinationSelector,
@@ -218,7 +229,7 @@ try {
       resolveExit(code);
     })
   );
-  const baselineDeadline = Date.now() + 60000;
+  const baselineDeadline = Date.now() + 180000;
   while (
     (await stat(baselinePath)
       .then(({ mtimeMs }) => mtimeMs <= previousBaselineMtime)
@@ -234,6 +245,7 @@ try {
     );
   if (Date.now() >= baselineDeadline)
     throw new Error('Timed out waiting for the replay baseline marker');
+  if (platform === 'ios') await writeFile(deepLinkConfirmationMarker, '');
   await screenshot(baselinePath);
   const gestureMarkerDeadline = Date.now() + 60000;
   while (

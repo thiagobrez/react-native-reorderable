@@ -261,6 +261,7 @@ describe('issue 39 portable device contract', () => {
   it('records observed accessibility outcomes and rejects mismatches', () => {
     const observation = jest.requireActual<{
       agentDeviceReplayScript: (options: {
+        acceptDeepLinkPrompt: boolean;
         baselinePath: string;
         deepLink: string;
         destinationSelector: string;
@@ -323,6 +324,7 @@ describe('issue 39 portable device contract', () => {
     ).toThrow(/observed "Callback count: 0" instead of "Callback count: 1"/);
     expect(
       observation.agentDeviceReplayScript({
+        acceptDeepLinkPrompt: false,
         baselinePath: '/tmp/baseline.png',
         deepLink: 'reorderable://lab/free-form?engine=fallback',
         destinationSelector: 'label="Card row 3"',
@@ -344,6 +346,7 @@ describe('issue 39 portable device contract', () => {
     );
     expect(
       observation.agentDeviceReplayScript({
+        acceptDeepLinkPrompt: false,
         baselinePath: '/tmp/baseline.png',
         deepLink: 'reorderable://lab/free-form?engine=fallback',
         destinationSelector: 'label="Card row 3"',
@@ -364,6 +367,7 @@ describe('issue 39 portable device contract', () => {
       'open "${APP_TARGET}" --relaunch\nwait "Scenario Lab" 15000\nopen "${DEEP_LINK}"\nwait "Callback count: 0" 15000\nscreenshot "/tmp/baseline.png"\nrecord start "/tmp/pointer.mp4" --scope device'
     );
     const iosReplay = observation.agentDeviceReplayScript({
+      acceptDeepLinkPrompt: true,
       baselinePath: '/tmp/baseline.png',
       deepLink: 'reorderable://lab/free-form?engine=fallback',
       destinationSelector: 'label="Card row 3"',
@@ -383,6 +387,26 @@ describe('issue 39 portable device contract', () => {
     expect(iosReplay).toContain(
       'open "${DEEP_LINK}"\nalert accept\nwait "Callback count: 0" 15000'
     );
+    expect(
+      observation.agentDeviceReplayScript({
+        acceptDeepLinkPrompt: false,
+        baselinePath: '/tmp/baseline.png',
+        deepLink: 'reorderable://lab/free-form?engine=fallback',
+        destinationSelector: 'label="Card row 3"',
+        expectedLabels: ['Callback count: 1'],
+        gestureMarkerPath: '/tmp/gesture-start.png',
+        initialLabels: ['Callback count: 0'],
+        platform: 'ios',
+        recordingPath: '/tmp/pointer.mp4',
+        sourceSelector: 'label="Card row 1"',
+        terminalPath: '/tmp/terminal.png',
+        timing: {
+          destinationHoldMs: 8000,
+          moveBudgetMs: 1200,
+          sourceHoldMs: 650,
+        },
+      })
+    ).not.toContain('alert accept');
   });
 
   it('fails parity when independently observed engine outcomes differ', () => {
@@ -629,6 +653,9 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain('gestureMarkerPath');
     expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain("'screencap'");
+    expect(agentDeviceRunner).toContain("'deep-link-confirmed'");
+    expect(agentDeviceRunner).toContain('acceptDeepLinkPrompt');
+    expect(agentDeviceRunner).toContain('Date.now() + 180000');
     expect(agentDeviceRunner).toContain(
       "resolve('node_modules/.bin/agent-device')"
     );
@@ -793,6 +820,7 @@ console.log(JSON.stringify({
     expect(iosRunnerPreflight).toMatch(
       /finally \{\s*runAgentDevice\('daemon', 'stop'\)/
     );
+    expect(iosRunnerPreflight).toContain('stopDefaultDaemon');
     expect(jobRunner).toContain('scripts/run-device-contract-isolated.mjs');
     expect(workflow).toContain('scripts/run-device-contract-job.mjs');
   });

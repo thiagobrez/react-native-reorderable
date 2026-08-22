@@ -23,6 +23,7 @@ function observedLabelsFromSnapshot(snapshot, expectedLabels, bundleId) {
 }
 
 function agentDeviceReplayScript({
+  acceptDeepLinkPrompt,
   baselinePath,
   deepLink,
   destinationSelector,
@@ -46,7 +47,7 @@ function agentDeviceReplayScript({
     'open "${APP_TARGET}" --relaunch',
     'wait "Scenario Lab" 15000',
     'open "${DEEP_LINK}"',
-    ...(platform === 'ios' ? ['alert accept'] : []),
+    ...(acceptDeepLinkPrompt ? ['alert accept'] : []),
     ...initialLabels.map((label) => `wait ${quote(label)} 15000`),
     `screenshot ${quote(baselinePath)}`,
     `record start ${quote(recordingPath)} --scope device`,

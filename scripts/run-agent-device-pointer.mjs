@@ -213,6 +213,8 @@ try {
     [
       'replay',
       replayPath,
+      '--timeout',
+      '180000',
       '--platform',
       platform,
       '--session',

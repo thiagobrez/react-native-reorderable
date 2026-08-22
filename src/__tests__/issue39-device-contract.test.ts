@@ -656,6 +656,7 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain("'deep-link-confirmed'");
     expect(agentDeviceRunner).toContain('acceptDeepLinkPrompt');
     expect(agentDeviceRunner).toContain('Date.now() + 180000');
+    expect(agentDeviceRunner).toMatch(/'--timeout',\s*'180000'/);
     expect(agentDeviceRunner).toContain(
       "resolve('node_modules/.bin/agent-device')"
     );

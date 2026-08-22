@@ -385,7 +385,7 @@ describe('issue 39 portable device contract', () => {
       },
     });
     expect(iosReplay).toContain(
-      'open "${DEEP_LINK}"\nalert accept\nwait "Callback count: 0" 15000'
+      'open "${DEEP_LINK}"\nalert accept\nopen "${DEEP_LINK}"\nwait "Callback count: 0" 15000'
     );
     expect(
       observation.agentDeviceReplayScript({

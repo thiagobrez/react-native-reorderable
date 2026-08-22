@@ -47,7 +47,9 @@ function agentDeviceReplayScript({
     'open "${APP_TARGET}" --relaunch',
     'wait "Scenario Lab" 15000',
     'open "${DEEP_LINK}"',
-    ...(acceptDeepLinkPrompt ? ['alert accept'] : []),
+    ...(acceptDeepLinkPrompt
+      ? ['alert accept', 'open "${DEEP_LINK}"']
+      : []),
     ...initialLabels.map((label) => `wait ${quote(label)} 15000`),
     `screenshot ${quote(baselinePath)}`,
     `record start ${quote(recordingPath)} --scope device`,

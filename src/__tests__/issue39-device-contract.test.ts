@@ -104,6 +104,13 @@ describe('issue 39 portable device contract', () => {
       destination: { normalizedX: 0.5, normalizedY: 0.25 },
       driver: 'detox',
     });
+    expect(pointerDrivers.routes['ios27.native']).toMatchObject({
+      'free-form-reorder': 'detox',
+      'multi-selection-reorder': 'detox',
+    });
+    expect(pointerDrivers.overrides['ios27.native']).toMatchObject({
+      'free-form-reorder': { driver: 'detox' },
+    });
     expect(pointerDrivers.routes['ios26.auto-fallback']).toMatchObject({
       'free-form-reorder': 'detox',
       'multi-selection-reorder': 'detox',
@@ -196,7 +203,7 @@ describe('issue 39 portable device contract', () => {
       'Card row 4'
     );
     expect(plan).toEqual({
-      driver: 'agent-device',
+      driver: 'detox',
       semanticTargetLabel: 'Card row 4',
       canonicalOrder: [
         {

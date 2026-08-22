@@ -53,6 +53,19 @@ const agentDeviceRoot = resolve(
   configuration,
   ...attemptSegments
 );
+const replayStateRoot = resolve(
+  'artifacts/issue-39/agent-device',
+  configuration,
+  'replay-daemon-state'
+);
+const stopReplayDaemon = () =>
+  spawnSync(resolve('node_modules/.bin/agent-device'), ['daemon', 'stop'], {
+    env: {
+      ...process.env,
+      AGENT_DEVICE_STATE_DIR: replayStateRoot,
+    },
+    stdio: 'inherit',
+  });
 const table = [];
 const outcomes = {};
 
@@ -122,6 +135,7 @@ for (const scenario of applicable) {
           {
             env: {
               ...process.env,
+              AGENT_DEVICE_STATE_DIR: replayStateRoot,
               ISSUE39_FEEDBACK_DIR: resolve(feedbackRoot, scenario.id),
               ISSUE39_OUTCOME_FILE: outcomeFile,
             },
@@ -137,19 +151,7 @@ for (const scenario of applicable) {
   const infrastructureFailure =
     !passed &&
     (result.status == null || result.signal != null || !reachedContractAssertion);
-  if (driver === 'agent-device' && !passed) {
-    spawnSync(resolve('node_modules/.bin/agent-device'), ['daemon', 'stop'], {
-      env: {
-        ...process.env,
-        AGENT_DEVICE_STATE_DIR: resolve(
-          'artifacts/issue-39/agent-device',
-          configuration,
-          'replay-daemon-state'
-        ),
-      },
-      stdio: 'inherit',
-    });
-  }
+  if (driver === 'agent-device' && !passed) stopReplayDaemon();
   table.push({
     id: scenario.id,
     durationMs: Date.now() - startedAt,
@@ -167,6 +169,8 @@ for (const scenario of applicable) {
     Object.assign(outcomes, report.outcomes);
   }
 }
+
+if (requiresAgentDevice) stopReplayDaemon();
 
 const tablePath = resolve(
   'artifacts/issue-39/device-tables',

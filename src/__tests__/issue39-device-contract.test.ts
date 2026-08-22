@@ -812,6 +812,7 @@ console.log(JSON.stringify({
     expect(isolatedRunner).toContain(
       "resolve('node_modules/.bin/agent-device')"
     );
+    expect(isolatedRunner).toMatch(/AGENT_DEVICE_STATE_DIR:\s*replayStateRoot/);
     expect(isolatedRunner).not.toMatch(/retry|retries/i);
     expect(iosRunnerPreflight).toMatch(
       /runAgentDevice\(\s*'prepare',\s*'ios-runner'/

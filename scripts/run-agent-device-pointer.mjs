@@ -130,9 +130,6 @@ const replayEnvironment = {
   ...process.env,
   AGENT_DEVICE_STATE_DIR: replayStateRoot,
 };
-await execFileAsync(agentDevice, ['daemon', 'stop'], {
-  env: replayEnvironment,
-}).catch(() => undefined);
 const runSessionCommand = (...args) =>
   execFileAsync(agentDevice, [
     ...args,
@@ -317,7 +314,4 @@ try {
     if (!replayExited) replay.kill('SIGKILL');
   }
   await runSessionCommand('close').catch(() => undefined);
-  await execFileAsync(agentDevice, ['daemon', 'stop'], {
-    env: replayEnvironment,
-  }).catch(() => undefined);
 }

@@ -660,6 +660,9 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain(
       "resolve('node_modules/.bin/agent-device')"
     );
+    expect(agentDeviceRunner).not.toMatch(
+      /execFileAsync\(agentDevice, \['daemon', 'stop'\]/
+    );
   });
 
   it('derives focused action-smoke discovery and outcomes from exact public labels', () => {
@@ -814,13 +817,17 @@ console.log(JSON.stringify({
       "resolve('node_modules/.bin/agent-device')"
     );
     expect(isolatedRunner).toMatch(/AGENT_DEVICE_STATE_DIR:\s*replayStateRoot/);
+    expect(isolatedRunner).toContain(
+      'if (requiresAgentDevice) stopReplayDaemon()'
+    );
     expect(isolatedRunner).not.toMatch(/retry|retries/i);
     expect(iosRunnerPreflight).toMatch(
       /runAgentDevice\(\s*'prepare',\s*'ios-runner'/
     );
     expect(iosRunnerPreflight).toMatch(/'--timeout',\s*'300000'/);
+    expect(iosRunnerPreflight).toContain('let prepared = false');
     expect(iosRunnerPreflight).toMatch(
-      /finally \{\s*runAgentDevice\('daemon', 'stop'\)/
+      /if \(!prepared\) runAgentDevice\('daemon', 'stop'\)/
     );
     expect(iosRunnerPreflight).toContain('stopDefaultDaemon');
     expect(jobRunner).toContain('scripts/run-device-contract-isolated.mjs');

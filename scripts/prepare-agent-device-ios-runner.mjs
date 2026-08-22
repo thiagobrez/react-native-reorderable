@@ -62,6 +62,7 @@ const stopDefaultDaemon = () => {
 
 stopDefaultDaemon();
 runAgentDevice('daemon', 'stop');
+let prepared = false;
 try {
   const prepareResult = runAgentDevice(
     'prepare',
@@ -79,7 +80,8 @@ try {
     throw new Error(
       `Agent Device iOS runner preflight exited ${prepareResult.status ?? prepareResult.signal}`
     );
+  prepared = true;
 } finally {
-  runAgentDevice('daemon', 'stop');
+  if (!prepared) runAgentDevice('daemon', 'stop');
   stopDefaultDaemon();
 }

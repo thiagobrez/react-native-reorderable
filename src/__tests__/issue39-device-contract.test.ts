@@ -837,8 +837,12 @@ console.log(JSON.stringify({
     expect(isolatedRunner).toContain('scenarios.filter(({ platforms }) =>');
     expect(isolatedRunner).toContain("'--testNamePattern'");
     expect(isolatedRunner).toContain("driver === 'agent-device' && !passed");
+    expect(isolatedRunner).toContain('const hasObservedScenarioOutcome =');
     expect(isolatedRunner).toContain(
-      'const reachedContractAssertion = existsSync(outcomeFile)'
+      'Object.hasOwn(report.outcomes ?? {}, scenarioId)'
+    );
+    expect(isolatedRunner).toContain(
+      'const reachedContractAssertion = hasObservedScenarioOutcome('
     );
     expect(isolatedRunner).not.toContain(
       "existsSync(resolve(agentDeviceRoot, scenario.id, 'gesture-start-marker.png'))"

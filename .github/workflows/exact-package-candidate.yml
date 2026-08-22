@@ -340,7 +340,14 @@ jobs:
         working-directory: ${{ runner.temp }}/ReorderableConsumer
         run: |
           npx tsc --noEmit
-          npx react-native config | node "$GITHUB_WORKSPACE/scripts/verify-consumer-autolinking.mjs"
+          if [[ '${{ matrix.kind }}' == 'expo' ]]; then
+            npx expo-modules-autolinking react-native-config \
+              --platform '${{ matrix.platform }}' \
+              --json
+          else
+            npx react-native config
+          fi | node "$GITHUB_WORKSPACE/scripts/verify-consumer-autolinking.mjs" \
+            --platform '${{ matrix.platform }}'
           node -e "const output=require('@babel/core').transformFileSync('worklet-smoke.ts',{configFile:require('node:path').resolve('babel.config.js')}).code;if(!output.includes('__workletHash'))process.exit(1)"
 
       - name: Compile Android with New Architecture and Hermes
@@ -356,6 +363,10 @@ jobs:
           USE_HERMES: 1
         run: |
           npx pod-install
+          if [[ '${{ matrix.versions.reactNative }}' == '0.82.1' ]]; then
+            node "$GITHUB_WORKSPACE/scripts/patch-fmt-consteval.mjs" \
+              ios/Pods/fmt/include/fmt/base.h
+          fi
           xcodebuild \
             -workspace ios/ReorderableConsumer.xcworkspace \
             -scheme ReorderableConsumer \
@@ -524,7 +535,7 @@ jobs:
       - name: Install the inspected tarball into the Scenario Lab
         run: |
           node scripts/install-candidate-in-example.mjs artifacts/candidate/react-native-reorderable.tgz
-          yarn install
+          yarn install --no-immutable
           test "$(node -p "require('./example/node_modules/react-native-reorderable/package.json').name")" = react-native-reorderable
 
       - name: Verify designated React Native baseline

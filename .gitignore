@@ -105,3 +105,6 @@ artifacts/issue-40/
 
 # Exact release candidate generated and uploaded by CI
 artifacts/candidate/
+
+# Local agent worktrees
+.claude/worktrees/

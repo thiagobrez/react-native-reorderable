@@ -211,7 +211,7 @@
       "customExportConditions": [
         "require",
         "react-native",
-        "<%- project.sourceCondition -%>"
+        "react-native-reorderable-source"
       ]
     },
     "modulePathIgnorePatterns": [
@@ -219,6 +219,10 @@
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
     ],
+    "moduleNameMapper": {
+      "^react-native-reorderable$": "<rootDir>/src/index.tsx",
+      "^react-native-reorderable/(flash-list|legend-list)$": "<rootDir>/src/$1.tsx"
+    },
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.js"
     ],

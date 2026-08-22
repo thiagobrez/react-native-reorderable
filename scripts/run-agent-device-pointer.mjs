@@ -100,6 +100,7 @@ if (platform === 'android') {
 
 const sessionName = `issue39-${scenarioId}`;
 const sessionDeviceArgs = platform === 'ios' ? ['--udid', targetId] : [];
+const agentDevice = resolve('node_modules/.bin/agent-device');
 const feedbackDirectory = resolve(
   process.env.ISSUE39_FEEDBACK_DIR ??
     `artifacts/issue-39/feedback/${configuration}/${scenarioId}`
@@ -119,15 +120,16 @@ const replayEnvironment = {
   ...process.env,
   AGENT_DEVICE_STATE_DIR: replayStateRoot,
 };
-await execFileAsync('yarn', ['agent-device', 'daemon', 'stop'], {
+await execFileAsync(agentDevice, ['daemon', 'stop'], {
   env: replayEnvironment,
 }).catch(() => undefined);
 const runSessionCommand = (...args) =>
-  execFileAsync(
-    'yarn',
-    ['agent-device', ...args, '--session', sessionName, ...sessionDeviceArgs],
-    { env: replayEnvironment }
-  );
+  execFileAsync(agentDevice, [
+    ...args,
+    '--session',
+    sessionName,
+    ...sessionDeviceArgs,
+  ], { env: replayEnvironment });
 const screenshot = async (path) => {
   if (platform === 'android') {
     const { stdout } = await execFileAsync(
@@ -196,9 +198,8 @@ try {
     .then(({ mtimeMs }) => mtimeMs)
     .catch(() => 0);
   replay = spawn(
-    'yarn',
+    agentDevice,
     [
-      'agent-device',
       'replay',
       replayPath,
       '--platform',
@@ -302,7 +303,7 @@ try {
     if (!replayExited) replay.kill('SIGKILL');
   }
   await runSessionCommand('close').catch(() => undefined);
-  await execFileAsync('yarn', ['agent-device', 'daemon', 'stop'], {
+  await execFileAsync(agentDevice, ['daemon', 'stop'], {
     env: replayEnvironment,
   }).catch(() => undefined);
 }

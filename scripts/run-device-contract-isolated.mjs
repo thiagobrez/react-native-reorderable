@@ -20,6 +20,18 @@ const pointerDrivers = JSON.parse(
 const applicable = scenarios.filter(({ platforms }) =>
   platforms.includes(platform)
 );
+const requiresAgentDevice = applicable.some(
+  ({ id }) =>
+    pointerDrivers.routes?.[configuration]?.[id] === 'agent-device'
+);
+if (platform === 'ios' && requiresAgentDevice) {
+  const preflight = spawnSync(
+    process.execPath,
+    ['scripts/prepare-agent-device-ios-runner.mjs', configuration],
+    { stdio: 'inherit', timeout: 600000 }
+  );
+  if (preflight.status !== 0) process.exit(75);
+}
 const artifactRoot = resolve(
   'artifacts/issue-39/detox',
   configuration,
@@ -126,7 +138,7 @@ for (const scenario of applicable) {
     !passed &&
     (result.status == null || result.signal != null || !reachedContractAssertion);
   if (driver === 'agent-device' && !passed) {
-    spawnSync('yarn', ['agent-device', 'daemon', 'stop'], {
+    spawnSync(resolve('node_modules/.bin/agent-device'), ['daemon', 'stop'], {
       env: {
         ...process.env,
         AGENT_DEVICE_STATE_DIR: resolve(

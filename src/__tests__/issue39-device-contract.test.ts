@@ -629,6 +629,9 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain('gestureMarkerPath');
     expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain("'screencap'");
+    expect(agentDeviceRunner).toContain(
+      "resolve('node_modules/.bin/agent-device')"
+    );
   });
 
   it('derives focused action-smoke discovery and outcomes from exact public labels', () => {
@@ -748,6 +751,9 @@ console.log(JSON.stringify({
   it('isolates every device row and waits for drag dispatch before system interruption', () => {
     const runner = read('e2e/contracts/portable-contract.e2e.cjs');
     const isolatedRunner = read('scripts/run-device-contract-isolated.mjs');
+    const iosRunnerPreflight = read(
+      'scripts/prepare-agent-device-ios-runner.mjs'
+    );
     const jobRunner = read('scripts/run-device-contract-job.mjs');
     const workflow = read('.github/workflows/exact-package-candidate.yml');
 
@@ -767,7 +773,26 @@ console.log(JSON.stringify({
     expect(isolatedRunner).toContain("driver === 'agent-device' && !passed");
     expect(isolatedRunner).toContain('scenario.id');
     expect(isolatedRunner).toContain('timeout: 240000');
+    expect(isolatedRunner).toContain(
+      "'scripts/prepare-agent-device-ios-runner.mjs'"
+    );
+    expect(
+      isolatedRunner.indexOf('prepare-agent-device-ios-runner')
+    ).toBeLessThan(
+      isolatedRunner.indexOf('for (const scenario of applicable)')
+    );
+    expect(isolatedRunner).toContain('process.exit(75)');
+    expect(isolatedRunner).toContain(
+      "resolve('node_modules/.bin/agent-device')"
+    );
     expect(isolatedRunner).not.toMatch(/retry|retries/i);
+    expect(iosRunnerPreflight).toMatch(
+      /runAgentDevice\(\s*'prepare',\s*'ios-runner'/
+    );
+    expect(iosRunnerPreflight).toMatch(/'--timeout',\s*'300000'/);
+    expect(iosRunnerPreflight).toMatch(
+      /finally \{\s*runAgentDevice\('daemon', 'stop'\)/
+    );
     expect(jobRunner).toContain('scripts/run-device-contract-isolated.mjs');
     expect(workflow).toContain('scripts/run-device-contract-job.mjs');
   });

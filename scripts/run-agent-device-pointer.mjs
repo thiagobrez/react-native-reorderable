@@ -270,23 +270,32 @@ try {
       await wait(pointerTiming.sampleIntervalMs);
   }
   const replayResult = await replayExit;
-  if (replayResult !== 0)
-    throw new Error(`Agent Device replay exited ${replayResult}`);
-  for (const label of expectedLabels)
-    await runSessionCommand('wait', label, '15000', '--depth', '100');
-  const snapshotResult = await runSessionCommand(
-    'snapshot',
-    '--force-full',
-    '--depth',
-    '100',
-    '--json'
-  );
-  const snapshot = JSON.parse(snapshotResult.stdout);
-  const observedOutcome = observedLabelsFromSnapshot(
-    snapshot,
-    expectedLabels,
-    'reorderable.example'
-  );
+  let snapshot;
+  let observedOutcome;
+  try {
+    for (const label of expectedLabels)
+      await runSessionCommand('wait', label, '15000', '--depth', '100');
+    const snapshotResult = await runSessionCommand(
+      'snapshot',
+      '--force-full',
+      '--depth',
+      '100',
+      '--json'
+    );
+    snapshot = JSON.parse(snapshotResult.stdout);
+    observedOutcome = observedLabelsFromSnapshot(
+      snapshot,
+      expectedLabels,
+      'reorderable.example'
+    );
+  } catch (observationError) {
+    if (replayResult !== 0)
+      throw new Error(
+        `Agent Device replay exited ${replayResult} and terminal observation failed`,
+        { cause: observationError }
+      );
+    throw observationError;
+  }
   await writeFile(
     resolve(recordingDirectory, 'terminal-accessibility.json'),
     `${JSON.stringify(snapshot, null, 2)}\n`

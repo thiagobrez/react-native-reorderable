@@ -657,6 +657,13 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain('acceptDeepLinkPrompt');
     expect(agentDeviceRunner).toContain('Date.now() + 180000');
     expect(agentDeviceRunner).toMatch(/'--timeout',\s*'180000'/);
+    expect(
+      agentDeviceRunner.indexOf('const replayResult = await replayExit')
+    ).toBeLessThan(agentDeviceRunner.indexOf("await runSessionCommand('wait'"));
+    expect(agentDeviceRunner).toContain('and terminal observation failed');
+    expect(agentDeviceRunner).not.toMatch(
+      /if \(replayResult !== 0\)\s*throw new Error\(`Agent Device replay exited/
+    );
     expect(agentDeviceRunner).toContain(
       "resolve('node_modules/.bin/agent-device')"
     );

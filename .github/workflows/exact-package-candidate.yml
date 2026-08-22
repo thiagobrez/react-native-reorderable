@@ -556,6 +556,7 @@ jobs:
             bundle install
             bundle exec pod install --project-directory=ios
           )
+          yarn detox build-framework-cache
           yarn detox build --configuration '${{ matrix.configuration }}'
 
       - name: Run Apple contract with one retained whole-job retry

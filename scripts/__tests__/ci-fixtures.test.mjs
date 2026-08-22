@@ -66,6 +66,18 @@ test('root-level Apple workflows run CocoaPods from the bare example', () => {
   }
 });
 
+test('Apple contract jobs prepare the Detox framework cache explicitly', () => {
+  const workflow = readFileSync(
+    resolve(repository, '.github/workflows/exact-package-candidate.yml'),
+    'utf8'
+  );
+
+  assert.match(
+    workflow,
+    /yarn detox build-framework-cache[\s\S]*?yarn detox build --configuration/
+  );
+});
+
 test('Expo clean consumers do not install the React Native community CLI', () => {
   const fixture = mkdtempSync(resolve(tmpdir(), 'reorderable-consumer-'));
   writeFileSync(

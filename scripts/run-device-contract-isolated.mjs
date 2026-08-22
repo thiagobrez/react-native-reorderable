@@ -144,10 +144,10 @@ for (const scenario of applicable) {
           }
         );
   const passed = result.status === 0;
-  const reachedContractAssertion =
-    existsSync(outcomeFile) ||
-    (driver === 'agent-device' &&
-      existsSync(resolve(agentDeviceRoot, scenario.id, 'gesture-start-marker.png')));
+  // Agent Device writes the outcome only after observing the exact public
+  // terminal state. A gesture marker proves injection started, not that the
+  // device session remained healthy enough to make a contract assertion.
+  const reachedContractAssertion = existsSync(outcomeFile);
   const infrastructureFailure =
     !passed &&
     (result.status == null || result.signal != null || !reachedContractAssertion);

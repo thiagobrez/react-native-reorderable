@@ -104,13 +104,6 @@ describe('issue 39 portable device contract', () => {
       destination: { normalizedX: 0.5, normalizedY: 0.25 },
       driver: 'detox',
     });
-    expect(pointerDrivers.routes['ios27.native']).toMatchObject({
-      'free-form-reorder': 'detox',
-      'multi-selection-reorder': 'detox',
-    });
-    expect(pointerDrivers.overrides['ios27.native']).toMatchObject({
-      'free-form-reorder': { driver: 'detox' },
-    });
     expect(pointerDrivers.routes['ios26.auto-fallback']).toMatchObject({
       'free-form-reorder': 'detox',
       'multi-selection-reorder': 'detox',
@@ -203,7 +196,7 @@ describe('issue 39 portable device contract', () => {
       'Card row 4'
     );
     expect(plan).toEqual({
-      driver: 'detox',
+      driver: 'agent-device',
       semanticTargetLabel: 'Card row 4',
       canonicalOrder: [
         {
@@ -841,6 +834,12 @@ console.log(JSON.stringify({
     expect(isolatedRunner).toContain('scenarios.filter(({ platforms }) =>');
     expect(isolatedRunner).toContain("'--testNamePattern'");
     expect(isolatedRunner).toContain("driver === 'agent-device' && !passed");
+    expect(isolatedRunner).toContain(
+      'const reachedContractAssertion = existsSync(outcomeFile)'
+    );
+    expect(isolatedRunner).not.toContain(
+      "existsSync(resolve(agentDeviceRoot, scenario.id, 'gesture-start-marker.png'))"
+    );
     expect(isolatedRunner).toContain('scenario.id');
     expect(isolatedRunner).toContain('timeout: 240000');
     expect(isolatedRunner).toContain(

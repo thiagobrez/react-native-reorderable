@@ -24,7 +24,7 @@
         }
       },
       "free-form-reorder": {
-        "driver": "detox",
+        "driver": "agent-device",
         "semanticTargetLabel": "Card row 4",
         "canonicalOrder": [
           {
@@ -183,7 +183,7 @@
   },
   "routes": {
     "ios27.native": {
-      "free-form-reorder": "detox",
+      "free-form-reorder": "agent-device",
       "virtualized-list-reorder": "agent-device",
       "section-list-reorder": "agent-device",
       "multi-selection-reorder": "detox",

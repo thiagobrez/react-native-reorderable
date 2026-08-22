@@ -151,9 +151,12 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             echo "sha=$PR_BASE_SHA" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            echo "sha=$PUSH_BEFORE_SHA" >> "$GITHUB_OUTPUT"
           else
             echo "sha=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
           fi
@@ -543,12 +546,14 @@ jobs:
 
       - name: Verify Apple runtime and prepare native app
         if: runner.os == 'macOS'
+        env:
+          BUNDLE_GEMFILE: example/Gemfile
         run: |
           xcrun simctl list runtimes | grep -F '${{ matrix.runtime }}'
           brew tap wix/brew
           brew trust --formula wix/brew/applesimutils
           brew install wix/brew/applesimutils
-          bundle install --gemfile example/Gemfile
+          bundle install
           bundle exec pod install --project-directory=example/ios
           yarn detox build --configuration '${{ matrix.configuration }}'
 

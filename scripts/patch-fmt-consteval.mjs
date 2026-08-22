@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
 
 const headerArgument = process.argv[2];
@@ -20,4 +25,10 @@ assert.ok(
   'Expected the fmt 11.0.2 consteval branch'
 );
 
-writeFileSync(headerPath, source.replace(vulnerable, workaround));
+const originalMode = statSync(headerPath).mode & 0o777;
+chmodSync(headerPath, originalMode | 0o200);
+try {
+  writeFileSync(headerPath, source.replace(vulnerable, workaround));
+} finally {
+  chmodSync(headerPath, originalMode);
+}

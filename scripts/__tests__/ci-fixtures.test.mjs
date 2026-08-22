@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -41,6 +47,23 @@ test('Scenario Lab permits the candidate tarball to update the temporary lockfil
     workflow,
     /expo-modules-autolinking react-native-config[\s\S]*?--platform '\$\{\{ matrix\.platform \}\}'[\s\S]*?--json/
   );
+  assert.match(
+    workflow,
+    /EVENT_NAME: \$\{\{ github\.event_name \}\}[\s\S]*?PUSH_BEFORE_SHA: \$\{\{ github\.event\.before \}\}[\s\S]*?sha=\$PUSH_BEFORE_SHA/
+  );
+});
+
+test('root-level Apple workflows select the example Gemfile for CocoaPods', () => {
+  for (const workflowPath of [
+    '.github/workflows/exact-package-candidate.yml',
+    '.github/workflows/physical-performance.yml',
+  ]) {
+    const workflow = readFileSync(resolve(repository, workflowPath), 'utf8');
+    assert.match(
+      workflow,
+      /BUNDLE_GEMFILE: example\/Gemfile[\s\S]*?bundle exec pod install --project-directory=example\/ios/
+    );
+  }
 });
 
 test('Expo clean consumers do not install the React Native community CLI', () => {
@@ -110,6 +133,7 @@ test('the fmt workaround disables only the vulnerable 11.0.2 consteval branch', 
 #  define FMT_USE_CONSTEVAL 1
 `
   );
+  chmodSync(header, 0o444);
 
   const patcher = resolve(repository, 'scripts/patch-fmt-consteval.mjs');
   execFileSync(process.execPath, [patcher, header]);
@@ -124,4 +148,5 @@ test('the fmt workaround disables only the vulnerable 11.0.2 consteval branch', 
     patched,
     /#elif FMT_GCC_VERSION >= 1002 \|\| FMT_CLANG_VERSION >= 1101\n#  define FMT_USE_CONSTEVAL 1/
   );
+  assert.equal(statSync(header).mode & 0o777, 0o444);
 });

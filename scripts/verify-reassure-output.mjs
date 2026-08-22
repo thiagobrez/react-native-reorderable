@@ -75,6 +75,7 @@ export function verifyReassureOutput(
 
   for (const entry of output.significant ?? []) {
     if (
+      !entry.name.startsWith('paired plain ') &&
       entry.isDurationDiffSignificant === true &&
       typeof entry.durationDiff === 'number' &&
       entry.durationDiff > 0 &&

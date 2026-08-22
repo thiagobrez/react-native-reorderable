@@ -23,9 +23,11 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Build signed Release app
+        env:
+          BUNDLE_GEMFILE: example/Gemfile
         run: |
           yarn prepare
-          bundle install --gemfile example/Gemfile
+          bundle install
           bundle exec pod install --project-directory=example/ios
           xcodebuild \
             -workspace example/ios/ReorderableExample.xcworkspace \

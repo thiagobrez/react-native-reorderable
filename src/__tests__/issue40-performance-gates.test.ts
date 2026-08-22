@@ -204,6 +204,25 @@ describe('issue #40 publication gates', () => {
     ]);
   });
 
+  it('uses paired plain scenarios as timing controls', () => {
+    const measurement = {
+      name: 'paired plain FlatList critical render path',
+      baseline: { meanCount: 2 },
+      current: { meanCount: 2 },
+      durationDiff: 0.101,
+      isDurationDiffSignificant: true,
+    };
+
+    expect(
+      evaluateVerifier(
+        'scripts/verify-reassure-output.mjs',
+        `verifier.verifyReassureOutput(${JSON.stringify({
+          significant: [measurement],
+        })}, undefined, [])`
+      )
+    ).toEqual([]);
+  });
+
   it('only accepts a duration regression with an auditable reason', () => {
     const baselineCommit = 'a'.repeat(40);
     const measurement = {

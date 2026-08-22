@@ -546,15 +546,16 @@ jobs:
 
       - name: Verify Apple runtime and prepare native app
         if: runner.os == 'macOS'
-        env:
-          BUNDLE_GEMFILE: example/Gemfile
         run: |
           xcrun simctl list runtimes | grep -F '${{ matrix.runtime }}'
           brew tap wix/brew
           brew trust --formula wix/brew/applesimutils
           brew install wix/brew/applesimutils
-          bundle install
-          bundle exec pod install --project-directory=example/ios
+          (
+            cd example
+            bundle install
+            bundle exec pod install --project-directory=ios
+          )
           yarn detox build --configuration '${{ matrix.configuration }}'
 
       - name: Run Apple contract with one retained whole-job retry

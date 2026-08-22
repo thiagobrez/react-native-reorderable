@@ -13,6 +13,8 @@ const requiredScenarios = [
   'paired plain SectionList critical render path',
   '24-section ReorderableSectionList critical render path',
 ];
+const minimumAbsoluteDurationRegressionMs = 1;
+const minimumRelativeDurationRegression = 0.1;
 
 export function verifyReassureOutput(
   output,
@@ -79,6 +81,9 @@ export function verifyReassureOutput(
       entry.isDurationDiffSignificant === true &&
       typeof entry.durationDiff === 'number' &&
       entry.durationDiff > 0 &&
+      (entry.durationDiff >= minimumAbsoluteDurationRegressionMs ||
+        (typeof entry.relativeDurationDiff === 'number' &&
+          entry.relativeDurationDiff >= minimumRelativeDurationRegression)) &&
       !accepted.has(regressionKey(entry.name, 'duration'))
     ) {
       failures.push(

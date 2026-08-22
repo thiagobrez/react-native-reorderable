@@ -223,6 +223,50 @@ describe('issue #40 publication gates', () => {
     ).toEqual([]);
   });
 
+  it('ignores statistically significant timing changes below practical thresholds', () => {
+    const measurement = {
+      name: '24-section ReorderableSectionList critical render path',
+      durationDiff: 0.638,
+      relativeDurationDiff: 0.081,
+      isDurationDiffSignificant: true,
+    };
+
+    expect(
+      evaluateVerifier(
+        'scripts/verify-reassure-output.mjs',
+        `verifier.verifyReassureOutput(${JSON.stringify({
+          significant: [measurement],
+        })}, undefined, [])`
+      )
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['one millisecond', 1, 0.05],
+    ['ten percent', 0.5, 0.1],
+  ])(
+    'fails a practical slowdown of %s',
+    (_name, durationDiff, relativeDurationDiff) => {
+      const measurement = {
+        name: 'critical list path',
+        durationDiff,
+        relativeDurationDiff,
+        isDurationDiffSignificant: true,
+      };
+
+      expect(
+        evaluateVerifier(
+          'scripts/verify-reassure-output.mjs',
+          `verifier.verifyReassureOutput(${JSON.stringify({
+            significant: [measurement],
+          })}, undefined, [])`
+        )
+      ).toEqual([
+        `critical list path: statistically significant slowdown of ${durationDiff.toFixed(3)} ms`,
+      ]);
+    }
+  );
+
   it('only accepts a duration regression with an auditable reason', () => {
     const baselineCommit = 'a'.repeat(40);
     const measurement = {

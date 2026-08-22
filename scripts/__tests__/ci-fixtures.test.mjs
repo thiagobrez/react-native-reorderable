@@ -53,7 +53,7 @@ test('Scenario Lab permits the candidate tarball to update the temporary lockfil
   );
 });
 
-test('root-level Apple workflows select the example Gemfile for CocoaPods', () => {
+test('root-level Apple workflows run CocoaPods from the bare example', () => {
   for (const workflowPath of [
     '.github/workflows/exact-package-candidate.yml',
     '.github/workflows/physical-performance.yml',
@@ -61,7 +61,7 @@ test('root-level Apple workflows select the example Gemfile for CocoaPods', () =
     const workflow = readFileSync(resolve(repository, workflowPath), 'utf8');
     assert.match(
       workflow,
-      /BUNDLE_GEMFILE: example\/Gemfile[\s\S]*?bundle exec pod install --project-directory=example\/ios/
+      /cd example[\s\S]*?bundle install[\s\S]*?bundle exec pod install --project-directory=ios/
     );
   }
 });

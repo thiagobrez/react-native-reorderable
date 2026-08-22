@@ -832,6 +832,16 @@ console.log(JSON.stringify({
       /runAgentDevice\(\s*'prepare',\s*'ios-runner'/
     );
     expect(iosRunnerPreflight).toMatch(/'--timeout',\s*'300000'/);
+    expect(iosRunnerPreflight).toContain(
+      "runSessionCommand('alert', 'accept')"
+    );
+    expect(iosRunnerPreflight).toContain(
+      "runSessionCommand('open', 'reorderable.example', '--relaunch')"
+    );
+    expect(iosRunnerPreflight).toContain(
+      "runSessionCommand('wait', initialOutcome, '15000', '--depth', '100')"
+    );
+    expect(iosRunnerPreflight).toContain("'deep-link-confirmed'");
     expect(iosRunnerPreflight).toContain('let prepared = false');
     expect(iosRunnerPreflight).toMatch(
       /if \(!prepared\) runAgentDevice\('daemon', 'stop'\)/

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const configuration = process.argv[2];
@@ -51,8 +52,28 @@ const environment = {
   ...process.env,
   AGENT_DEVICE_STATE_DIR: stateRoot,
 };
+const deepLinkConfirmationMarker = resolve(
+  stateRoot,
+  'deep-link-confirmed'
+);
 const runAgentDevice = (...args) =>
   run(agentDevice, args, { env: environment });
+const runSessionCommand = (...args) =>
+  runAgentDevice(
+    ...args,
+    '--platform',
+    'ios',
+    '--session',
+    sessionName,
+    '--udid',
+    target.udid
+  );
+const requireSuccess = (result, description) => {
+  if (result.status !== 0)
+    throw new Error(
+      `${description} exited ${result.status ?? result.signal}`
+    );
+};
 const defaultEnvironment = { ...process.env };
 delete defaultEnvironment.AGENT_DEVICE_STATE_DIR;
 const stopDefaultDaemon = () => {
@@ -80,6 +101,42 @@ try {
     throw new Error(
       `Agent Device iOS runner preflight exited ${prepareResult.status ?? prepareResult.signal}`
     );
+  const engine = configuration === 'ios27.fallback' ? 'fallback' : 'auto';
+  const deepLink = `reorderable://lab/free-form?preset=teaching&engine=${engine}`;
+  const initialOutcome =
+    'Current order: card-0, card-1, card-2, card-3, card-4, card-5';
+  requireSuccess(
+    runSessionCommand('open', 'reorderable.example', '--relaunch'),
+    'Scenario Lab preflight launch'
+  );
+  requireSuccess(
+    runSessionCommand('wait', 'Scenario Lab', '15000', '--depth', '100'),
+    'Scenario Lab preflight readiness'
+  );
+  requireSuccess(
+    runSessionCommand('open', deepLink),
+    'Scenario Lab URL confirmation seed'
+  );
+  runSessionCommand('alert', 'accept');
+  requireSuccess(
+    runSessionCommand('open', 'reorderable.example', '--relaunch'),
+    'Scenario Lab post-confirmation relaunch'
+  );
+  requireSuccess(
+    runSessionCommand('wait', 'Scenario Lab', '15000', '--depth', '100'),
+    'Scenario Lab post-confirmation readiness'
+  );
+  requireSuccess(
+    runSessionCommand('open', deepLink),
+    'Scenario Lab preflight deep link'
+  );
+  requireSuccess(
+    runSessionCommand('wait', initialOutcome, '15000', '--depth', '100'),
+    'Scenario Lab preflight deep-link outcome'
+  );
+  mkdirSync(stateRoot, { recursive: true });
+  writeFileSync(deepLinkConfirmationMarker, '');
+  runSessionCommand('close');
   prepared = true;
 } finally {
   if (!prepared) runAgentDevice('daemon', 'stop');

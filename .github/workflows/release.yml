@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [Exact package candidate]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  mode:
+    name: Select release operation from verified main
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - name: Checkout the verified commit
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Require ordinary push gates for the same commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          for workflow in ci.yml docs.yml; do
+            conclusion=$(gh run list \
+              --workflow "$workflow" \
+              --commit "$RELEASE_COMMIT" \
+              --event push \
+              --limit 10 \
+              --json conclusion,status \
+              --jq '[.[] | select(.status == "completed")][0].conclusion')
+            test "$conclusion" = success
+          done
+
+      - name: Select Changesets mode
+        id: mode
+        run: node scripts/select-release-mode.mjs
+
+  version:
+    name: Create or update the release pull request
+    needs: mode
+    if: needs.mode.outputs.mode == 'version'
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the verified commit
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Maintain Changesets release pull request
+        uses: changesets/action/version@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          github-token: ${{ github.token }}
+          script: yarn release:version
+          commit-message: 'chore: version package'
+          pr-title: 'chore: release package'
+          pr-base-branch: main
+
+  publish:
+    name: Publish the verified npm artifact
+    needs: mode
+    if: needs.mode.outputs.mode == 'publish'
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    environment: npm
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - name: Checkout the verified release commit
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Use an npm client with trusted-publishing support
+        run: npm install --global npm@11.19.0
+
+      - name: Download the artifact approved by the full compatibility matrix
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: verified-release-candidate
+          path: artifacts/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Publish the already verified tarball
+        id: publish
+        env:
+          RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          yarn release:publish
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create the matching tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            tag_commit=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha)
+            test "$tag_commit" = "$RELEASE_COMMIT"
+          else
+            gh release create "$tag" \
+              --target "$RELEASE_COMMIT" \
+              --title "react-native-reorderable@$version" \
+              --generate-notes
+          fi
+
+  deploy-docs:
+    name: Deploy documentation for the published release
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the published release
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build version-matched documentation
+        run: yarn docs:build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: doc_build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

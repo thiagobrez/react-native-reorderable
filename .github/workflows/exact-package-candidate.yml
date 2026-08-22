@@ -19,6 +19,7 @@ on:
         options:
           - nightly
           - prerelease
+          - dry-run
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,7 +45,7 @@ jobs:
 
       - name: Inspect metadata, contents, entrypoints, and type surfaces
         env:
-          CANDIDATE_CHANNEL: ${{ inputs.channel || (github.event_name == 'schedule' && 'nightly') || 'pull-request' }}
+          CANDIDATE_CHANNEL: ${{ inputs.channel || (github.event_name == 'schedule' && 'nightly') || (github.event_name == 'push' && 'release') || 'pull-request' }}
         run: |
           node scripts/verify-package-artifact.mjs \
             artifacts/candidate/react-native-reorderable.tgz \
@@ -113,6 +114,7 @@ jobs:
           yarn lint
           yarn typecheck
           yarn test --maxWorkers=2 --coverage
+          yarn test:release
           yarn docs:api:check
           node scripts/verify-package-artifact.mjs artifacts/candidate/react-native-reorderable.tgz
 
@@ -673,6 +675,16 @@ jobs:
       - parity
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout dry-run publisher
+        if: github.event_name == 'workflow_dispatch' && inputs.channel == 'dry-run'
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node.js for dry-run publication
+        if: github.event_name == 'workflow_dispatch' && inputs.channel == 'dry-run'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
       - name: Download candidate that passed every required gate
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -693,3 +705,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           path: artifacts/candidate/
+
+      - name: Prove the would-be npm publication without releasing
+        if: github.event_name == 'workflow_dispatch' && inputs.channel == 'dry-run'
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          npm install --global npm@11.19.0
+          node scripts/publish-verified-candidate.mjs \
+            artifacts/candidate/react-native-reorderable.tgz \
+            --dry-run \
+            --tag next

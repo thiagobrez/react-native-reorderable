@@ -65,6 +65,10 @@
     "docs:dev": "yarn docs:api && yarn workspace react-native-reorderable-docs dev",
     "docs:build": "yarn docs:api:check && yarn workspace react-native-reorderable-docs build",
     "docs:preview": "yarn workspace react-native-reorderable-docs preview",
+    "changeset": "node scripts/changeset-root.mjs",
+    "release:version": "node scripts/changeset-root.mjs version",
+    "release:publish": "node scripts/publish-verified-candidate.mjs",
+    "test:release": "node --test scripts/__tests__/*.test.mjs",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest"
@@ -92,6 +96,8 @@
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "1.0.0",
+    "@changesets/cli": "3.0.1",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/compat": "^2.1.0",
     "@eslint/eslintrc": "^3.3.5",

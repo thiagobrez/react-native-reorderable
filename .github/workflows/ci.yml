@@ -47,6 +47,9 @@ jobs:
       - name: Run unit tests
         run: yarn test --maxWorkers=2 --coverage
 
+      - name: Run release-policy tests
+        run: yarn test:release
+
   build-library:
     runs-on: ubuntu-latest
 
@@ -168,4 +171,3 @@ jobs:
       - name: Build example for iOS
         run: |
           yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
-

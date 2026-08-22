@@ -23,6 +23,8 @@ Keep a pull request focused on one change and discuss new public API in GitHub D
 yarn changeset
 ```
 
+The release surface is `src/`, `ios/`, `android/`, `cpp/`, `Reorderable.podspec`, and `package.json`. Changes confined to tests, examples, benchmarks, documentation, CI, agent metadata, or development tooling are exempt. If a release-surface change deliberately needs no release note, a maintainer with write access may post the exact comment `No changeset needed`; that approval applies only to the current pull-request commit and a new push invalidates it.
+
 Run the relevant checks:
 
 ```sh
@@ -45,4 +47,4 @@ Teaching examples live in the example app so normal TypeScript checks keep them 
 
 ## Commits and pull requests
 
-Use Conventional Commit subjects such as `fix:`, `feat:`, `docs:`, `test:`, `refactor:`, or `chore:`. Explain the public behavior, evidence, and documentation impact in the pull request. Maintainers decide release timing; the compatibility matrix is not a maintenance cadence, SLA, continuity, or backport promise.
+Use Conventional Commit subjects such as `fix:`, `feat:`, `docs:`, `test:`, `refactor:`, or `chore:`. Explain the public behavior, evidence, and documentation impact in the pull request. Maintainers decide release timing; the compatibility matrix is not a maintenance cadence, SLA, continuity, or backport promise. The repository-owned maintainer procedure is documented in [Releasing](./docs/releasing.md).

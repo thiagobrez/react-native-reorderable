@@ -1,0 +1,36 @@
+name: Changeset requirement
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+concurrency:
+  group: changeset-requirement-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  enforce:
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request && github.event.comment.body == 'No changeset needed')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted policy implementation
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Evaluate release intent for the current head
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REQUIREMENT_EVENT: ${{ github.event_name }}
+          COMMENT_ACTION: ${{ github.event.action }}
+          COMMENT_LOGIN: ${{ github.event.comment.user.login }}
+        run: node scripts/check-release-intent.mjs

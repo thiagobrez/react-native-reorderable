@@ -577,7 +577,10 @@ jobs:
           api-level: 36
           arch: x86_64
           target: google_apis
-          profile: pixel_7_pro
+          # Keep API 36 coverage without the 1440x3120 Pixel 7 Pro profile:
+          # GitHub runners cannot reliably encode or render that profile and
+          # the resulting launcher ANR prevents Detox from opening its socket.
+          profile: pixel_2
           avd-name: Pixel_10_Pro
           disable-animations: false
           script: |

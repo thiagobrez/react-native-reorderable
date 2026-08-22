@@ -769,6 +769,9 @@ console.log(JSON.stringify({
     expect(isolatedRunner).toContain("failureKind === 'infrastructure'");
     expect(isolatedRunner).toContain('infrastructureFailure ? 75 : 1');
     expect(workflow).toContain('timeout-minutes: 150');
+    expect(workflow).toContain('api-level: 36');
+    expect(workflow).toContain('profile: pixel_2');
+    expect(workflow).not.toContain('profile: pixel_7_pro');
   });
 
   it('keeps the physical iOS 27 VoiceOver record tied to the named public contract', () => {

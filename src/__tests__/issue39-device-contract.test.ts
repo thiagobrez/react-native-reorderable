@@ -112,14 +112,14 @@ describe('issue 39 portable device contract', () => {
     });
     expect(pointerDrivers.routes['ios26.auto-fallback']).toMatchObject({
       'free-form-reorder': 'detox',
-      'multi-selection-reorder': 'detox',
+      'multi-selection-reorder': 'agent-device',
       'scoped-drop': 'agent-device',
       'section-list-reorder': 'agent-device',
       'virtualized-list-reorder': 'agent-device',
     });
     expect(pointerDrivers.overrides['ios26.auto-fallback']).toMatchObject({
       'free-form-reorder': { driver: 'detox' },
-      'multi-selection-reorder': { driver: 'detox' },
+      'multi-selection-reorder': { driver: 'agent-device' },
     });
     expect(pointerDrivers.routes['android.fallback']).toEqual({
       'free-form-reorder': 'detox',
@@ -564,6 +564,14 @@ describe('issue 39 portable device contract', () => {
         'android.fallback': 'Drop selected items here',
       },
     });
+    const analyzer = read('scripts/analyze-device-feedback.swift');
+    expect(analyzer).toMatch(
+      /beforeImage\.width \* afterImage\.height\s*== afterImage\.width \* beforeImage\.height/
+    );
+    expect(analyzer).toContain(
+      'afterImage, width: before.width, height: before.height'
+    );
+    expect(analyzer).not.toContain('Screenshot dimensions changed during hold');
   });
 
   it('requires exactly one feedback run for every canonical configuration/scenario pair', () => {

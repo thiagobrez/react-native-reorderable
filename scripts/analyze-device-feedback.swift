@@ -87,26 +87,50 @@ func exactLabel(_ labels: [Label], _ text: String, path: String) throws -> Label
   return match
 }
 
-func rgba(_ url: URL) throws -> (bytes: [UInt8], width: Int, height: Int) {
+func decodedImage(_ url: URL) throws -> CGImage {
   guard let image = NSImage(contentsOf: url),
         let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
   else { throw FeedbackError.message("Cannot load pixels from \(url.path)") }
-  let width = cg.width, height = cg.height, stride = width * 4
+  return cg
+}
+
+func rgba(
+  _ image: CGImage, width: Int? = nil, height: Int? = nil
+) throws -> (bytes: [UInt8], width: Int, height: Int) {
+  let width = width ?? image.width
+  let height = height ?? image.height
+  let stride = width * 4
   var bytes = [UInt8](repeating: 0, count: stride * height)
   guard let context = CGContext(
     data: &bytes, width: width, height: height, bitsPerComponent: 8,
     bytesPerRow: stride, space: CGColorSpaceCreateDeviceRGB(),
     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
   ) else { throw FeedbackError.message("Cannot create pixel context") }
-  context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+  context.interpolationQuality = .high
+  context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
   return (bytes, width, height)
 }
 
 func changeRatio(baseline: URL, sample: URL, region: Bounds) throws -> Double {
-  let before = try rgba(baseline), after = try rgba(sample)
-  guard before.width == after.width, before.height == after.height else {
-    throw FeedbackError.message("Screenshot dimensions changed during hold")
+  let beforeImage = try decodedImage(baseline)
+  let afterImage = try decodedImage(sample)
+  guard
+    beforeImage.width * afterImage.height
+      == afterImage.width * beforeImage.height
+  else {
+    throw FeedbackError.message(
+      "Screenshot aspect ratio changed during hold: "
+        + "\(beforeImage.width)x\(beforeImage.height) to "
+        + "\(afterImage.width)x\(afterImage.height)"
+    )
   }
+  // Agent Device emits simulator screenshots in logical points while simctl
+  // emits physical pixels. Compare both at the baseline resolution when their
+  // aspect ratio is unchanged so capture scale is not mistaken for UI change.
+  let before = try rgba(beforeImage)
+  let after = try rgba(
+    afterImage, width: before.width, height: before.height
+  )
   // Vision's public OCR bounds define the crop. Vision uses a bottom-left
   // normalized origin, while the bitmap rows are addressed from the top.
   let x0 = max(0, Int(region.x * Double(before.width)))

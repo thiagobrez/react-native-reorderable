@@ -40,12 +40,17 @@ export function matchingLabels(labels, expected) {
     ({ text }) => text.trim().toLocaleLowerCase() === normalized
   );
   if (exact.length > 0) return exact;
-  // Vision can confuse one glyph in a moving, semi-transparent preview
-  // (specifically, "row" as "rom"). Normalize only that observed token;
+  // Vision can confuse glyphs in a moving, semi-transparent preview
+  // (observed as row -> rom/roin and Card -> Sard). Normalize only those
+  // observed tokens;
   // every other character, including the public numeric identity, stays exact.
   return labels.filter(({ text }) => {
-    const candidate = text.trim().toLocaleLowerCase();
-    return candidate.replace(/\brom\b/g, 'row') === normalized;
+    const candidate = text
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/\bsard\b/g, 'card')
+      .replace(/\b(?:rom|roin)\b/g, 'row');
+    return candidate === normalized;
   });
 }
 

@@ -608,7 +608,7 @@ console.log(JSON.stringify({
     });
   });
 
-  it('limits moving-preview OCR tolerance to row/rom without weakening identity', () => {
+  it('limits moving-preview OCR tolerance to observed glyph errors without weakening identity', () => {
     const verifierUrl = JSON.stringify(
       `file://${resolve(root, 'scripts/verify-device-feedback.mjs')}`
     );
@@ -622,6 +622,8 @@ console.log(JSON.stringify({
 const count = (texts, expected) => matchingLabels(texts.map((text) => ({ text })), expected).length;
 console.log(JSON.stringify({
   observedTypo: count(['Card rom 2'], 'Card row 2'),
+  observedSplitTypo: count(['Card roin 2'], 'Card row 2'),
+  observedLeadTypo: count(['Sard row 2'], 'Card row 2'),
   wrongNumericIdentity: count(['Card rom 3'], 'Card row 2'),
   duplicateCandidates: count(['Card rom 2', 'Card rom 2'], 'Card row 2'),
   missingSource: count([], 'Card row 2'),
@@ -634,6 +636,8 @@ console.log(JSON.stringify({
 
     expect(result).toEqual({
       observedTypo: 1,
+      observedSplitTypo: 1,
+      observedLeadTypo: 1,
       wrongNumericIdentity: 0,
       duplicateCandidates: 2,
       missingSource: 0,

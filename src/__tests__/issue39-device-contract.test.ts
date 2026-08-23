@@ -511,16 +511,12 @@ describe('issue 39 portable device contract', () => {
 
   it('verifies visible and legitimately occluded continuous feedback', () => {
     const verifier = resolve(root, 'scripts/verify-device-feedback.mjs');
+    const runReport = (path: string) =>
+      execFileSync(process.execPath, [verifier, '--case', path], {
+        encoding: 'utf8',
+      });
     const runFixture = (name: string) =>
-      execFileSync(
-        process.execPath,
-        [
-          verifier,
-          '--case',
-          resolve(root, `e2e/contracts/fixtures/${name}.json`),
-        ],
-        { encoding: 'utf8' }
-      );
+      runReport(resolve(root, `e2e/contracts/fixtures/${name}.json`));
 
     expect(runFixture('feedback-valid')).toContain(
       'Verified continuous feedback for 2 runs'
@@ -543,6 +539,30 @@ describe('issue 39 portable device contract', () => {
     expect(() => runFixture('feedback-insufficient-change')).toThrow(
       /occluded insertion band visual change 0\.01 is below 0\.02/
     );
+    const directory = mkdtempSync(resolve(tmpdir(), 'feedback-ocr-miss-'));
+    try {
+      const report = JSON.parse(
+        read('e2e/contracts/fixtures/feedback-occluded-valid.json')
+      ) as {
+        runs: Array<{
+          samples: Array<{ labels: Array<{ text: string }> }>;
+        }>;
+      };
+      report.runs[0]!.samples[0]!.labels = [];
+      const reportPath = resolve(directory, 'report.json');
+      writeFileSync(reportPath, JSON.stringify(report));
+      expect(runReport(reportPath)).toContain(
+        'Verified continuous feedback for 1 runs'
+      );
+
+      report.runs[0]!.samples[1]!.labels = [];
+      writeFileSync(reportPath, JSON.stringify(report));
+      expect(() => runReport(reportPath)).toThrow(
+        /expected source-position evidence in at least 2 of 3 hold samples, found 1/
+      );
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
     const feedbackSpecs = JSON.parse(
       read('e2e/contracts/feedback-specs.json')
     ) as {
@@ -680,6 +700,7 @@ console.log(JSON.stringify({
     expect(firstSampleMs).toBeGreaterThan(
       timing.sourceHoldMs + timing.moveBudgetMs
     );
+    expect(timing.settleMarginMs).toBeGreaterThanOrEqual(3500);
     expect(finalSampleMs).toBeLessThan(releaseMs);
     expect(releaseMs - finalSampleMs).toBeGreaterThanOrEqual(3000);
     expect(detoxRunner).toContain("require('./pointer-timing.json')");

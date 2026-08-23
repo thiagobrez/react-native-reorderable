@@ -89,6 +89,7 @@ export function verifyFeedbackReport(report, { enforceUniverse = true } = {}) {
         `${run.configuration}/${run.scenario}: expected at least ${MIN_SAMPLES} hold samples`
       );
     }
+    let sourcePositionSamples = 0;
     for (const sample of run.samples) {
       if (run.kind === 'reorder') {
         const baseline = {
@@ -97,7 +98,16 @@ export function verifyFeedbackReport(report, { enforceUniverse = true } = {}) {
         };
         const baselinePredecessor = uniqueLabel(baseline, run.predecessorLabel);
         const baselineTarget = uniqueLabel(baseline, run.targetLabel);
-        const source = uniqueLabel(sample, run.sourceLabel);
+        const sourceMatches = matchingLabels(
+          sample.labels ?? [],
+          run.sourceLabel
+        );
+        if (sourceMatches.length > 1) {
+          throw new Error(
+            `${sample.path}: expected exactly one public label ${JSON.stringify(run.sourceLabel)}, found ${sourceMatches.length}`
+          );
+        }
+        const source = sourceMatches[0];
         const predecessor = optionalUniqueLabel(sample, run.predecessorLabel);
         const target = optionalUniqueLabel(sample, run.targetLabel);
         const liveLabelsVisible = predecessor != null && target != null;
@@ -109,14 +119,17 @@ export function verifyFeedbackReport(report, { enforceUniverse = true } = {}) {
           centerY(liveLabelsVisible ? predecessor : baselinePredecessor),
           centerY(liveLabelsVisible ? target : baselineTarget)
         );
-        const sourcePosition = centerY(source);
-        if (!(sourcePosition > lower && sourcePosition < upper)) {
-          throw new Error(
-            `${sample.path}: floating ${run.sourceLabel} is not between ${run.predecessorLabel} and ${run.targetLabel}`
-          );
+        if (source != null) {
+          const sourcePosition = centerY(source);
+          if (!(sourcePosition > lower && sourcePosition < upper)) {
+            throw new Error(
+              `${sample.path}: floating ${run.sourceLabel} is not between ${run.predecessorLabel} and ${run.targetLabel}`
+            );
+          }
+          sourcePositionSamples += 1;
         }
         if (
-          !liveLabelsVisible &&
+          (source == null || !liveLabelsVisible) &&
           (typeof sample.destinationChangeRatio !== 'number' ||
             sample.destinationChangeRatio < MIN_DROP_CHANGE_RATIO)
         ) {
@@ -137,6 +150,14 @@ export function verifyFeedbackReport(report, { enforceUniverse = true } = {}) {
       } else {
         throw new Error(
           `${run.configuration}/${run.scenario}: unknown feedback kind ${run.kind}`
+        );
+      }
+    }
+    if (run.kind === 'reorder') {
+      const minimumPositionSamples = Math.floor(run.samples.length / 2) + 1;
+      if (sourcePositionSamples < minimumPositionSamples) {
+        throw new Error(
+          `${run.configuration}/${run.scenario}: expected source-position evidence in at least ${minimumPositionSamples} of ${run.samples.length} hold samples, found ${sourcePositionSamples}`
         );
       }
     }

@@ -78,6 +78,18 @@ test('Apple contract jobs prepare the Detox framework cache explicitly', () => {
   );
 });
 
+test('the minimum Android runtime invokes Gradle from its generated fixture', () => {
+  const workflow = readFileSync(
+    resolve(repository, '.github/workflows/exact-package-candidate.yml'),
+    'utf8'
+  );
+
+  assert.match(
+    workflow,
+    /cd "\$RUNNER_TEMP\/ReorderableConsumer\/android" && \.\/gradlew app:installDebug/
+  );
+});
+
 test('Expo clean consumers do not install the React Native community CLI', () => {
   const fixture = mkdtempSync(resolve(tmpdir(), 'reorderable-consumer-'));
   writeFileSync(

@@ -433,8 +433,7 @@ jobs:
           target: google_apis
           profile: pixel_2
           script: |
-            cd "$RUNNER_TEMP/ReorderableConsumer/android"
-            ./gradlew app:installDebug --no-daemon -PnewArchEnabled=true -PhermesEnabled=true
+            cd "$RUNNER_TEMP/ReorderableConsumer/android" && ./gradlew app:installDebug --no-daemon -PnewArchEnabled=true -PhermesEnabled=true
             adb shell am start -W -n com.reorderableconsumer/.MainActivity
 
   minimum-ios-runtime:

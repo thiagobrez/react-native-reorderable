@@ -592,6 +592,8 @@ describe('issue 39 portable device contract', () => {
       'afterImage, width: before.width, height: before.height'
     );
     expect(analyzer).not.toContain('Screenshot dimensions changed during hold');
+    expect(analyzer).toContain('trimmed.hasPrefix("\' ")');
+    expect(analyzer).toContain('String(trimmed.dropFirst(2))');
   });
 
   it('requires exactly one feedback run for every canonical configuration/scenario pair', () => {

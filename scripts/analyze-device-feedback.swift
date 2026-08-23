@@ -75,9 +75,16 @@ func recognize(_ url: URL) throws -> [Label] {
 }
 
 func exactLabel(_ labels: [Label], _ text: String, path: String) throws -> Label {
+  func comparable(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Vision can read the adjacent dashed destination border as a leading
+    // apostrophe at simulator point resolution. Remove only that observed
+    // prefix; the public label itself remains an exact match.
+    return trimmed.hasPrefix("' ") ? String(trimmed.dropFirst(2)) : trimmed
+  }
   let matches = labels.filter {
-    $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
-      .localizedCaseInsensitiveCompare(text) == .orderedSame
+    comparable($0.text).localizedCaseInsensitiveCompare(comparable(text))
+      == .orderedSame
   }
   guard matches.count == 1, let match = matches.first else {
     throw FeedbackError.message(

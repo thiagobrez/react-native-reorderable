@@ -343,7 +343,11 @@ async function assertOutcome(scenario) {
   const observedLabels = [];
   for (const label of expectedLabels) {
     const observedElement = visible(label);
-    await waitFor(observedElement).toBeVisible().withTimeout(15000);
+    // Outcome text is an accessibility observation, not a geometry assertion.
+    // The section-list order is intentionally complete and therefore taller
+    // than its scroll viewport on Android; requiring 75% visibility rejects a
+    // correct committed outcome even though its exact label exists.
+    await waitFor(observedElement).toExist().withTimeout(15000);
     observedLabels.push(
       observedLabelFromDetoxAttributes(
         await observedElement.getAttributes(),

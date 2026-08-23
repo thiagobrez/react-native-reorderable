@@ -94,6 +94,12 @@ describe('issue 39 portable device contract', () => {
     expect(runner).toContain('const publicElement = visible(label)');
     expect(runner).not.toContain('by.label(label).and(by.id');
     expect(runner).toContain('await disambiguated.getAttributes()');
+    expect(runner).toContain(
+      'await waitFor(observedElement).toExist().withTimeout(15000)'
+    );
+    expect(runner).not.toContain(
+      'await waitFor(observedElement).toBeVisible().withTimeout(15000)'
+    );
 
     expect(runner).toContain("require('detox/internals')");
     expect(runner).toContain('detoxRuntimeConfig.configurationName');

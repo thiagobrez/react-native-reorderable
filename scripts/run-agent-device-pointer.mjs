@@ -17,7 +17,7 @@ const pointerTiming = require('../e2e/contracts/pointer-timing.json');
 const feedbackFirstSampleMs =
   pointerTiming.sourceHoldMs +
   pointerTiming.moveBudgetMs +
-  pointerTiming.settleMarginMs;
+  pointerTiming.agentDeviceSettleMarginMs;
 const [configuration, scenarioId, outcomePath] = process.argv.slice(2);
 if (!configuration || !scenarioId || !outcomePath)
   throw new Error(
@@ -131,12 +131,11 @@ const replayEnvironment = {
   AGENT_DEVICE_STATE_DIR: replayStateRoot,
 };
 const runSessionCommand = (...args) =>
-  execFileAsync(agentDevice, [
-    ...args,
-    '--session',
-    sessionName,
-    ...sessionDeviceArgs,
-  ], { env: replayEnvironment });
+  execFileAsync(
+    agentDevice,
+    [...args, '--session', sessionName, ...sessionDeviceArgs],
+    { env: replayEnvironment }
+  );
 const screenshot = async (path) => {
   if (platform === 'android') {
     const { stdout } = await execFileAsync(

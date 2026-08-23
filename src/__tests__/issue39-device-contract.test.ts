@@ -676,6 +676,7 @@ console.log(JSON.stringify({
       Object.hasOwn(feedbackSpecs.scenarios, id)
     );
     const timing = JSON.parse(read('e2e/contracts/pointer-timing.json')) as {
+      agentDeviceSettleMarginMs: number;
       destinationHoldMs: number;
       moveBudgetMs: number;
       sampleCount: number;
@@ -700,15 +701,25 @@ console.log(JSON.stringify({
     expect(firstSampleMs).toBeGreaterThan(
       timing.sourceHoldMs + timing.moveBudgetMs
     );
-    expect(timing.settleMarginMs).toBeGreaterThanOrEqual(3500);
     expect(finalSampleMs).toBeLessThan(releaseMs);
     expect(releaseMs - finalSampleMs).toBeGreaterThanOrEqual(3000);
+    const agentDeviceFinalSampleMs =
+      timing.sourceHoldMs +
+      timing.moveBudgetMs +
+      timing.agentDeviceSettleMarginMs +
+      (timing.sampleCount - 1) * timing.sampleIntervalMs;
+    expect(timing.agentDeviceSettleMarginMs).toBeGreaterThanOrEqual(3500);
+    expect(agentDeviceFinalSampleMs).toBeLessThan(releaseMs);
+    expect(releaseMs - agentDeviceFinalSampleMs).toBeGreaterThanOrEqual(3000);
     expect(detoxRunner).toContain("require('./pointer-timing.json')");
     expect(detoxRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain(
       "'../e2e/contracts/pointer-timing.json'"
     );
     expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
+    expect(agentDeviceRunner).toContain(
+      'pointerTiming.agentDeviceSettleMarginMs'
+    );
     expect(agentDeviceRunner).toContain("'replay',");
     expect(agentDeviceRunner).toContain('observedLabelsFromSnapshot');
     expect(agentDeviceRunner).not.toContain(

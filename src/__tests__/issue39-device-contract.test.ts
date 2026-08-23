@@ -756,6 +756,8 @@ console.log(JSON.stringify({
       "globalTeardown: 'detox/runners/jest/globalTeardown'"
     );
     expect(config).toContain("launchApp: 'auto'");
+    expect(config).toContain("server: 'ws://127.0.0.1:8099'");
+    expect(config).toContain('autoStart: true');
     expect(isolatedRunner).toContain("'--record-videos'");
     expect(isolatedRunner).toContain("'--take-screenshots'");
     expect(workflow).toContain('if: always()');

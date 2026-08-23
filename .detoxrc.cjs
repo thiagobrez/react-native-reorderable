@@ -1,6 +1,13 @@
 /** @type {Detox.DetoxConfig} */
 // Device-contract harness: Detox 20.51.4, pinned in package.json/yarn.lock.
 module.exports = {
+  session: {
+    // Android 16 may resolve localhost to IPv6 while adb reverse exposes the
+    // host listener over IPv4. Keep Detox's managed server and tunnel on the
+    // same explicit loopback address.
+    server: 'ws://127.0.0.1:8099',
+    autoStart: true,
+  },
   testRunner: {
     args: {
       config: 'e2e/jest.config.cjs',

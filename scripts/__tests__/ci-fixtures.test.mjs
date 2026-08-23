@@ -78,6 +78,22 @@ test('Apple contract jobs prepare the Detox framework cache explicitly', () => {
   );
 });
 
+test('manual Reassure runs compare against a prior commit', () => {
+  const workflow = readFileSync(
+    resolve(repository, '.github/workflows/exact-package-candidate.yml'),
+    'utf8'
+  );
+
+  assert.match(
+    workflow,
+    /baseline_sha="\$\(git merge-base HEAD origin\/main\)"[\s\S]*?if \[\[ "\$baseline_sha" == "\$\(git rev-parse HEAD\)" \]\]; then[\s\S]*?baseline_sha="\$\(git rev-parse HEAD\^\)"/
+  );
+  assert.doesNotMatch(
+    workflow,
+    /echo "sha=\$\(git merge-base HEAD origin\/main\)"/
+  );
+});
+
 test('the minimum Android runtime invokes Gradle from its generated fixture', () => {
   const workflow = readFileSync(
     resolve(repository, '.github/workflows/exact-package-candidate.yml'),

@@ -158,7 +158,11 @@ jobs:
           elif [[ "$EVENT_NAME" == "push" ]]; then
             echo "sha=$PUSH_BEFORE_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "sha=$(git merge-base HEAD origin/main)" >> "$GITHUB_OUTPUT"
+            baseline_sha="$(git merge-base HEAD origin/main)"
+            if [[ "$baseline_sha" == "$(git rev-parse HEAD)" ]]; then
+              baseline_sha="$(git rev-parse HEAD^)"
+            fi
+            echo "sha=$baseline_sha" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Measure baseline in an isolated worktree

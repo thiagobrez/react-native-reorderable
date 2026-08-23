@@ -109,6 +109,15 @@ android {
     }
 }
 
+// React Native finalizes this placeholder after the buildTypes block. Register
+// a later finalizer so only Detox's explicitly tagged release build can use its
+// host-side ws:// server; ordinary release APKs keep cleartext disabled.
+if (project.hasProperty("detoxBuild")) {
+    androidComponents.finalizeDsl { extension ->
+        extension.buildTypes.getByName("release").manifestPlaceholders["usesCleartextTraffic"] = "true"
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")

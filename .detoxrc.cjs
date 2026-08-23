@@ -56,7 +56,7 @@ module.exports = {
       testBinaryPath:
         'example/android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk',
       build:
-        'cd example/android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release --no-daemon --console=plain',
+        'cd example/android && ./gradlew assembleRelease assembleAndroidTest -DtestBuildType=release -PdetoxBuild=true --no-daemon --console=plain',
     },
   },
   devices: {

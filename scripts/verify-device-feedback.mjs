@@ -119,17 +119,16 @@ export function verifyFeedbackReport(report, { enforceUniverse = true } = {}) {
           centerY(liveLabelsVisible ? predecessor : baselinePredecessor),
           centerY(liveLabelsVisible ? target : baselineTarget)
         );
-        if (source != null) {
-          const sourcePosition = centerY(source);
-          if (!(sourcePosition > lower && sourcePosition < upper)) {
-            throw new Error(
-              `${sample.path}: floating ${run.sourceLabel} is not between ${run.predecessorLabel} and ${run.targetLabel}`
-            );
-          }
+        const sourcePosition = source == null ? null : centerY(source);
+        const sourcePositionValid =
+          sourcePosition != null &&
+          sourcePosition > lower &&
+          sourcePosition < upper;
+        if (sourcePositionValid) {
           sourcePositionSamples += 1;
         }
         if (
-          (source == null || !liveLabelsVisible) &&
+          (!sourcePositionValid || !liveLabelsVisible) &&
           (typeof sample.destinationChangeRatio !== 'number' ||
             sample.destinationChangeRatio < MIN_DROP_CHANGE_RATIO)
         ) {

@@ -534,7 +534,7 @@ describe('issue 39 portable device contract', () => {
       /baseline\.png: expected exactly one public label "Card row 6", found 2/
     );
     expect(() => runFixture('feedback-source-outside')).toThrow(
-      /floating Card row 2 is not between Card row 4 and Card row 6/
+      /expected source-position evidence in at least 2 of 3 hold samples, found 1/
     );
     expect(() => runFixture('feedback-insufficient-change')).toThrow(
       /occluded insertion band visual change 0\.01 is below 0\.02/

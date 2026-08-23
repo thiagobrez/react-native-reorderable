@@ -773,6 +773,12 @@ console.log(JSON.stringify({
     expect(config).toContain("server: 'ws://127.0.0.1:8099'");
     expect(config).toContain('autoStart: true');
     expect(config).toContain('-PdetoxBuild=true');
+    expect(config).toContain(
+      './gradlew :app:assembleRelease :app:assembleAndroidTest'
+    );
+    expect(config).not.toContain(
+      './gradlew assembleRelease assembleAndroidTest'
+    );
     expect(read('example/android/app/build.gradle')).toContain(
       'project.hasProperty("detoxBuild")'
     );

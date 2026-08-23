@@ -883,6 +883,7 @@ console.log(JSON.stringify({
       'scripts/prepare-agent-device-ios-runner.mjs'
     );
     const jobRunner = read('scripts/run-device-contract-job.mjs');
+    const iosReset = read('scripts/reset-device-contract-ios-simulator.mjs');
     const workflow = read('.github/workflows/exact-package-candidate.yml');
 
     expect(runner.indexOf('onActionStarted?.();')).toBeLessThan(
@@ -948,6 +949,10 @@ console.log(JSON.stringify({
     );
     expect(iosRunnerPreflight).toContain('stopDefaultDaemon');
     expect(jobRunner).toContain('scripts/run-device-contract-isolated.mjs');
+    expect(jobRunner).toContain('reset-device-contract-ios-simulator.mjs');
+    expect(iosReset).toContain("['simctl', 'shutdown', target.udid]");
+    expect(iosReset).toContain("['simctl', 'erase', target.udid]");
+    expect(iosReset).not.toContain("['simctl', 'shutdown', 'all']");
     expect(workflow).toContain('scripts/run-device-contract-job.mjs');
   });
 });

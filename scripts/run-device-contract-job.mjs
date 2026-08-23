@@ -57,15 +57,25 @@ let finalStatus = 1;
 for (let index = 1; index <= 2; index += 1) {
   const attempt = `attempt-${index}`;
   const startedAt = Date.now();
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/run-device-contract-isolated.mjs', configuration],
-    {
-      env: { ...process.env, ISSUE39_MATRIX_ATTEMPT: attempt },
-      stdio: 'inherit',
-      timeout: 60 * 60 * 1000,
-    }
-  );
+  const resetResult = configuration.startsWith('ios')
+    ? spawnSync(
+        process.execPath,
+        ['scripts/reset-device-contract-ios-simulator.mjs', configuration],
+        { stdio: 'inherit', timeout: 180000 }
+      )
+    : null;
+  const result =
+    resetResult != null && resetResult.status !== 0
+      ? resetResult
+      : spawnSync(
+          process.execPath,
+          ['scripts/run-device-contract-isolated.mjs', configuration],
+          {
+            env: { ...process.env, ISSUE39_MATRIX_ATTEMPT: attempt },
+            stdio: 'inherit',
+            timeout: 60 * 60 * 1000,
+          }
+        );
   finalStatus = result.status ?? 75;
   const retryableInfrastructureFailure =
     finalStatus === 75 || result.signal != null;

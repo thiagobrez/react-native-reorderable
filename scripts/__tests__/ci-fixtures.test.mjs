@@ -106,6 +106,21 @@ test('the minimum Android runtime invokes Gradle from its generated fixture', ()
   );
 });
 
+test('the iOS floor check uses the oldest durable hosted runtime', () => {
+  const workflow = readFileSync(
+    resolve(repository, '.github/workflows/exact-package-candidate.yml'),
+    'utf8'
+  );
+
+  assert.match(
+    workflow,
+    /minimum-ios-runtime:[\s\S]*?name: Nightly iOS 15\.1 deployment target on hosted iOS 18\.5[\s\S]*?runs-on: macos-15/
+  );
+  assert.match(workflow, /IPHONEOS_DEPLOYMENT_TARGET = 15\\\.1/);
+  assert.match(workflow, /SimRuntime\.iOS-18-5/);
+  assert.doesNotMatch(workflow, /runs-on: \[self-hosted, macOS, ios-15\.1\]/);
+});
+
 test('Expo clean consumers do not install the React Native community CLI', () => {
   const fixture = mkdtempSync(resolve(tmpdir(), 'reorderable-consumer-'));
   writeFileSync(

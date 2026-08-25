@@ -441,10 +441,10 @@ jobs:
             adb shell am start -W -n com.reorderableconsumer/.MainActivity
 
   minimum-ios-runtime:
-    name: Nightly minimum iOS 15.1
+    name: Nightly iOS 15.1 deployment target on hosted iOS 18.5
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: candidate
-    runs-on: [self-hosted, macOS, ios-15.1]
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - name: Checkout
@@ -465,7 +465,7 @@ jobs:
         env:
           FIXTURE: ${{ runner.temp }}/ReorderableConsumer
         run: |
-          xcrun simctl list runtimes | grep -F 'iOS 15.1'
+          xcrun simctl list runtimes | grep -F 'iOS 18.5'
           npx --yes @react-native-community/cli@20.2.0 init ReorderableConsumer \
             --version 0.82.1 --directory "$FIXTURE" --skip-install --pm npm
           node scripts/configure-clean-consumer.mjs \
@@ -475,17 +475,32 @@ jobs:
             '{"react":"19.1.1","reactNative":"0.82.1","reactNativeGestureHandler":"3.0.0","reactNativeReanimated":"4.3.0","reactNativeWorklets":"0.8.1"}'
           npm install --prefix "$FIXTURE" --legacy-peer-deps --no-audit --no-fund
 
-      - name: Build, install, and launch on iOS 15.1
+      - name: Verify iOS 15.1 target, then build and launch on hosted iOS 18.5
         working-directory: ${{ runner.temp }}/ReorderableConsumer
         env:
           RCT_NEW_ARCH_ENABLED: 1
           USE_HERMES: 1
         run: |
           npx pod-install
+          APP_BUILD_SETTINGS=$(xcodebuild \
+            -workspace ios/ReorderableConsumer.xcworkspace \
+            -scheme ReorderableConsumer \
+            -destination 'generic/platform=iOS Simulator' \
+            -showBuildSettings)
+          grep -qE \
+            '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 15\.1$' \
+            <<< "$APP_BUILD_SETTINGS"
+          POD_BUILD_SETTINGS=$(xcodebuild \
+            -project ios/Pods/Pods.xcodeproj \
+            -target Reorderable \
+            -showBuildSettings)
+          grep -qE \
+            '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 15\.1$' \
+            <<< "$POD_BUILD_SETTINGS"
           SIMULATOR_ID=$(xcrun simctl create \
-            Reorderable-iOS-15-1 \
-            com.apple.CoreSimulator.SimDeviceType.iPhone-13 \
-            com.apple.CoreSimulator.SimRuntime.iOS-15-1)
+            Reorderable-iOS-18-5 \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-16 \
+            com.apple.CoreSimulator.SimRuntime.iOS-18-5)
           xcrun simctl boot "$SIMULATOR_ID"
           xcrun simctl bootstatus "$SIMULATOR_ID" -b
           xcodebuild \

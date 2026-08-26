@@ -66,16 +66,20 @@ test('root-level Apple workflows run CocoaPods from the bare example', () => {
   }
 });
 
-test('release-authorizing package candidates do not share concurrency with validation runs', () => {
-  const workflow = readFileSync(
-    resolve(repository, '.github/workflows/exact-package-candidate.yml'),
-    'utf8'
-  );
+test('release-authorizing push gates do not share concurrency with other events', () => {
+  for (const workflowPath of [
+    '.github/workflows/ci.yml',
+    '.github/workflows/docs.yml',
+    '.github/workflows/exact-package-candidate.yml',
+  ]) {
+    const workflow = readFileSync(resolve(repository, workflowPath), 'utf8');
 
-  assert.match(
-    workflow,
-    /group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event_name \}\}-\$\{\{ github\.ref \}\}/
-  );
+    assert.match(
+      workflow,
+      /group: .*\$\{\{ github\.event_name \}\}.*\$\{\{ github\.ref \}\}/,
+      workflowPath
+    );
+  }
 });
 
 test('Apple contract jobs prepare the Detox framework cache explicitly', () => {

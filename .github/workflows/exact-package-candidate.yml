@@ -22,7 +22,9 @@ on:
           - dry-run
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A nightly or manually dispatched matrix must never cancel the push run that
+  # authorizes a release for the same main commit.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -808,7 +808,7 @@ console.log(JSON.stringify({
       "globalTeardown: 'detox/runners/jest/globalTeardown'"
     );
     expect(config).toContain("launchApp: 'auto'");
-    expect(config).toContain("server: 'ws://127.0.0.1:8099'");
+    expect(config).toContain("'ws://127.0.0.1:8099'");
     expect(config).toContain('autoStart: true');
     expect(config).toContain('-PdetoxBuild=true');
     expect(config).toContain(
@@ -886,6 +886,7 @@ console.log(JSON.stringify({
     );
     const jobRunner = read('scripts/run-device-contract-job.mjs');
     const iosReset = read('scripts/reset-device-contract-ios-simulator.mjs');
+    const detoxConfig = read('.detoxrc.cjs');
     const workflow = read('.github/workflows/exact-package-candidate.yml');
 
     expect(runner.indexOf('onActionStarted?.();')).toBeLessThan(
@@ -919,8 +920,17 @@ console.log(JSON.stringify({
     );
     expect(
       isolatedRunner.indexOf('prepare-agent-device-ios-runner')
-    ).toBeLessThan(
+    ).toBeGreaterThan(
       isolatedRunner.indexOf('for (const scenario of applicable)')
+    );
+    expect(isolatedRunner).toContain(
+      "if (driver !== 'agent-device' && agentDevicePrepared)"
+    );
+    expect(isolatedRunner).toMatch(
+      /ISSUE39_DETOX_SERVER_URL:\s*detoxServerUrlForCase\(/
+    );
+    expect(detoxConfig).toContain(
+      "process.env.ISSUE39_DETOX_SERVER_URL ?? 'ws://127.0.0.1:8099'"
     );
     expect(isolatedRunner).toContain('process.exit(75)');
     expect(isolatedRunner).toContain(
@@ -928,8 +938,9 @@ console.log(JSON.stringify({
     );
     expect(isolatedRunner).toMatch(/AGENT_DEVICE_STATE_DIR:\s*replayStateRoot/);
     expect(isolatedRunner).toContain(
-      'if (requiresAgentDevice) stopReplayDaemon()'
+      'if (agentDevicePrepared) stopReplayDaemon()'
     );
+    expect(isolatedRunner).toContain('...attemptSegments,');
     expect(isolatedRunner).not.toMatch(/retry|retries/i);
     expect(iosRunnerPreflight).toMatch(
       /runAgentDevice\(\s*'prepare',\s*'ios-runner'/
@@ -952,6 +963,8 @@ console.log(JSON.stringify({
     expect(iosRunnerPreflight).toContain('stopDefaultDaemon');
     expect(jobRunner).toContain('scripts/run-device-contract-isolated.mjs');
     expect(jobRunner).toContain('reset-device-contract-ios-simulator.mjs');
+    expect(jobRunner).toContain('clearPublishedEvidence()');
+    expect(jobRunner).toContain('clearAttemptEvidence(attempt)');
     expect(iosReset).toContain("['simctl', 'shutdown', target.udid]");
     expect(iosReset).toContain("['simctl', 'erase', target.udid]");
     expect(iosReset).not.toContain("['simctl', 'shutdown', 'all']");

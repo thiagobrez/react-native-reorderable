@@ -67,6 +67,11 @@ const hasObservedScenarioOutcome = (outcomeFile, scenarioId) => {
 const table = [];
 const outcomes = {};
 let agentDevicePrepared = false;
+const agentDeviceProcessTimeoutMs = 240000;
+// Detox's own 180-second test timeout still enforces the contract. This outer
+// timeout also has to cover a freshly erased simulator's boot and Detox
+// teardown, which can take more than four minutes on hosted iOS runners.
+const detoxProcessTimeoutMs = 360000;
 const detoxPortBlockSize = 20;
 if (applicable.length > detoxPortBlockSize)
   throw new Error(
@@ -133,7 +138,7 @@ for (const [scenarioIndex, scenario] of applicable.entries()) {
               ISSUE39_FEEDBACK_DIR: resolve(feedbackRoot, scenario.id),
             },
             stdio: 'inherit',
-            timeout: 240000,
+            timeout: agentDeviceProcessTimeoutMs,
           }
         )
       : spawnSync(
@@ -165,7 +170,7 @@ for (const [scenarioIndex, scenario] of applicable.entries()) {
               ISSUE39_OUTCOME_FILE: outcomeFile,
             },
             stdio: 'inherit',
-            timeout: 240000,
+            timeout: detoxProcessTimeoutMs,
           }
         );
   const passed = result.status === 0;

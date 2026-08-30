@@ -114,7 +114,7 @@ for (let index = 1; index <= 2; index += 1) {
     ? spawnSync(
         process.execPath,
         ['scripts/reset-device-contract-ios-simulator.mjs', configuration],
-        { stdio: 'inherit', timeout: 180000 }
+        { stdio: 'inherit', timeout: 360000 }
       )
     : null;
   const result =

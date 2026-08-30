@@ -914,7 +914,11 @@ console.log(JSON.stringify({
       "existsSync(resolve(agentDeviceRoot, scenario.id, 'gesture-start-marker.png'))"
     );
     expect(isolatedRunner).toContain('scenario.id');
-    expect(isolatedRunner).toContain('timeout: 240000');
+    expect(isolatedRunner).toContain(
+      'const agentDeviceProcessTimeoutMs = 240000'
+    );
+    expect(isolatedRunner).toContain('const detoxProcessTimeoutMs = 360000');
+    expect(isolatedRunner).toContain('timeout: detoxProcessTimeoutMs');
     expect(isolatedRunner).toContain(
       "'scripts/prepare-agent-device-ios-runner.mjs'"
     );
@@ -965,8 +969,11 @@ console.log(JSON.stringify({
     expect(jobRunner).toContain('reset-device-contract-ios-simulator.mjs');
     expect(jobRunner).toContain('clearPublishedEvidence()');
     expect(jobRunner).toContain('clearAttemptEvidence(attempt)');
+    expect(jobRunner).toContain("{ stdio: 'inherit', timeout: 360000 }");
     expect(iosReset).toContain("['simctl', 'shutdown', target.udid]");
     expect(iosReset).toContain("['simctl', 'erase', target.udid]");
+    expect(iosReset).toContain("['simctl', 'boot', target.udid]");
+    expect(iosReset).toContain("['simctl', 'bootstatus', target.udid, '-b']");
     expect(iosReset).not.toContain("['simctl', 'shutdown', 'all']");
     expect(workflow).toContain('scripts/run-device-contract-job.mjs');
   });

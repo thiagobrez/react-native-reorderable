@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -52,10 +53,62 @@ function publishSuccessfulAttempt(attempt) {
   );
 }
 
+function clearPublishedEvidence() {
+  for (const category of [
+    'agent-device',
+    'detox',
+    'feedback',
+    'outcomes-by-case',
+  ])
+    rmSync(resolve('artifacts/issue-39', category, configuration), {
+      force: true,
+      recursive: true,
+    });
+  for (const [category, suffix] of [
+    ['device-tables', '.json'],
+    ['device-tables', '-job.json'],
+    ['outcomes', '.json'],
+  ])
+    rmSync(
+      resolve('artifacts/issue-39', category, `${configuration}${suffix}`),
+      { force: true }
+    );
+}
+
+function clearAttemptEvidence(attempt) {
+  for (const category of [
+    'agent-device',
+    'detox',
+    'feedback',
+    'outcomes-by-case',
+  ])
+    rmSync(
+      resolve(
+        'artifacts/issue-39',
+        category,
+        configuration,
+        'attempts',
+        attempt
+      ),
+      { force: true, recursive: true }
+    );
+  for (const category of ['device-tables', 'outcomes'])
+    rmSync(
+      resolve(
+        'artifacts/issue-39',
+        category,
+        `${configuration}-${attempt}.json`
+      ),
+      { force: true }
+    );
+}
+
+clearPublishedEvidence();
 const attempts = [];
 let finalStatus = 1;
 for (let index = 1; index <= 2; index += 1) {
   const attempt = `attempt-${index}`;
+  clearAttemptEvidence(attempt);
   const startedAt = Date.now();
   const resetResult = configuration.startsWith('ios')
     ? spawnSync(

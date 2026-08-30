@@ -114,6 +114,9 @@ await mkdir(recordingDirectory, { recursive: true });
 const replayStateRoot = resolve(
   'artifacts/issue-39/agent-device',
   configuration,
+  ...(process.env.ISSUE39_MATRIX_ATTEMPT == null
+    ? []
+    : ['attempts', process.env.ISSUE39_MATRIX_ATTEMPT]),
   'replay-daemon-state'
 );
 await mkdir(replayStateRoot, { recursive: true });

@@ -5,7 +5,7 @@ module.exports = {
     // Android 16 may resolve localhost to IPv6 while adb reverse exposes the
     // host listener over IPv4. Keep Detox's managed server and tunnel on the
     // same explicit loopback address.
-    server: 'ws://127.0.0.1:8099',
+    server: process.env.ISSUE39_DETOX_SERVER_URL ?? 'ws://127.0.0.1:8099',
     autoStart: true,
   },
   testRunner: {

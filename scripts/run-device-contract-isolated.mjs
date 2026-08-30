@@ -20,18 +20,6 @@ const pointerDrivers = JSON.parse(
 const applicable = scenarios.filter(({ platforms }) =>
   platforms.includes(platform)
 );
-const requiresAgentDevice = applicable.some(
-  ({ id }) =>
-    pointerDrivers.routes?.[configuration]?.[id] === 'agent-device'
-);
-if (platform === 'ios' && requiresAgentDevice) {
-  const preflight = spawnSync(
-    process.execPath,
-    ['scripts/prepare-agent-device-ios-runner.mjs', configuration],
-    { stdio: 'inherit', timeout: 600000 }
-  );
-  if (preflight.status !== 0) process.exit(75);
-}
 const artifactRoot = resolve(
   'artifacts/issue-39/detox',
   configuration,
@@ -56,6 +44,7 @@ const agentDeviceRoot = resolve(
 const replayStateRoot = resolve(
   'artifacts/issue-39/agent-device',
   configuration,
+  ...attemptSegments,
   'replay-daemon-state'
 );
 const stopReplayDaemon = () =>
@@ -77,11 +66,38 @@ const hasObservedScenarioOutcome = (outcomeFile, scenarioId) => {
 };
 const table = [];
 const outcomes = {};
+let agentDevicePrepared = false;
+const detoxPortBlockSize = 20;
+if (applicable.length > detoxPortBlockSize)
+  throw new Error(
+    `At most ${detoxPortBlockSize} isolated scenarios are supported`
+  );
+const detoxPortBase =
+  20000 + (Math.abs(process.pid) % 1000) * detoxPortBlockSize;
+const detoxServerUrlForCase = (scenarioIndex) =>
+  `ws://127.0.0.1:${detoxPortBase + scenarioIndex}`;
 
 mkdirSync(artifactRoot, { recursive: true });
 mkdirSync(caseOutcomeRoot, { recursive: true });
 
-for (const scenario of applicable) {
+for (const [scenarioIndex, scenario] of applicable.entries()) {
+  const driver = pointerDrivers.routes?.[configuration]?.[scenario.id];
+  if (driver === 'agent-device' && !agentDevicePrepared) {
+    if (platform === 'ios') {
+      const preflight = spawnSync(
+        process.execPath,
+        ['scripts/prepare-agent-device-ios-runner.mjs', configuration],
+        { stdio: 'inherit', timeout: 600000 }
+      );
+      if (preflight.status !== 0) process.exit(75);
+    }
+    agentDevicePrepared = true;
+  }
+  if (driver !== 'agent-device' && agentDevicePrepared) {
+    stopReplayDaemon();
+    agentDevicePrepared = false;
+  }
+
   if (platform === 'android') {
     spawnSync(
       'adb',
@@ -100,7 +116,6 @@ for (const scenario of applicable) {
 
   const outcomeFile = resolve(caseOutcomeRoot, `${scenario.id}.json`);
   const startedAt = Date.now();
-  const driver = pointerDrivers.routes?.[configuration]?.[scenario.id];
   const result =
     driver === 'agent-device'
       ? spawnSync(
@@ -145,6 +160,7 @@ for (const scenario of applicable) {
             env: {
               ...process.env,
               AGENT_DEVICE_STATE_DIR: replayStateRoot,
+              ISSUE39_DETOX_SERVER_URL: detoxServerUrlForCase(scenarioIndex),
               ISSUE39_FEEDBACK_DIR: resolve(feedbackRoot, scenario.id),
               ISSUE39_OUTCOME_FILE: outcomeFile,
             },
@@ -162,8 +178,13 @@ for (const scenario of applicable) {
   );
   const infrastructureFailure =
     !passed &&
-    (result.status == null || result.signal != null || !reachedContractAssertion);
-  if (driver === 'agent-device' && !passed) stopReplayDaemon();
+    (result.status == null ||
+      result.signal != null ||
+      !reachedContractAssertion);
+  if (driver === 'agent-device' && !passed) {
+    stopReplayDaemon();
+    agentDevicePrepared = false;
+  }
   table.push({
     id: scenario.id,
     durationMs: Date.now() - startedAt,
@@ -182,7 +203,7 @@ for (const scenario of applicable) {
   }
 }
 
-if (requiresAgentDevice) stopReplayDaemon();
+if (agentDevicePrepared) stopReplayDaemon();
 
 const tablePath = resolve(
   'artifacts/issue-39/device-tables',

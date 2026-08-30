@@ -46,16 +46,16 @@ const sessionName = 'issue39-ios-runner-preflight';
 const stateRoot = resolve(
   'artifacts/issue-39/agent-device',
   configuration,
+  ...(process.env.ISSUE39_MATRIX_ATTEMPT == null
+    ? []
+    : ['attempts', process.env.ISSUE39_MATRIX_ATTEMPT]),
   'replay-daemon-state'
 );
 const environment = {
   ...process.env,
   AGENT_DEVICE_STATE_DIR: stateRoot,
 };
-const deepLinkConfirmationMarker = resolve(
-  stateRoot,
-  'deep-link-confirmed'
-);
+const deepLinkConfirmationMarker = resolve(stateRoot, 'deep-link-confirmed');
 const runAgentDevice = (...args) =>
   run(agentDevice, args, { env: environment });
 const runSessionCommand = (...args) =>
@@ -70,9 +70,7 @@ const runSessionCommand = (...args) =>
   );
 const requireSuccess = (result, description) => {
   if (result.status !== 0)
-    throw new Error(
-      `${description} exited ${result.status ?? result.signal}`
-    );
+    throw new Error(`${description} exited ${result.status ?? result.signal}`);
 };
 const defaultEnvironment = { ...process.env };
 delete defaultEnvironment.AGENT_DEVICE_STATE_DIR;

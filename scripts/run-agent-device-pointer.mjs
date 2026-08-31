@@ -41,6 +41,7 @@ const feedbackSettleMarginMs =
     : pointerTiming.agentDeviceSettleMarginMs;
 const agentDeviceTiming = {
   ...pointerTiming,
+  moveBudgetMs: pointerTiming.agentDeviceMoveBudgetMs,
   sourceHoldMs: pointerTiming.agentDeviceSourceHoldMs,
 };
 const feedbackFirstSampleMs =

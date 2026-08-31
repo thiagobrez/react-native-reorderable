@@ -76,7 +76,11 @@ describe('issue 39 portable device contract', () => {
         Record<
           string,
           {
-            destinationSelector: { label: string; relation: string };
+            destinationSelector: {
+              label: string;
+              relation: string;
+              testID?: string;
+            };
             driver: string;
             semanticTargetLabel: string;
           }
@@ -111,14 +115,14 @@ describe('issue 39 portable device contract', () => {
       driver: 'detox',
     });
     expect(pointerDrivers.routes['ios26.auto-fallback']).toMatchObject({
-      'free-form-reorder': 'detox',
+      'free-form-reorder': 'agent-device',
       'multi-selection-reorder': 'agent-device',
       'scoped-drop': 'agent-device',
       'section-list-reorder': 'agent-device',
       'virtualized-list-reorder': 'agent-device',
     });
     expect(pointerDrivers.overrides['ios26.auto-fallback']).toMatchObject({
-      'free-form-reorder': { driver: 'detox' },
+      'free-form-reorder': { driver: 'agent-device' },
       'multi-selection-reorder': { driver: 'agent-device' },
     });
     expect(pointerDrivers.routes['android.fallback']).toEqual({
@@ -178,7 +182,7 @@ describe('issue 39 portable device contract', () => {
         Record<
           string,
           {
-            destinationSelector: { relation: string };
+            destinationSelector: { relation: string; testID?: string };
             driver: string;
             semanticTargetLabel: string;
           }
@@ -214,6 +218,7 @@ describe('issue 39 portable device contract', () => {
       labelsById: { 'card-2': 'Card row 3' },
       destinationSelector: {
         relation: 'predecessorCenter',
+        testID: 'card-card-2',
       },
     });
     expect(fallbackPlan).toEqual({
@@ -228,7 +233,7 @@ describe('issue 39 portable device contract', () => {
       'e2e/agent-device/ios/free-form-before-target-native.ad'
     );
     expect(replay).toContain(
-      'gesture drag "label=\\"Card row 1\\"" "label=\\"Card row 3\\"" 650 1200 8000'
+      'gesture drag "id=\\"card-card-0\\"" "id=\\"card-card-2\\"" 650 1200 8000'
     );
     expect(listPlan).toEqual({
       driver: 'agent-device',
@@ -300,7 +305,7 @@ describe('issue 39 portable device contract', () => {
         gestureMarkerPath: string;
         initialLabels: string[];
         platform: string;
-        recordingPath: string;
+        recordingPath?: string;
         sourceSelector: string;
         terminalPath: string;
         timing: {
@@ -406,7 +411,6 @@ describe('issue 39 portable device contract', () => {
       gestureMarkerPath: '/tmp/gesture-start.png',
       initialLabels: ['Callback count: 0'],
       platform: 'ios',
-      recordingPath: '/tmp/pointer.mp4',
       sourceSelector: 'label="Card row 1"',
       terminalPath: '/tmp/terminal.png',
       timing: {
@@ -418,6 +422,8 @@ describe('issue 39 portable device contract', () => {
     expect(iosReplay).toContain(
       'open "${DEEP_LINK}"\nalert accept\nopen "${DEEP_LINK}"\nwait "Callback count: 0" 15000'
     );
+    expect(iosReplay).not.toContain('record start');
+    expect(iosReplay).not.toContain('record stop');
     expect(
       observation.agentDeviceReplayScript({
         acceptDeepLinkPrompt: false,
@@ -545,6 +551,7 @@ describe('issue 39 portable device contract', () => {
         read('e2e/contracts/fixtures/feedback-occluded-valid.json')
       ) as {
         runs: Array<{
+          sourceLabelAliases?: string[];
           samples: Array<{ labels: Array<{ text: string }> }>;
         }>;
       };
@@ -560,6 +567,25 @@ describe('issue 39 portable device contract', () => {
       expect(() => runReport(reportPath)).toThrow(
         /expected source-position evidence in at least 2 of 3 hold samples, found 1/
       );
+
+      const aliasedReport = JSON.parse(
+        read('e2e/contracts/fixtures/feedback-occluded-valid.json')
+      ) as typeof report;
+      aliasedReport.runs[0]!.sourceLabelAliases = ['Card row'];
+      for (const sample of aliasedReport.runs[0]!.samples) {
+        sample.labels[0]!.text = 'Card row';
+      }
+      writeFileSync(reportPath, JSON.stringify(aliasedReport));
+      expect(runReport(reportPath)).toContain(
+        'Verified continuous feedback for 1 runs'
+      );
+
+      aliasedReport.runs[0]!.samples[0]!.labels[0]!.text = 'Card row 3';
+      aliasedReport.runs[0]!.samples[1]!.labels[0]!.text = 'Card row 3';
+      writeFileSync(reportPath, JSON.stringify(aliasedReport));
+      expect(() => runReport(reportPath)).toThrow(
+        /expected source-position evidence in at least 2 of 3 hold samples, found 1/
+      );
     } finally {
       rmSync(directory, { recursive: true });
     }
@@ -569,6 +595,7 @@ describe('issue 39 portable device contract', () => {
       scenarios: Record<
         string,
         {
+          sourceLabelAliasesByConfiguration?: Record<string, string[]>;
           targetLabel: string;
           visualTargetLabel?: string;
           visualTargetLabelsByConfiguration?: Record<string, string>;
@@ -584,6 +611,11 @@ describe('issue 39 portable device contract', () => {
         'android.fallback': 'Drop selected items here',
       },
     });
+    expect(feedbackSpecs.scenarios['virtualized-list-reorder']).toMatchObject({
+      sourceLabelAliasesByConfiguration: {
+        'android.fallback': ['List row'],
+      },
+    });
     const analyzer = read('scripts/analyze-device-feedback.swift');
     expect(analyzer).toMatch(
       /beforeImage\.width \* afterImage\.height\s*== afterImage\.width \* beforeImage\.height/
@@ -594,6 +626,9 @@ describe('issue 39 portable device contract', () => {
     expect(analyzer).not.toContain('Screenshot dimensions changed during hold');
     expect(analyzer).toContain('trimmed.hasPrefix("\' ")');
     expect(analyzer).toContain('String(trimmed.dropFirst(2))');
+    expect(analyzer).toContain(
+      'sourceLabelAliases: spec.sourceLabelAliasesByConfiguration?[configuration]'
+    );
   });
 
   it('requires exactly one feedback run for every canonical configuration/scenario pair', () => {
@@ -681,6 +716,7 @@ console.log(JSON.stringify({
       agentDeviceSettleMarginMs: number;
       destinationHoldMs: number;
       moveBudgetMs: number;
+      predecessorCenterSettleMarginMs: number;
       sampleCount: number;
       sampleIntervalMs: number;
       settleMarginMs: number;
@@ -713,6 +749,18 @@ console.log(JSON.stringify({
     expect(timing.agentDeviceSettleMarginMs).toBeGreaterThanOrEqual(3500);
     expect(agentDeviceFinalSampleMs).toBeLessThan(releaseMs);
     expect(releaseMs - agentDeviceFinalSampleMs).toBeGreaterThanOrEqual(3000);
+    const predecessorCenterFinalSampleMs =
+      timing.sourceHoldMs +
+      timing.moveBudgetMs +
+      timing.predecessorCenterSettleMarginMs +
+      (timing.sampleCount - 1) * timing.sampleIntervalMs;
+    expect(timing.predecessorCenterSettleMarginMs).toBeGreaterThan(
+      timing.agentDeviceSettleMarginMs
+    );
+    expect(predecessorCenterFinalSampleMs).toBeLessThan(releaseMs);
+    expect(releaseMs - predecessorCenterFinalSampleMs).toBeGreaterThanOrEqual(
+      1500
+    );
     expect(detoxRunner).toContain("require('./pointer-timing.json')");
     expect(detoxRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain(
@@ -722,12 +770,22 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain(
       'pointerTiming.agentDeviceSettleMarginMs'
     );
+    expect(agentDeviceRunner).toContain(
+      'pointerTiming.predecessorCenterSettleMarginMs'
+    );
     expect(agentDeviceRunner).toContain("'replay',");
     expect(agentDeviceRunner).toContain('observedLabelsFromSnapshot');
     expect(agentDeviceRunner).not.toContain(
       '[scenarioId]: {\n          labels: scenario.expected'
     );
     expect(agentDeviceRunner).toContain('gestureMarkerPath');
+    expect(agentDeviceRunner).toContain('selectorForLabel');
+    expect(agentDeviceRunner).toContain('`id="${testId}"`');
+    expect(agentDeviceRunner).toContain("'recordVideo'");
+    expect(agentDeviceRunner).toContain("iosRecorder.kill('SIGINT')");
+    expect(agentDeviceRunner).toContain(
+      "recordingPath: platform === 'ios' ? undefined : recordingPath"
+    );
     expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain("'screencap'");
     expect(agentDeviceRunner).toContain("'deep-link-confirmed'");
@@ -864,7 +922,7 @@ console.log(JSON.stringify({
       expect(protocol).toContain(publicContract);
     }
     expect(protocol).toContain('same logical element');
-    expect(protocol).toContain('Agent Device 0.20.6');
+    expect(protocol).toContain('Agent Device 0.20.10');
     expect(protocol).toContain('It can drive VoiceOver focus');
     expect(protocol).toContain('simulator or forced fallback');
     expect(record).toContain('Status: **PASS**');
@@ -914,7 +972,11 @@ console.log(JSON.stringify({
       "existsSync(resolve(agentDeviceRoot, scenario.id, 'gesture-start-marker.png'))"
     );
     expect(isolatedRunner).toContain('scenario.id');
-    expect(isolatedRunner).toContain('timeout: 240000');
+    expect(isolatedRunner).toContain(
+      'const agentDeviceProcessTimeoutMs = 240000'
+    );
+    expect(isolatedRunner).toContain('const detoxProcessTimeoutMs = 360000');
+    expect(isolatedRunner).toContain('timeout: detoxProcessTimeoutMs');
     expect(isolatedRunner).toContain(
       "'scripts/prepare-agent-device-ios-runner.mjs'"
     );
@@ -965,8 +1027,11 @@ console.log(JSON.stringify({
     expect(jobRunner).toContain('reset-device-contract-ios-simulator.mjs');
     expect(jobRunner).toContain('clearPublishedEvidence()');
     expect(jobRunner).toContain('clearAttemptEvidence(attempt)');
+    expect(jobRunner).toContain("{ stdio: 'inherit', timeout: 360000 }");
     expect(iosReset).toContain("['simctl', 'shutdown', target.udid]");
     expect(iosReset).toContain("['simctl', 'erase', target.udid]");
+    expect(iosReset).toContain("['simctl', 'boot', target.udid]");
+    expect(iosReset).toContain("['simctl', 'bootstatus', target.udid, '-b']");
     expect(iosReset).not.toContain("['simctl', 'shutdown', 'all']");
     expect(workflow).toContain('scripts/run-device-contract-job.mjs');
   });

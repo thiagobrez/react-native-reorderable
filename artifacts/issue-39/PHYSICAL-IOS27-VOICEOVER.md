@@ -10,7 +10,7 @@ debug-action, and pointer results cannot satisfy this record.
 
 ## Tool boundary
 
-Use the repository-pinned Agent Device 0.20.6. On physical iOS it can discover
+Use the repository-pinned Agent Device 0.20.10. On physical iOS it can discover
 the device, inspect capabilities/apps, open the installed app and deep link,
 capture accessibility snapshots/screenshots, and record when the modern
 CoreDevice backend exposes those capabilities. It can drive VoiceOver focus, action selection, and invocation with physical

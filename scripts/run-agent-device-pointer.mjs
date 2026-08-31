@@ -14,10 +14,6 @@ const {
   observedLabelsFromSnapshot,
 } = require('../e2e/contracts/outcome-observation.cjs');
 const pointerTiming = require('../e2e/contracts/pointer-timing.json');
-const feedbackFirstSampleMs =
-  pointerTiming.sourceHoldMs +
-  pointerTiming.moveBudgetMs +
-  pointerTiming.agentDeviceSettleMarginMs;
 const [configuration, scenarioId, outcomePath] = process.argv.slice(2);
 if (!configuration || !scenarioId || !outcomePath)
   throw new Error(
@@ -39,6 +35,14 @@ if (!scenario || override?.driver !== 'agent-device')
   throw new Error(
     `No Agent Device pointer route for ${configuration}/${scenarioId}`
   );
+const feedbackSettleMarginMs =
+  override.destinationSelector.relation === 'predecessorCenter'
+    ? pointerTiming.predecessorCenterSettleMarginMs
+    : pointerTiming.agentDeviceSettleMarginMs;
+const feedbackFirstSampleMs =
+  pointerTiming.sourceHoldMs +
+  pointerTiming.moveBudgetMs +
+  feedbackSettleMarginMs;
 
 let targetId;
 if (platform === 'android') {
@@ -155,8 +159,80 @@ const wait = (milliseconds) =>
   new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
 let replay;
 let replayExited = false;
+let iosRecorder;
+let iosRecorderExited = false;
+let iosRecorderExit;
+let iosRecorderResult;
+
+const startIosRecording = async (path) => {
+  iosRecorder = spawn(
+    'xcrun',
+    ['simctl', 'io', targetId, 'recordVideo', '--codec=h264', '--force', path],
+    { stdio: ['ignore', 'ignore', 'pipe'] }
+  );
+  iosRecorder.stderr.setEncoding('utf8');
+  iosRecorder.stderr.on('data', (chunk) => process.stderr.write(chunk));
+  iosRecorderExit = new Promise((resolveExit) =>
+    iosRecorder.once('close', (code, signal) => {
+      iosRecorderExited = true;
+      iosRecorderResult = { code, signal };
+      resolveExit(iosRecorderResult);
+    })
+  );
+  await new Promise((resolveStart, rejectStart) => {
+    const timeout = setTimeout(
+      () => rejectStart(new Error('Timed out starting iOS screen recording')),
+      30000
+    );
+    const finish = (callback) => (value) => {
+      clearTimeout(timeout);
+      callback(value);
+    };
+    iosRecorder.stderr.on('data', (chunk) => {
+      if (chunk.includes('Recording started')) finish(resolveStart)();
+    });
+    iosRecorder.once(
+      'error',
+      finish((error) => rejectStart(error))
+    );
+    iosRecorder.once(
+      'close',
+      finish((code, signal) =>
+        rejectStart(
+          new Error(
+            `iOS screen recorder exited before starting (${code ?? signal})`
+          )
+        )
+      )
+    );
+  });
+};
+
+const stopIosRecording = async () => {
+  if (iosRecorder == null) return;
+  if (!iosRecorderExited) iosRecorder.kill('SIGINT');
+  const result = await Promise.race([
+    iosRecorderExit,
+    wait(15000).then(() => undefined),
+  ]);
+  if (result == null) {
+    iosRecorder.kill('SIGKILL');
+    await iosRecorderExit;
+    throw new Error('Timed out finalizing iOS screen recording');
+  }
+  if (iosRecorderResult.code !== 0)
+    throw new Error(
+      `iOS screen recorder exited ${iosRecorderResult.code ?? iosRecorderResult.signal}`
+    );
+};
 try {
-  const sourceSelector = `label="${scenario.action.sourceLabel}"`;
+  const selectorForLabel = (label, explicitTestId) => {
+    const testId =
+      explicitTestId ??
+      scenario.selectors.find((selector) => selector.label === label)?.testID;
+    return testId == null ? `label="${label}"` : `id="${testId}"`;
+  };
+  const sourceSelector = selectorForLabel(scenario.action.sourceLabel);
   const destinationLabel =
     override.destinationSelector.relation === 'predecessorCenter'
       ? (override.destinationSelector.label ??
@@ -172,7 +248,10 @@ try {
     throw new Error(
       `No public destination selector for ${configuration}/${scenarioId}`
     );
-  const destinationSelector = `label="${destinationLabel}"`;
+  const destinationSelector = selectorForLabel(
+    destinationLabel,
+    override.destinationSelector.testID
+  );
   const replayPath = resolve(recordingDirectory, 'pointer-replay.ad');
   const recordingPath = resolve(recordingDirectory, 'pointer.mp4');
   const baselinePath = resolve(feedbackDirectory, 'baseline.png');
@@ -195,7 +274,7 @@ try {
       gestureMarkerPath,
       initialLabels: scenario.initial?.labels ?? ['Callback count: 0'],
       platform,
-      recordingPath,
+      recordingPath: platform === 'ios' ? undefined : recordingPath,
       sourceSelector,
       terminalPath: resolve(feedbackDirectory, 'terminal.png'),
       timing: pointerTiming,
@@ -207,6 +286,7 @@ try {
   const previousGestureMarkerMtime = await stat(gestureMarkerPath)
     .then(({ mtimeMs }) => mtimeMs)
     .catch(() => 0);
+  if (platform === 'ios') await startIosRecording(recordingPath);
   replay = spawn(
     agentDevice,
     [
@@ -324,5 +404,9 @@ try {
     await wait(500);
     if (!replayExited) replay.kill('SIGKILL');
   }
-  await runSessionCommand('close').catch(() => undefined);
+  try {
+    await stopIosRecording();
+  } finally {
+    await runSessionCommand('close').catch(() => undefined);
+  }
 }

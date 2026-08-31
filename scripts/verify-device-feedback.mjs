@@ -98,10 +98,15 @@ export function verifyFeedbackReport(report, { enforceUniverse = true } = {}) {
         };
         const baselinePredecessor = uniqueLabel(baseline, run.predecessorLabel);
         const baselineTarget = uniqueLabel(baseline, run.targetLabel);
-        const sourceMatches = matchingLabels(
+        let sourceMatches = matchingLabels(
           sample.labels ?? [],
           run.sourceLabel
         );
+        if (sourceMatches.length === 0) {
+          sourceMatches = (run.sourceLabelAliases ?? []).flatMap((alias) =>
+            matchingLabels(sample.labels ?? [], alias)
+          );
+        }
         if (sourceMatches.length > 1) {
           throw new Error(
             `${sample.path}: expected exactly one public label ${JSON.stringify(run.sourceLabel)}, found ${sourceMatches.length}`

@@ -42,7 +42,8 @@
         "destinationId": "card-3",
         "labelsById": { "card-2": "Card row 3" },
         "destinationSelector": {
-          "relation": "predecessorCenter"
+          "relation": "predecessorCenter",
+          "testID": "card-card-2"
         }
       },
       "scoped-drop": {
@@ -98,7 +99,7 @@
     },
     "ios26.auto-fallback": {
       "free-form-reorder": {
-        "driver": "detox",
+        "driver": "agent-device",
         "semanticTargetLabel": "Card row 4",
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
@@ -197,7 +198,7 @@
       "scoped-drop": "agent-device"
     },
     "ios26.auto-fallback": {
-      "free-form-reorder": "detox",
+      "free-form-reorder": "agent-device",
       "virtualized-list-reorder": "agent-device",
       "section-list-reorder": "agent-device",
       "multi-selection-reorder": "agent-device",

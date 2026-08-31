@@ -41,8 +41,26 @@ function run() {
   if (eraseResult.status !== 0) {
     throw new Error(`Failed to erase iOS simulator ${target.udid}`);
   }
+  const bootResult = spawnSync('xcrun', ['simctl', 'boot', target.udid], {
+    stdio: 'inherit',
+    timeout: 120000,
+  });
+  if (bootResult.status !== 0) {
+    throw new Error(`Failed to boot iOS simulator ${target.udid}`);
+  }
+  const bootStatusResult = spawnSync(
+    'xcrun',
+    ['simctl', 'bootstatus', target.udid, '-b'],
+    {
+      stdio: 'inherit',
+      timeout: 240000,
+    }
+  );
+  if (bootStatusResult.status !== 0) {
+    throw new Error(`iOS simulator ${target.udid} did not finish booting`);
+  }
   process.stdout.write(
-    `Reset ${runtimeVersion} iPhone 17 Pro simulator ${target.udid}\n`
+    `Reset and booted ${runtimeVersion} iPhone 17 Pro simulator ${target.udid}\n`
   );
 }
 

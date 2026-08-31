@@ -9,7 +9,7 @@ open "reorderable://lab/multi-selection?preset=teaching&engine=${ENGINE}"
 wait "Current selection: card-1, card-2, card-4" 15000
 wait "Callback count: 0" 5000
 
-gesture drag "label=\"Card row 2\"" "label=\"Card row 6\"" 650 1200 8000
+gesture drag "id=\"card-card-1\"" "id=\"card-card-5\"" 650 1200 8000
 wait "Current selection: card-1, card-2, card-4" 5000
 wait "Callback count: 1" 5000
 

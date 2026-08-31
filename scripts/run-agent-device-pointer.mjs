@@ -39,9 +39,13 @@ const feedbackSettleMarginMs =
   override.destinationSelector.relation === 'predecessorCenter'
     ? pointerTiming.predecessorCenterSettleMarginMs
     : pointerTiming.agentDeviceSettleMarginMs;
+const agentDeviceTiming = {
+  ...pointerTiming,
+  sourceHoldMs: pointerTiming.agentDeviceSourceHoldMs,
+};
 const feedbackFirstSampleMs =
-  pointerTiming.sourceHoldMs +
-  pointerTiming.moveBudgetMs +
+  agentDeviceTiming.sourceHoldMs +
+  agentDeviceTiming.moveBudgetMs +
   feedbackSettleMarginMs;
 
 let targetId;
@@ -277,7 +281,7 @@ try {
       recordingPath: platform === 'ios' ? undefined : recordingPath,
       sourceSelector,
       terminalPath: resolve(feedbackDirectory, 'terminal.png'),
-      timing: pointerTiming,
+      timing: agentDeviceTiming,
     })
   );
   const previousBaselineMtime = await stat(baselinePath)

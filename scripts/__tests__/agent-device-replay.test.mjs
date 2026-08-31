@@ -19,6 +19,7 @@ const { agentDeviceReplayScript } = require(
 
 test('the iOS runner drains before held-pointer timing begins', () => {
   assert.ok(timing.preGestureSettleMs >= 5000);
+  assert.ok(timing.agentDeviceSourceHoldMs >= 1000);
   const replay = agentDeviceReplayScript({
     acceptDeepLinkPrompt: false,
     baselinePath: '/tmp/baseline.png',
@@ -30,11 +31,14 @@ test('the iOS runner drains before held-pointer timing begins', () => {
     platform: 'ios',
     sourceSelector: 'id="card-card-0"',
     terminalPath: '/tmp/terminal.png',
-    timing,
+    timing: {
+      ...timing,
+      sourceHoldMs: timing.agentDeviceSourceHoldMs,
+    },
   });
 
   assert.match(
     replay,
-    /wait 6000\nscreenshot "\/tmp\/gesture-start\.png"\ngesture drag/
+    /wait 6000\nscreenshot "\/tmp\/gesture-start\.png"\ngesture drag .* 1200 1200 8000/
   );
 });

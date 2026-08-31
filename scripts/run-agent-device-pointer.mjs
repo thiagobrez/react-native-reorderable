@@ -237,7 +237,10 @@ try {
       scenario.selectors.find((selector) => selector.label === label)?.testID;
     return testId == null ? `label="${label}"` : `id="${testId}"`;
   };
-  const sourceSelector = selectorForLabel(scenario.action.sourceLabel);
+  const sourceSelector = selectorForLabel(
+    scenario.action.sourceLabel,
+    override.sourceSelector?.testID
+  );
   const destinationLabel =
     override.destinationSelector.relation === 'predecessorCenter'
       ? (override.destinationSelector.label ??

@@ -101,6 +101,7 @@
       "free-form-reorder": {
         "driver": "agent-device",
         "semanticTargetLabel": "Card row 4",
+        "sourceSelector": { "testID": "fallback-wrapper-card-0" },
         "destinationSelector": {
           "relation": "namedTargetCenterAfterSourceLift",
           "label": "Card row 4"

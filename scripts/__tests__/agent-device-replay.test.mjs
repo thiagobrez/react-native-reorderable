@@ -11,6 +11,12 @@ const timing = JSON.parse(
     'utf8'
   )
 );
+const drivers = JSON.parse(
+  readFileSync(
+    new URL('../../e2e/contracts/pointer-drivers.json', import.meta.url),
+    'utf8'
+  )
+);
 const { agentDeviceReplayScript } = require(
   fileURLToPath(
     new URL('../../e2e/contracts/outcome-observation.cjs', import.meta.url)
@@ -47,5 +53,13 @@ test('the iOS runner drains before held-pointer timing begins', () => {
   assert.match(
     replay,
     /wait 6000\nscreenshot "\/tmp\/gesture-start\.png"\ngesture drag .* 1000 1000 8000/
+  );
+});
+
+test('iOS 26 free-form activation targets the fallback gesture host', () => {
+  assert.equal(
+    drivers.overrides['ios26.auto-fallback']['free-form-reorder']
+      .sourceSelector.testID,
+    'fallback-wrapper-card-0'
   );
 });

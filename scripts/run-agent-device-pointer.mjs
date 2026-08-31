@@ -14,10 +14,6 @@ const {
   observedLabelsFromSnapshot,
 } = require('../e2e/contracts/outcome-observation.cjs');
 const pointerTiming = require('../e2e/contracts/pointer-timing.json');
-const feedbackFirstSampleMs =
-  pointerTiming.sourceHoldMs +
-  pointerTiming.moveBudgetMs +
-  pointerTiming.agentDeviceSettleMarginMs;
 const [configuration, scenarioId, outcomePath] = process.argv.slice(2);
 if (!configuration || !scenarioId || !outcomePath)
   throw new Error(
@@ -39,6 +35,14 @@ if (!scenario || override?.driver !== 'agent-device')
   throw new Error(
     `No Agent Device pointer route for ${configuration}/${scenarioId}`
   );
+const feedbackSettleMarginMs =
+  override.destinationSelector.relation === 'predecessorCenter'
+    ? pointerTiming.predecessorCenterSettleMarginMs
+    : pointerTiming.agentDeviceSettleMarginMs;
+const feedbackFirstSampleMs =
+  pointerTiming.sourceHoldMs +
+  pointerTiming.moveBudgetMs +
+  feedbackSettleMarginMs;
 
 let targetId;
 if (platform === 'android') {

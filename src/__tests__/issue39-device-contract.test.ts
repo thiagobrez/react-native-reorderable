@@ -687,6 +687,7 @@ console.log(JSON.stringify({
       agentDeviceSettleMarginMs: number;
       destinationHoldMs: number;
       moveBudgetMs: number;
+      predecessorCenterSettleMarginMs: number;
       sampleCount: number;
       sampleIntervalMs: number;
       settleMarginMs: number;
@@ -719,6 +720,18 @@ console.log(JSON.stringify({
     expect(timing.agentDeviceSettleMarginMs).toBeGreaterThanOrEqual(3500);
     expect(agentDeviceFinalSampleMs).toBeLessThan(releaseMs);
     expect(releaseMs - agentDeviceFinalSampleMs).toBeGreaterThanOrEqual(3000);
+    const predecessorCenterFinalSampleMs =
+      timing.sourceHoldMs +
+      timing.moveBudgetMs +
+      timing.predecessorCenterSettleMarginMs +
+      (timing.sampleCount - 1) * timing.sampleIntervalMs;
+    expect(timing.predecessorCenterSettleMarginMs).toBeGreaterThan(
+      timing.agentDeviceSettleMarginMs
+    );
+    expect(predecessorCenterFinalSampleMs).toBeLessThan(releaseMs);
+    expect(releaseMs - predecessorCenterFinalSampleMs).toBeGreaterThanOrEqual(
+      1500
+    );
     expect(detoxRunner).toContain("require('./pointer-timing.json')");
     expect(detoxRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain(
@@ -727,6 +740,9 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain(
       'pointerTiming.agentDeviceSettleMarginMs'
+    );
+    expect(agentDeviceRunner).toContain(
+      'pointerTiming.predecessorCenterSettleMarginMs'
     );
     expect(agentDeviceRunner).toContain("'replay',");
     expect(agentDeviceRunner).toContain('observedLabelsFromSnapshot');

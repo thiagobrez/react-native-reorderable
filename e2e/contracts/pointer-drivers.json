@@ -42,7 +42,8 @@
         "destinationId": "card-3",
         "labelsById": { "card-2": "Card row 3" },
         "destinationSelector": {
-          "relation": "predecessorCenter"
+          "relation": "predecessorCenter",
+          "testID": "card-card-2"
         }
       },
       "scoped-drop": {

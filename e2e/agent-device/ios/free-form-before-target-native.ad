@@ -8,10 +8,10 @@ open "reorderable://lab/free-form?preset=teaching&engine=auto"
 wait "Current order: card-0, card-1, card-2, card-3, card-4, card-5" 15000
 wait "Callback count: 0" 5000
 
-# Agent Device 0.20.6 can target only the selector center. For SwiftUI's
+# Agent Device can target only the selector center. For SwiftUI's
 # forward-reorder midpoint rule, the predecessor center expresses insertion
 # before the contract's named target, Card row 4.
-gesture drag "label=\"Card row 1\"" "label=\"Card row 3\"" 650 1200 8000
+gesture drag "id=\"card-card-0\"" "id=\"card-card-2\"" 650 1200 8000
 wait "Last committed event: {\"sourceIds\":[\"card-0\"],\"destination\":{\"sectionId\":null,\"beforeId\":\"card-3\"}}" 5000
 wait "Current order: card-1, card-2, card-0, card-3, card-4, card-5" 5000
 wait "Callback count: 1" 5000

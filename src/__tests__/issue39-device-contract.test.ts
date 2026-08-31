@@ -76,7 +76,11 @@ describe('issue 39 portable device contract', () => {
         Record<
           string,
           {
-            destinationSelector: { label: string; relation: string };
+            destinationSelector: {
+              label: string;
+              relation: string;
+              testID?: string;
+            };
             driver: string;
             semanticTargetLabel: string;
           }
@@ -178,7 +182,7 @@ describe('issue 39 portable device contract', () => {
         Record<
           string,
           {
-            destinationSelector: { relation: string };
+            destinationSelector: { relation: string; testID?: string };
             driver: string;
             semanticTargetLabel: string;
           }
@@ -214,6 +218,7 @@ describe('issue 39 portable device contract', () => {
       labelsById: { 'card-2': 'Card row 3' },
       destinationSelector: {
         relation: 'predecessorCenter',
+        testID: 'card-card-2',
       },
     });
     expect(fallbackPlan).toEqual({
@@ -228,7 +233,7 @@ describe('issue 39 portable device contract', () => {
       'e2e/agent-device/ios/free-form-before-target-native.ad'
     );
     expect(replay).toContain(
-      'gesture drag "label=\\"Card row 1\\"" "label=\\"Card row 3\\"" 650 1200 8000'
+      'gesture drag "id=\\"card-card-0\\"" "id=\\"card-card-2\\"" 650 1200 8000'
     );
     expect(listPlan).toEqual({
       driver: 'agent-device',
@@ -300,7 +305,7 @@ describe('issue 39 portable device contract', () => {
         gestureMarkerPath: string;
         initialLabels: string[];
         platform: string;
-        recordingPath: string;
+        recordingPath?: string;
         sourceSelector: string;
         terminalPath: string;
         timing: {
@@ -406,7 +411,6 @@ describe('issue 39 portable device contract', () => {
       gestureMarkerPath: '/tmp/gesture-start.png',
       initialLabels: ['Callback count: 0'],
       platform: 'ios',
-      recordingPath: '/tmp/pointer.mp4',
       sourceSelector: 'label="Card row 1"',
       terminalPath: '/tmp/terminal.png',
       timing: {
@@ -418,6 +422,8 @@ describe('issue 39 portable device contract', () => {
     expect(iosReplay).toContain(
       'open "${DEEP_LINK}"\nalert accept\nopen "${DEEP_LINK}"\nwait "Callback count: 0" 15000'
     );
+    expect(iosReplay).not.toContain('record start');
+    expect(iosReplay).not.toContain('record stop');
     expect(
       observation.agentDeviceReplayScript({
         acceptDeepLinkPrompt: false,
@@ -728,6 +734,13 @@ console.log(JSON.stringify({
       '[scenarioId]: {\n          labels: scenario.expected'
     );
     expect(agentDeviceRunner).toContain('gestureMarkerPath');
+    expect(agentDeviceRunner).toContain('selectorForLabel');
+    expect(agentDeviceRunner).toContain('`id="${testId}"`');
+    expect(agentDeviceRunner).toContain("'recordVideo'");
+    expect(agentDeviceRunner).toContain("iosRecorder.kill('SIGINT')");
+    expect(agentDeviceRunner).toContain(
+      "recordingPath: platform === 'ios' ? undefined : recordingPath"
+    );
     expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
     expect(agentDeviceRunner).toContain("'screencap'");
     expect(agentDeviceRunner).toContain("'deep-link-confirmed'");
@@ -864,7 +877,7 @@ console.log(JSON.stringify({
       expect(protocol).toContain(publicContract);
     }
     expect(protocol).toContain('same logical element');
-    expect(protocol).toContain('Agent Device 0.20.6');
+    expect(protocol).toContain('Agent Device 0.20.10');
     expect(protocol).toContain('It can drive VoiceOver focus');
     expect(protocol).toContain('simulator or forced fallback');
     expect(record).toContain('Status: **PASS**');

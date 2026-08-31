@@ -23,7 +23,7 @@ function passingReport(platform: 'ios' | 'android'): PhysicalReport {
   return {
     schemaVersion: 1,
     platform,
-    agentDeviceVersion: '0.20.6',
+    agentDeviceVersion: '0.20.10',
     buildMode: 'Release',
     geometryOwner: 'production',
     device: {
@@ -102,7 +102,7 @@ describe('issue #40 publication gates', () => {
     [
       'unpinned Agent Device',
       (report: PhysicalReport) => (report.agentDeviceVersion = '0.20.5'),
-      'Agent Device 0.20.6 is required',
+      'Agent Device 0.20.10 is required',
     ],
     [
       'non-minimum hardware',

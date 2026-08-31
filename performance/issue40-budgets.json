@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "agentDeviceVersion": "0.20.6",
+  "agentDeviceVersion": "0.20.10",
   "rowCount": 10000,
   "minimumOsVersion": {
     "ios": "15.1",

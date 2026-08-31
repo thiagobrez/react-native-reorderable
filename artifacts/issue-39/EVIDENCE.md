@@ -7,15 +7,18 @@ committed.
 
 ## Harness capability
 
-The repository pins Agent Device 0.20.6, which provides the published
+The repository pins Agent Device 0.20.10, which provides the published
 selector-targeted continuous drag used here:
 
 `gesture drag <source> <destination> [sourceHoldMs] [moveMs] [destinationHoldMs]`
 
 The replay keeps one pointer down through source hold, movement, destination
-hold, and release. `e2e/contracts/pointer-drivers.json` selects Agent Device for
+hold, and release. iOS recordings use `simctl` outside the replay so evidence
+capture does not contend with replay's device execution lock.
+`e2e/contracts/pointer-drivers.json` selects Agent Device for
 the pointer routes it supports and Detox for the remaining semantic and
-lifecycle routes. All routes use accessibility-visible labels before test IDs,
+lifecycle routes. All routes verify accessibility-visible labels and use exact
+public test IDs to disambiguate gesture targets,
 open a named Scenario Lab deep link, record deterministically, and run headless.
 
 ## Four-configuration matrix
@@ -62,8 +65,8 @@ Expected result: `Verified continuous feedback for 20 runs`.
 
 The accepted physical record is
 `physical-ios27-voiceover/2026-08-14T180600Z-00008150/RECORD.md`.
-On an iPhone 17 Pro Max running iOS 27.0, the repository-pinned Agent Device
-client drove VoiceOver custom actions and captured uninterrupted recordings,
+On an iPhone 17 Pro Max running iOS 27.0, the recorded Agent Device client drove
+VoiceOver custom actions and captured uninterrupted recordings,
 screenshots, accessibility snapshots, gesture telemetry, device/build metadata,
 and Caption Panel transcripts.
 

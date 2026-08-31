@@ -1,6 +1,8 @@
 function observedLabelsFromSnapshot(snapshot, expectedLabels, bundleId) {
   if (snapshot?.success !== true || !Array.isArray(snapshot?.data?.nodes))
-    throw new Error('Agent Device snapshot did not contain an accessibility tree');
+    throw new Error(
+      'Agent Device snapshot did not contain an accessibility tree'
+    );
   const appNodes = snapshot.data.nodes.filter(
     (node) =>
       node.visibleToUser !== false &&
@@ -47,18 +49,18 @@ function agentDeviceReplayScript({
     'open "${APP_TARGET}" --relaunch',
     'wait "Scenario Lab" 15000',
     'open "${DEEP_LINK}"',
-    ...(acceptDeepLinkPrompt
-      ? ['alert accept', 'open "${DEEP_LINK}"']
-      : []),
+    ...(acceptDeepLinkPrompt ? ['alert accept', 'open "${DEEP_LINK}"'] : []),
     ...initialLabels.map((label) => `wait ${quote(label)} 15000`),
     `screenshot ${quote(baselinePath)}`,
-    `record start ${quote(recordingPath)} --scope device`,
+    ...(recordingPath == null
+      ? []
+      : [`record start ${quote(recordingPath)} --scope device`]),
     'wait 1000',
     `screenshot ${quote(gestureMarkerPath)}`,
     `gesture drag ${quote(sourceSelector)} ${quote(destinationSelector)} ${timing.sourceHoldMs} ${timing.moveBudgetMs} ${timing.destinationHoldMs}`,
     ...expectedLabels.map((label) => `wait ${quote(label)} 15000`),
     `screenshot ${quote(terminalPath)}`,
-    'record stop',
+    ...(recordingPath == null ? [] : ['record stop']),
     '',
   ].join('\n');
 }

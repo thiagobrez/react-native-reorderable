@@ -1,6 +1,7 @@
 {
   "sourceHoldMs": 650,
   "moveBudgetMs": 1200,
+  "preGestureSettleMs": 6000,
   "settleMarginMs": 1650,
   "agentDeviceSettleMarginMs": 3500,
   "predecessorCenterSettleMarginMs": 5000,

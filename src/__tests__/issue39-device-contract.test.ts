@@ -311,6 +311,7 @@ describe('issue 39 portable device contract', () => {
         timing: {
           destinationHoldMs: number;
           moveBudgetMs: number;
+          preGestureSettleMs: number;
           sourceHoldMs: number;
         };
       }) => string;
@@ -374,6 +375,7 @@ describe('issue 39 portable device contract', () => {
         timing: {
           destinationHoldMs: 8000,
           moveBudgetMs: 1200,
+          preGestureSettleMs: 6000,
           sourceHoldMs: 650,
         },
       })
@@ -396,6 +398,7 @@ describe('issue 39 portable device contract', () => {
         timing: {
           destinationHoldMs: 8000,
           moveBudgetMs: 1200,
+          preGestureSettleMs: 6000,
           sourceHoldMs: 650,
         },
       })
@@ -416,6 +419,7 @@ describe('issue 39 portable device contract', () => {
       timing: {
         destinationHoldMs: 8000,
         moveBudgetMs: 1200,
+        preGestureSettleMs: 6000,
         sourceHoldMs: 650,
       },
     });
@@ -424,6 +428,9 @@ describe('issue 39 portable device contract', () => {
     );
     expect(iosReplay).not.toContain('record start');
     expect(iosReplay).not.toContain('record stop');
+    expect(iosReplay).toContain(
+      'wait 6000\nscreenshot "/tmp/gesture-start.png"\ngesture drag'
+    );
     expect(
       observation.agentDeviceReplayScript({
         acceptDeepLinkPrompt: false,
@@ -440,6 +447,7 @@ describe('issue 39 portable device contract', () => {
         timing: {
           destinationHoldMs: 8000,
           moveBudgetMs: 1200,
+          preGestureSettleMs: 6000,
           sourceHoldMs: 650,
         },
       })
@@ -716,6 +724,7 @@ console.log(JSON.stringify({
       agentDeviceSettleMarginMs: number;
       destinationHoldMs: number;
       moveBudgetMs: number;
+      preGestureSettleMs: number;
       predecessorCenterSettleMarginMs: number;
       sampleCount: number;
       sampleIntervalMs: number;
@@ -724,6 +733,8 @@ console.log(JSON.stringify({
     };
     const detoxRunner = read('e2e/contracts/portable-contract.e2e.cjs');
     const agentDeviceRunner = read('scripts/run-agent-device-pointer.mjs');
+
+    expect(timing.preGestureSettleMs).toBeGreaterThanOrEqual(5000);
 
     expect(
       pointerScenarios.every(

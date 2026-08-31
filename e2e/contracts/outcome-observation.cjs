@@ -55,7 +55,7 @@ function agentDeviceReplayScript({
     ...(recordingPath == null
       ? []
       : [`record start ${quote(recordingPath)} --scope device`]),
-    'wait 1000',
+    `wait ${timing.preGestureSettleMs}`,
     `screenshot ${quote(gestureMarkerPath)}`,
     `gesture drag ${quote(sourceSelector)} ${quote(destinationSelector)} ${timing.sourceHoldMs} ${timing.moveBudgetMs} ${timing.destinationHoldMs}`,
     ...expectedLabels.map((label) => `wait ${quote(label)} 15000`),

@@ -25,6 +25,7 @@ struct Run: Codable {
   let scenario: String
   let kind: String
   let sourceLabel: String?
+  let sourceLabelAliases: [String]?
   let predecessorLabel: String?
   let targetLabel: String
   let visualTargetLabel: String?
@@ -36,6 +37,7 @@ struct Report: Codable { let runs: [Run] }
 struct ScenarioSpec: Decodable {
   let kind: String
   let sourceLabel: String?
+  let sourceLabelAliasesByConfiguration: [String: [String]]?
   let predecessorLabel: String?
   let targetLabel: String
   let visualTargetLabel: String?
@@ -229,7 +231,9 @@ func analyzeRun(
   }
   return Run(
     configuration: configuration, scenario: scenario, kind: spec.kind,
-    sourceLabel: spec.sourceLabel, predecessorLabel: spec.predecessorLabel,
+    sourceLabel: spec.sourceLabel,
+    sourceLabelAliases: spec.sourceLabelAliasesByConfiguration?[configuration],
+    predecessorLabel: spec.predecessorLabel,
     targetLabel: spec.targetLabel,
     visualTargetLabel: resolvedVisualTargetLabel,
     baselineLabels: baselineLabels,

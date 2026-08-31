@@ -551,6 +551,7 @@ describe('issue 39 portable device contract', () => {
         read('e2e/contracts/fixtures/feedback-occluded-valid.json')
       ) as {
         runs: Array<{
+          sourceLabelAliases?: string[];
           samples: Array<{ labels: Array<{ text: string }> }>;
         }>;
       };
@@ -566,6 +567,25 @@ describe('issue 39 portable device contract', () => {
       expect(() => runReport(reportPath)).toThrow(
         /expected source-position evidence in at least 2 of 3 hold samples, found 1/
       );
+
+      const aliasedReport = JSON.parse(
+        read('e2e/contracts/fixtures/feedback-occluded-valid.json')
+      ) as typeof report;
+      aliasedReport.runs[0]!.sourceLabelAliases = ['Card row'];
+      for (const sample of aliasedReport.runs[0]!.samples) {
+        sample.labels[0]!.text = 'Card row';
+      }
+      writeFileSync(reportPath, JSON.stringify(aliasedReport));
+      expect(runReport(reportPath)).toContain(
+        'Verified continuous feedback for 1 runs'
+      );
+
+      aliasedReport.runs[0]!.samples[0]!.labels[0]!.text = 'Card row 3';
+      aliasedReport.runs[0]!.samples[1]!.labels[0]!.text = 'Card row 3';
+      writeFileSync(reportPath, JSON.stringify(aliasedReport));
+      expect(() => runReport(reportPath)).toThrow(
+        /expected source-position evidence in at least 2 of 3 hold samples, found 1/
+      );
     } finally {
       rmSync(directory, { recursive: true });
     }
@@ -575,6 +595,7 @@ describe('issue 39 portable device contract', () => {
       scenarios: Record<
         string,
         {
+          sourceLabelAliasesByConfiguration?: Record<string, string[]>;
           targetLabel: string;
           visualTargetLabel?: string;
           visualTargetLabelsByConfiguration?: Record<string, string>;
@@ -590,6 +611,11 @@ describe('issue 39 portable device contract', () => {
         'android.fallback': 'Drop selected items here',
       },
     });
+    expect(feedbackSpecs.scenarios['virtualized-list-reorder']).toMatchObject({
+      sourceLabelAliasesByConfiguration: {
+        'android.fallback': ['List row'],
+      },
+    });
     const analyzer = read('scripts/analyze-device-feedback.swift');
     expect(analyzer).toMatch(
       /beforeImage\.width \* afterImage\.height\s*== afterImage\.width \* beforeImage\.height/
@@ -600,6 +626,9 @@ describe('issue 39 portable device contract', () => {
     expect(analyzer).not.toContain('Screenshot dimensions changed during hold');
     expect(analyzer).toContain('trimmed.hasPrefix("\' ")');
     expect(analyzer).toContain('String(trimmed.dropFirst(2))');
+    expect(analyzer).toContain(
+      'sourceLabelAliases: spec.sourceLabelAliasesByConfiguration?[configuration]'
+    );
   });
 
   it('requires exactly one feedback run for every canonical configuration/scenario pair', () => {

@@ -15,6 +15,9 @@
     "virtualized-list-reorder": {
       "kind": "reorder",
       "sourceLabel": "List row 1",
+      "sourceLabelAliasesByConfiguration": {
+        "android.fallback": ["List row"]
+      },
       "predecessorLabel": "List row 3",
       "targetLabel": "List row 4"
     },

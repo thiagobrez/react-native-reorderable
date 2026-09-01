@@ -52,7 +52,7 @@ test('the iOS runner drains before held-pointer timing begins', () => {
 
   assert.match(
     replay,
-    /wait 6000\nscreenshot "\/tmp\/gesture-start\.png"\ngesture drag .* 1000 1000 8000/
+    /wait 6000\nscreenshot "\/tmp\/gesture-start\.png"\ngesture drag .* 1200 800 8000/
   );
 });
 

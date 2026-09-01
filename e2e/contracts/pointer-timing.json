@@ -1,8 +1,8 @@
 {
   "sourceHoldMs": 650,
-  "agentDeviceSourceHoldMs": 1000,
+  "agentDeviceSourceHoldMs": 1200,
   "moveBudgetMs": 1200,
-  "agentDeviceMoveBudgetMs": 1000,
+  "agentDeviceMoveBudgetMs": 800,
   "preGestureSettleMs": 6000,
   "settleMarginMs": 1650,
   "agentDeviceSettleMarginMs": 3500,

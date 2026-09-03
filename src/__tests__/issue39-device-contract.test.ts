@@ -114,17 +114,14 @@ describe('issue 39 portable device contract', () => {
       destination: { normalizedX: 0.5, normalizedY: 0.25 },
       driver: 'detox',
     });
-    expect(pointerDrivers.routes['ios26.auto-fallback']).toMatchObject({
-      'free-form-reorder': 'agent-device',
-      'multi-selection-reorder': 'agent-device',
-      'scoped-drop': 'agent-device',
-      'section-list-reorder': 'agent-device',
-      'virtualized-list-reorder': 'agent-device',
+    expect(pointerDrivers.routes['ios26.auto-fallback']).toEqual({
+      'free-form-reorder': 'detox',
+      'virtualized-list-reorder': 'detox',
+      'section-list-reorder': 'detox',
+      'multi-selection-reorder': 'detox',
+      'scoped-drop': 'detox',
     });
-    expect(pointerDrivers.overrides['ios26.auto-fallback']).toMatchObject({
-      'free-form-reorder': { driver: 'agent-device' },
-      'multi-selection-reorder': { driver: 'agent-device' },
-    });
+    expect(pointerDrivers.overrides['ios26.auto-fallback']).toBeUndefined();
     expect(pointerDrivers.routes['android.fallback']).toEqual({
       'free-form-reorder': 'detox',
       'virtualized-list-reorder': 'detox',
@@ -168,6 +165,34 @@ describe('issue 39 portable device contract', () => {
     expect(runner).not.toMatch(/reorderable-(?:list|section-list)-wrapper-/);
     expect(runner).not.toMatch(/debugPerform|trigger-app-event|acceptanceMove/);
     expect(runner).not.toMatch(/\.skip\(|\.todo\(|retryTimes|--retries/);
+  });
+
+  it('routes every configuration to the harness its pointer plan resolves to', () => {
+    const pointerDrivers = JSON.parse(
+      read('e2e/contracts/pointer-drivers.json')
+    ) as {
+      default: { driver: string };
+      overrides: Record<string, Record<string, { driver: string }>>;
+      routes: Record<string, Record<string, string>>;
+    };
+    // The isolated runner dispatches on `routes`, while the Agent Device
+    // pointer runner reads `overrides` and refuses a scenario it has no plan
+    // for. A configuration whose route disagrees with its resolved plan starts
+    // a harness that cannot run the scenario.
+    const resolved = Object.fromEntries(
+      Object.entries(pointerDrivers.routes).map(([configuration, routes]) => [
+        configuration,
+        Object.fromEntries(
+          Object.keys(routes).map((scenarioId) => [
+            scenarioId,
+            pointerDrivers.overrides[configuration]?.[scenarioId]?.driver ??
+              pointerDrivers.default.driver,
+          ])
+        ),
+      ])
+    );
+
+    expect(resolved).toEqual(pointerDrivers.routes);
   });
 
   it('plans native SwiftUI insertion by semantic target when the driver is center-only', () => {

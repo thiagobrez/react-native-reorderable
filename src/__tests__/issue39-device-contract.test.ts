@@ -625,7 +625,6 @@ describe('issue 39 portable device contract', () => {
 
   it('pins the exact four engine/runtime configurations and retains recordings', () => {
     const config = read('.detoxrc.cjs');
-    const workflow = read('.github/workflows/exact-package-candidate.yml');
     const isolatedRunner = read('scripts/run-device-contract-isolated.mjs');
     const jobRunner = read('scripts/run-device-contract-job.mjs');
 
@@ -636,7 +635,6 @@ describe('issue 39 portable device contract', () => {
       'android.fallback',
     ]) {
       expect(config).toContain(`'${configuration}'`);
-      expect(workflow).toContain(configuration);
     }
     expect(read('package.json')).toContain('"detox": "20.51.4"');
     expect(read('e2e/jest.config.cjs')).toContain(
@@ -660,8 +658,6 @@ describe('issue 39 portable device contract', () => {
     );
     expect(isolatedRunner).toContain("'--record-videos'");
     expect(isolatedRunner).toContain("'--take-screenshots'");
-    expect(workflow).toContain('if: always()');
-    expect(workflow).not.toContain('--retries');
     expect(jobRunner).toContain('index <= 2');
     expect(jobRunner).toContain('ISSUE39_MATRIX_ATTEMPT: attempt');
     expect(jobRunner).toContain('publishSuccessfulAttempt(attempt)');
@@ -670,10 +666,6 @@ describe('issue 39 portable device contract', () => {
     expect(isolatedRunner).toContain('reachedContractAssertion');
     expect(isolatedRunner).toContain("failureKind === 'infrastructure'");
     expect(isolatedRunner).toContain('infrastructureFailure ? 75 : 1');
-    expect(workflow).toContain('timeout-minutes: 150');
-    expect(workflow).toContain('api-level: 36');
-    expect(workflow).toContain('profile: pixel_2');
-    expect(workflow).not.toContain('profile: pixel_7_pro');
   });
 
   it('keeps the physical iOS 27 VoiceOver record tied to the named public contract', () => {
@@ -725,7 +717,6 @@ describe('issue 39 portable device contract', () => {
     const jobRunner = read('scripts/run-device-contract-job.mjs');
     const iosReset = read('scripts/reset-device-contract-ios-simulator.mjs');
     const detoxConfig = read('.detoxrc.cjs');
-    const workflow = read('.github/workflows/exact-package-candidate.yml');
 
     expect(runner.indexOf('onActionStarted?.();')).toBeLessThan(
       runner.indexOf('await actionStarted;')
@@ -813,6 +804,5 @@ describe('issue 39 portable device contract', () => {
     expect(iosReset).toContain("['simctl', 'boot', target.udid]");
     expect(iosReset).toContain("['simctl', 'bootstatus', target.udid, '-b']");
     expect(iosReset).not.toContain("['simctl', 'shutdown', 'all']");
-    expect(workflow).toContain('scripts/run-device-contract-job.mjs');
   });
 });

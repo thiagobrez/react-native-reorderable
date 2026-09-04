@@ -11,6 +11,8 @@ on:
       - checks_requested
 
 concurrency:
+  # Keep the event name in the group: sharing one group across events once let
+  # a release-authorizing push run deadlock behind other events for 13 hours.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 

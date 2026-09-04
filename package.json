@@ -219,7 +219,6 @@
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
     ],
-    "//": "The self-reference mapping below (with the react-native-reorderable-source export condition above) makes Jest resolve the package name to src/ in a clean checkout; without it, tests require a build in lib/.",
     "moduleNameMapper": {
       "^react-native-reorderable$": "<rootDir>/src/index.tsx",
       "^react-native-reorderable/(flash-list|legend-list)$": "<rootDir>/src/$1.tsx"

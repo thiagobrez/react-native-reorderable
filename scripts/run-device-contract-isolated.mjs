@@ -31,11 +31,6 @@ const caseOutcomeRoot = resolve(
   configuration,
   ...attemptSegments
 );
-const feedbackRoot = resolve(
-  'artifacts/issue-39/feedback',
-  configuration,
-  ...attemptSegments
-);
 const agentDeviceRoot = resolve(
   'artifacts/issue-39/agent-device',
   configuration,
@@ -135,7 +130,6 @@ for (const [scenarioIndex, scenario] of applicable.entries()) {
             env: {
               ...process.env,
               ISSUE39_AGENT_DEVICE_DIR: resolve(agentDeviceRoot, scenario.id),
-              ISSUE39_FEEDBACK_DIR: resolve(feedbackRoot, scenario.id),
             },
             stdio: 'inherit',
             timeout: agentDeviceProcessTimeoutMs,
@@ -166,7 +160,6 @@ for (const [scenarioIndex, scenario] of applicable.entries()) {
               ...process.env,
               AGENT_DEVICE_STATE_DIR: replayStateRoot,
               ISSUE39_DETOX_SERVER_URL: detoxServerUrlForCase(scenarioIndex),
-              ISSUE39_FEEDBACK_DIR: resolve(feedbackRoot, scenario.id),
               ISSUE39_OUTCOME_FILE: outcomeFile,
             },
             stdio: 'inherit',

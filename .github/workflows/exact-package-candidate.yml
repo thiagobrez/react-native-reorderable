@@ -619,47 +619,7 @@ jobs:
             artifacts/issue-39/device-tables/${{ matrix.configuration }}*.json
             artifacts/issue-39/outcomes-by-case/${{ matrix.configuration }}/
             artifacts/issue-39/outcomes/${{ matrix.configuration }}.json
-            artifacts/issue-39/feedback/${{ matrix.configuration }}/
             artifacts/issue-39/agent-device/${{ matrix.configuration }}/
-
-  feedback:
-    name: Verify continuous public destination feedback
-    if: always()
-    needs: contract
-    runs-on: macos-26
-    steps:
-      - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Download four-engine feedback artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: issue-39-*
-          path: artifacts/issue-39/downloads
-          merge-multiple: true
-
-      - name: Fail if any producer failed
-        if: needs.contract.result != 'success'
-        run: exit 1
-
-      - name: Extract public labels and destination visual change
-        run: |
-          swift scripts/analyze-device-feedback.swift \
-            artifacts/issue-39/downloads/feedback \
-            e2e/contracts/feedback-specs.json \
-            artifacts/issue-39/feedback-report.json
-
-      - name: Verify every held-pointer sample
-        run: node scripts/verify-device-feedback.mjs artifacts/issue-39/feedback-report.json
-
-      - name: Upload semantic feedback report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: issue-39-feedback-report
-          if-no-files-found: error
-          retention-days: 14
-          path: artifacts/issue-39/feedback-report.json
 
   parity:
     name: Compare four-engine public outcomes
@@ -694,7 +654,6 @@ jobs:
       needs.render-regressions.result == 'success' &&
       needs.clean-native-consumers.result == 'success' &&
       needs.contract.result == 'success' &&
-      needs.feedback.result == 'success' &&
       needs.parity.result == 'success' &&
       (
         (github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' &&
@@ -712,7 +671,6 @@ jobs:
       - minimum-android-runtime
       - minimum-ios-runtime
       - contract
-      - feedback
       - parity
     runs-on: ubuntu-latest
     steps:

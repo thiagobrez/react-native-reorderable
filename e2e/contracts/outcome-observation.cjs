@@ -26,16 +26,13 @@ function observedLabelsFromSnapshot(snapshot, expectedLabels, bundleId) {
 
 function agentDeviceReplayScript({
   acceptDeepLinkPrompt,
-  baselinePath,
   deepLink,
   destinationSelector,
   expectedLabels,
-  gestureMarkerPath,
   initialLabels,
   platform,
   recordingPath,
   sourceSelector,
-  terminalPath,
   timing,
 }) {
   const quote = (value) => `"${value.replaceAll('"', '\\"')}"`;
@@ -51,15 +48,11 @@ function agentDeviceReplayScript({
     'open "${DEEP_LINK}"',
     ...(acceptDeepLinkPrompt ? ['alert accept', 'open "${DEEP_LINK}"'] : []),
     ...initialLabels.map((label) => `wait ${quote(label)} 15000`),
-    `screenshot ${quote(baselinePath)}`,
     ...(recordingPath == null
       ? []
       : [`record start ${quote(recordingPath)} --scope device`]),
-    'wait 1000',
-    `screenshot ${quote(gestureMarkerPath)}`,
     `gesture drag ${quote(sourceSelector)} ${quote(destinationSelector)} ${timing.sourceHoldMs} ${timing.moveBudgetMs} ${timing.destinationHoldMs}`,
     ...expectedLabels.map((label) => `wait ${quote(label)} 15000`),
-    `screenshot ${quote(terminalPath)}`,
     ...(recordingPath == null ? [] : ['record stop']),
     '',
   ].join('\n');

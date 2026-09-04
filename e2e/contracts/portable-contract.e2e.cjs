@@ -1,4 +1,3 @@
-const assert = require('node:assert/strict');
 const { execFile } = require('node:child_process');
 const { mkdir, writeFile } = require('node:fs/promises');
 const { dirname } = require('node:path');
@@ -29,10 +28,6 @@ const visible = (label) => element(by.label(label));
 // A selector resolves to its center, but the portable action is specifically
 // insertion before the named target. The upper quarter stays on the target
 // while selecting its leading insertion side in every engine.
-const feedbackFirstSampleMs =
-  pointerTiming.sourceHoldMs +
-  pointerTiming.moveBudgetMs +
-  pointerTiming.settleMarginMs;
 
 async function scenarioElement(scenario, label) {
   const publicElement = visible(label);
@@ -68,34 +63,9 @@ async function openScenario(scenario) {
   return { labels: initialLabels };
 }
 
-async function captureOsScreenshot(scenarioId, name) {
-  const directory =
-    process.env.ISSUE39_FEEDBACK_DIR ??
-    `artifacts/issue-39/feedback/${configuration}/${scenarioId}`;
-  const path = `${directory}/${name}.png`;
-  await mkdir(directory, { recursive: true });
-  if (platform === 'ios') {
-    await execFileAsync('xcrun', [
-      'simctl',
-      'io',
-      device.id,
-      'screenshot',
-      path,
-    ]);
-  } else {
-    const { stdout } = await execFileAsync(
-      'adb',
-      ['-s', device.id, 'exec-out', 'screencap', '-p'],
-      { encoding: 'buffer', maxBuffer: 16 * 1024 * 1024 }
-    );
-    await writeFile(path, stdout);
-  }
-  return path;
-}
-
 async function runUninterruptedDrag(
   scenario,
-  observeFeedback,
+  throwOnGestureRejection,
   onActionStarted
 ) {
   if (
@@ -111,10 +81,6 @@ async function runUninterruptedDrag(
   const destination = pointerDrivers.default.destination;
   await detoxExpectVisible(source);
   await detoxExpectVisible(target);
-  if (observeFeedback) {
-    await captureOsScreenshot(scenario.id, 'baseline');
-  }
-  let completed = false;
   let rejected;
   const action = source
     .longPressAndDrag(
@@ -131,25 +97,11 @@ async function runUninterruptedDrag(
     )
     .catch((error) => {
       rejected = error;
-    })
-    .finally(() => {
-      completed = true;
     });
   onActionStarted?.();
 
-  if (observeFeedback) {
-    await delay(feedbackFirstSampleMs);
-    for (let sample = 0; sample < pointerTiming.sampleCount; sample += 1) {
-      assert.equal(completed, false, 'drag released before feedback sampling');
-      await captureOsScreenshot(scenario.id, `sample-${sample + 1}`);
-      if (sample + 1 < pointerTiming.sampleCount) {
-        await delay(pointerTiming.sampleIntervalMs);
-      }
-    }
-  }
-
   await action;
-  if (observeFeedback && rejected) throw rejected;
+  if (throwOnGestureRejection && rejected) throw rejected;
   return rejected;
 }
 

@@ -26,7 +26,7 @@ function publishDirectoryChildren(source, destination) {
 
 function publishSuccessfulAttempt(attempt) {
   const attemptRoot = ['attempts', attempt];
-  for (const category of ['agent-device', 'feedback', 'outcomes-by-case'])
+  for (const category of ['agent-device', 'outcomes-by-case'])
     publishDirectoryChildren(
       resolve('artifacts/issue-39', category, configuration, ...attemptRoot),
       resolve('artifacts/issue-39', category, configuration)
@@ -54,12 +54,7 @@ function publishSuccessfulAttempt(attempt) {
 }
 
 function clearPublishedEvidence() {
-  for (const category of [
-    'agent-device',
-    'detox',
-    'feedback',
-    'outcomes-by-case',
-  ])
+  for (const category of ['agent-device', 'detox', 'outcomes-by-case'])
     rmSync(resolve('artifacts/issue-39', category, configuration), {
       force: true,
       recursive: true,
@@ -76,12 +71,7 @@ function clearPublishedEvidence() {
 }
 
 function clearAttemptEvidence(attempt) {
-  for (const category of [
-    'agent-device',
-    'detox',
-    'feedback',
-    'outcomes-by-case',
-  ])
+  for (const category of ['agent-device', 'detox', 'outcomes-by-case'])
     rmSync(
       resolve(
         'artifacts/issue-39',

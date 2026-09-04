@@ -1,10 +1,5 @@
 {
   "sourceHoldMs": 650,
   "moveBudgetMs": 1200,
-  "settleMarginMs": 1650,
-  "agentDeviceSettleMarginMs": 3500,
-  "predecessorCenterSettleMarginMs": 5000,
-  "destinationHoldMs": 8000,
-  "sampleCount": 3,
-  "sampleIntervalMs": 700
+  "destinationHoldMs": 8000
 }

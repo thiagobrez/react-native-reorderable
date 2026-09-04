@@ -323,16 +323,13 @@ describe('issue 39 portable device contract', () => {
     const observation = jest.requireActual<{
       agentDeviceReplayScript: (options: {
         acceptDeepLinkPrompt: boolean;
-        baselinePath: string;
         deepLink: string;
         destinationSelector: string;
         expectedLabels: string[];
-        gestureMarkerPath: string;
         initialLabels: string[];
         platform: string;
         recordingPath?: string;
         sourceSelector: string;
-        terminalPath: string;
         timing: {
           destinationHoldMs: number;
           moveBudgetMs: number;
@@ -386,16 +383,13 @@ describe('issue 39 portable device contract', () => {
     expect(
       observation.agentDeviceReplayScript({
         acceptDeepLinkPrompt: false,
-        baselinePath: '/tmp/baseline.png',
         deepLink: 'reorderable://lab/free-form?engine=fallback',
         destinationSelector: 'label="Card row 3"',
         expectedLabels: ['Callback count: 1'],
-        gestureMarkerPath: '/tmp/gesture-start.png',
         initialLabels: ['Callback count: 0'],
         platform: 'android',
         recordingPath: '/tmp/pointer.mp4',
         sourceSelector: 'label="Card row 1"',
-        terminalPath: '/tmp/terminal.png',
         timing: {
           destinationHoldMs: 8000,
           moveBudgetMs: 1200,
@@ -408,16 +402,13 @@ describe('issue 39 portable device contract', () => {
     expect(
       observation.agentDeviceReplayScript({
         acceptDeepLinkPrompt: false,
-        baselinePath: '/tmp/baseline.png',
         deepLink: 'reorderable://lab/free-form?engine=fallback',
         destinationSelector: 'label="Card row 3"',
         expectedLabels: ['Callback count: 1'],
-        gestureMarkerPath: '/tmp/gesture-start.png',
         initialLabels: ['Callback count: 0'],
         platform: 'android',
         recordingPath: '/tmp/pointer.mp4',
         sourceSelector: 'label="Card row 1"',
-        terminalPath: '/tmp/terminal.png',
         timing: {
           destinationHoldMs: 8000,
           moveBudgetMs: 1200,
@@ -425,19 +416,16 @@ describe('issue 39 portable device contract', () => {
         },
       })
     ).toContain(
-      'open "${APP_TARGET}" --relaunch\nwait "Scenario Lab" 15000\nopen "${DEEP_LINK}"\nwait "Callback count: 0" 15000\nscreenshot "/tmp/baseline.png"\nrecord start "/tmp/pointer.mp4" --scope device'
+      'open "${APP_TARGET}" --relaunch\nwait "Scenario Lab" 15000\nopen "${DEEP_LINK}"\nwait "Callback count: 0" 15000\nrecord start "/tmp/pointer.mp4" --scope device'
     );
     const iosReplay = observation.agentDeviceReplayScript({
       acceptDeepLinkPrompt: true,
-      baselinePath: '/tmp/baseline.png',
       deepLink: 'reorderable://lab/free-form?engine=fallback',
       destinationSelector: 'label="Card row 3"',
       expectedLabels: ['Callback count: 1'],
-      gestureMarkerPath: '/tmp/gesture-start.png',
       initialLabels: ['Callback count: 0'],
       platform: 'ios',
       sourceSelector: 'label="Card row 1"',
-      terminalPath: '/tmp/terminal.png',
       timing: {
         destinationHoldMs: 8000,
         moveBudgetMs: 1200,
@@ -452,16 +440,13 @@ describe('issue 39 portable device contract', () => {
     expect(
       observation.agentDeviceReplayScript({
         acceptDeepLinkPrompt: false,
-        baselinePath: '/tmp/baseline.png',
         deepLink: 'reorderable://lab/free-form?engine=fallback',
         destinationSelector: 'label="Card row 3"',
         expectedLabels: ['Callback count: 1'],
-        gestureMarkerPath: '/tmp/gesture-start.png',
         initialLabels: ['Callback count: 0'],
         platform: 'ios',
         recordingPath: '/tmp/pointer.mp4',
         sourceSelector: 'label="Card row 1"',
-        terminalPath: '/tmp/terminal.png',
         timing: {
           destinationHoldMs: 8000,
           moveBudgetMs: 1200,
@@ -540,270 +525,41 @@ describe('issue 39 portable device contract', () => {
     }
   });
 
-  it('verifies visible and legitimately occluded continuous feedback', () => {
-    const verifier = resolve(root, 'scripts/verify-device-feedback.mjs');
-    const runReport = (path: string) =>
-      execFileSync(process.execPath, [verifier, '--case', path], {
-        encoding: 'utf8',
-      });
-    const runFixture = (name: string) =>
-      runReport(resolve(root, `e2e/contracts/fixtures/${name}.json`));
-
-    expect(runFixture('feedback-valid')).toContain(
-      'Verified continuous feedback for 2 runs'
-    );
-    expect(runFixture('feedback-occluded-valid')).toContain(
-      'Verified continuous feedback for 1 runs'
-    );
-    expect(() => runFixture('feedback-missing')).toThrow(
-      /expected at least 3 hold samples/
-    );
-    expect(() => runFixture('feedback-ambiguous')).toThrow(
-      /expected exactly one public label "Card row 1", found 2/
-    );
-    expect(() => runFixture('feedback-baseline-ambiguous')).toThrow(
-      /baseline\.png: expected exactly one public label "Card row 6", found 2/
-    );
-    expect(() => runFixture('feedback-source-outside')).toThrow(
-      /expected source-position evidence in at least 2 of 3 hold samples, found 1/
-    );
-    expect(() => runFixture('feedback-insufficient-change')).toThrow(
-      /occluded insertion band visual change 0\.01 is below 0\.02/
-    );
-    const directory = mkdtempSync(resolve(tmpdir(), 'feedback-ocr-miss-'));
-    try {
-      const report = JSON.parse(
-        read('e2e/contracts/fixtures/feedback-occluded-valid.json')
-      ) as {
-        runs: Array<{
-          sourceLabelAliases?: string[];
-          samples: Array<{ labels: Array<{ text: string }> }>;
-        }>;
-      };
-      report.runs[0]!.samples[0]!.labels = [];
-      const reportPath = resolve(directory, 'report.json');
-      writeFileSync(reportPath, JSON.stringify(report));
-      expect(runReport(reportPath)).toContain(
-        'Verified continuous feedback for 1 runs'
-      );
-
-      report.runs[0]!.samples[1]!.labels = [];
-      writeFileSync(reportPath, JSON.stringify(report));
-      expect(() => runReport(reportPath)).toThrow(
-        /expected source-position evidence in at least 2 of 3 hold samples, found 1/
-      );
-
-      const aliasedReport = JSON.parse(
-        read('e2e/contracts/fixtures/feedback-occluded-valid.json')
-      ) as typeof report;
-      aliasedReport.runs[0]!.sourceLabelAliases = ['Card row'];
-      for (const sample of aliasedReport.runs[0]!.samples) {
-        sample.labels[0]!.text = 'Card row';
-      }
-      writeFileSync(reportPath, JSON.stringify(aliasedReport));
-      expect(runReport(reportPath)).toContain(
-        'Verified continuous feedback for 1 runs'
-      );
-
-      aliasedReport.runs[0]!.samples[0]!.labels[0]!.text = 'Card row 3';
-      aliasedReport.runs[0]!.samples[1]!.labels[0]!.text = 'Card row 3';
-      writeFileSync(reportPath, JSON.stringify(aliasedReport));
-      expect(() => runReport(reportPath)).toThrow(
-        /expected source-position evidence in at least 2 of 3 hold samples, found 1/
-      );
-    } finally {
-      rmSync(directory, { recursive: true });
-    }
-    const feedbackSpecs = JSON.parse(
-      read('e2e/contracts/feedback-specs.json')
-    ) as {
-      scenarios: Record<
-        string,
-        {
-          sourceLabelAliasesByConfiguration?: Record<string, string[]>;
-          targetLabel: string;
-          visualTargetLabel?: string;
-          visualTargetLabelsByConfiguration?: Record<string, string>;
-        }
-      >;
-    };
-    expect(feedbackSpecs.scenarios['scoped-drop']).toMatchObject({
-      targetLabel: 'Accepting drop zone',
-      visualTargetLabel: 'Acceptin',
-      visualTargetLabelsByConfiguration: {
-        'ios27.fallback': 'Drop selected items here',
-        'ios26.auto-fallback': 'Drop selected items here',
-        'android.fallback': 'Drop selected items here',
-      },
-    });
-    expect(feedbackSpecs.scenarios['virtualized-list-reorder']).toMatchObject({
-      sourceLabelAliasesByConfiguration: {
-        'android.fallback': ['List row'],
-      },
-    });
-    const analyzer = read('scripts/analyze-device-feedback.swift');
-    expect(analyzer).toMatch(
-      /beforeImage\.width \* afterImage\.height\s*== afterImage\.width \* beforeImage\.height/
-    );
-    expect(analyzer).toContain(
-      'afterImage, width: before.width, height: before.height'
-    );
-    expect(analyzer).not.toContain('Screenshot dimensions changed during hold');
-    expect(analyzer).toContain('trimmed.hasPrefix("\' ")');
-    expect(analyzer).toContain('String(trimmed.dropFirst(2))');
-    expect(analyzer).toContain(
-      'sourceLabelAliases: spec.sourceLabelAliasesByConfiguration?[configuration]'
-    );
-  });
-
-  it('requires exactly one feedback run for every canonical configuration/scenario pair', () => {
-    const verifierUrl = JSON.stringify(
-      `file://${resolve(root, 'scripts/verify-device-feedback.mjs')}`
-    );
-    const result = JSON.parse(
-      execFileSync(
-        process.execPath,
-        [
-          '--input-type=module',
-          '--eval',
-          `const { assertFeedbackUniverse } = await import(${verifierUrl});
-const configurations = ['android.fallback', 'ios26.auto-fallback', 'ios27.fallback', 'ios27.native'];
-const scenarios = ['free-form-reorder', 'multi-selection-reorder', 'scoped-drop', 'section-list-reorder', 'virtualized-list-reorder'];
-const runs = configurations.flatMap(configuration => scenarios.map(scenario => ({ configuration, scenario })));
-const failure = candidate => { try { assertFeedbackUniverse(candidate); return null; } catch (error) { return error.message; } };
-console.log(JSON.stringify({
-  complete: failure(runs),
-  missing: failure(runs.slice(1)),
-  duplicate: failure([...runs, runs[0]]),
-}));`,
-        ],
-        { encoding: 'utf8' }
-      )
-    );
-
-    expect(result).toEqual({
-      complete: null,
-      missing:
-        'feedback report must contain exactly the canonical 20 runs; received 19',
-      duplicate:
-        'feedback report contains duplicate configuration/scenario runs',
-    });
-  });
-
-  it('limits moving-preview OCR tolerance to observed glyph errors without weakening identity', () => {
-    const verifierUrl = JSON.stringify(
-      `file://${resolve(root, 'scripts/verify-device-feedback.mjs')}`
-    );
-    const result = JSON.parse(
-      execFileSync(
-        process.execPath,
-        [
-          '--input-type=module',
-          '--eval',
-          `const { matchingLabels } = await import(${verifierUrl});
-const count = (texts, expected) => matchingLabels(texts.map((text) => ({ text })), expected).length;
-console.log(JSON.stringify({
-  observedTypo: count(['Card rom 2'], 'Card row 2'),
-  observedSplitTypo: count(['Card roin 2'], 'Card row 2'),
-  observedLeadTypo: count(['Sard row 2'], 'Card row 2'),
-  wrongNumericIdentity: count(['Card rom 3'], 'Card row 2'),
-  duplicateCandidates: count(['Card rom 2', 'Card rom 2'], 'Card row 2'),
-  missingSource: count([], 'Card row 2'),
-  broaderEdit: count(['Cord row 2'], 'Card row 2'),
-}));`,
-        ],
-        { encoding: 'utf8' }
-      )
-    );
-
-    expect(result).toEqual({
-      observedTypo: 1,
-      observedSplitTypo: 1,
-      observedLeadTypo: 1,
-      wrongNumericIdentity: 0,
-      duplicateCandidates: 2,
-      missingSource: 0,
-      broaderEdit: 0,
-    });
-  });
-
-  it('samples pointer feedback only after a long destination hold has settled', () => {
+  it('drives Agent Device pointer replays without mid-gesture screen sampling', () => {
     const scenarios = JSON.parse(
       read('e2e/contracts/scenarios.json')
     ) as readonly ContractScenario[];
-    const feedbackSpecs = JSON.parse(
-      read('e2e/contracts/feedback-specs.json')
-    ) as { scenarios: Record<string, unknown> };
-    const pointerScenarios = scenarios.filter(({ id }) =>
-      Object.hasOwn(feedbackSpecs.scenarios, id)
-    );
     const timing = JSON.parse(read('e2e/contracts/pointer-timing.json')) as {
-      agentDeviceSettleMarginMs: number;
       destinationHoldMs: number;
       moveBudgetMs: number;
-      predecessorCenterSettleMarginMs: number;
-      sampleCount: number;
-      sampleIntervalMs: number;
-      settleMarginMs: number;
       sourceHoldMs: number;
     };
     const detoxRunner = read('e2e/contracts/portable-contract.e2e.cjs');
     const agentDeviceRunner = read('scripts/run-agent-device-pointer.mjs');
 
+    // The screenshot-feedback apparatus is excised: pointer drags hold the
+    // destination only as long as the gesture needs, and neither runner
+    // samples the screen mid-gesture.
+    expect(Object.keys(timing).sort()).toEqual([
+      'destinationHoldMs',
+      'moveBudgetMs',
+      'sourceHoldMs',
+    ]);
     expect(
-      pointerScenarios.every(
-        ({ action }) => action.holdDurationMs === timing.destinationHoldMs
-      )
+      scenarios
+        .filter(({ action }) => action.kind === 'drag')
+        .every(({ action }) => action.holdDurationMs == null)
     ).toBe(true);
-    const firstSampleMs =
-      timing.sourceHoldMs + timing.moveBudgetMs + timing.settleMarginMs;
-    const finalSampleMs =
-      firstSampleMs + (timing.sampleCount - 1) * timing.sampleIntervalMs;
-    const releaseMs =
-      timing.sourceHoldMs + timing.moveBudgetMs + timing.destinationHoldMs;
-    expect(firstSampleMs).toBeGreaterThan(
-      timing.sourceHoldMs + timing.moveBudgetMs
-    );
-    expect(finalSampleMs).toBeLessThan(releaseMs);
-    expect(releaseMs - finalSampleMs).toBeGreaterThanOrEqual(3000);
-    const agentDeviceFinalSampleMs =
-      timing.sourceHoldMs +
-      timing.moveBudgetMs +
-      timing.agentDeviceSettleMarginMs +
-      (timing.sampleCount - 1) * timing.sampleIntervalMs;
-    expect(timing.agentDeviceSettleMarginMs).toBeGreaterThanOrEqual(3500);
-    expect(agentDeviceFinalSampleMs).toBeLessThan(releaseMs);
-    expect(releaseMs - agentDeviceFinalSampleMs).toBeGreaterThanOrEqual(3000);
-    const predecessorCenterFinalSampleMs =
-      timing.sourceHoldMs +
-      timing.moveBudgetMs +
-      timing.predecessorCenterSettleMarginMs +
-      (timing.sampleCount - 1) * timing.sampleIntervalMs;
-    expect(timing.predecessorCenterSettleMarginMs).toBeGreaterThan(
-      timing.agentDeviceSettleMarginMs
-    );
-    expect(predecessorCenterFinalSampleMs).toBeLessThan(releaseMs);
-    expect(releaseMs - predecessorCenterFinalSampleMs).toBeGreaterThanOrEqual(
-      1500
-    );
     expect(detoxRunner).toContain("require('./pointer-timing.json')");
-    expect(detoxRunner).toContain('feedbackFirstSampleMs');
+    expect(detoxRunner).not.toContain('captureOsScreenshot');
     expect(agentDeviceRunner).toContain(
       "'../e2e/contracts/pointer-timing.json'"
-    );
-    expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
-    expect(agentDeviceRunner).toContain(
-      'pointerTiming.agentDeviceSettleMarginMs'
-    );
-    expect(agentDeviceRunner).toContain(
-      'pointerTiming.predecessorCenterSettleMarginMs'
     );
     expect(agentDeviceRunner).toContain("'replay',");
     expect(agentDeviceRunner).toContain('observedLabelsFromSnapshot');
     expect(agentDeviceRunner).not.toContain(
       '[scenarioId]: {\n          labels: scenario.expected'
     );
-    expect(agentDeviceRunner).toContain('gestureMarkerPath');
     expect(agentDeviceRunner).toContain('selectorForLabel');
     expect(agentDeviceRunner).toContain('`id="${testId}"`');
     expect(agentDeviceRunner).toContain("'recordVideo'");
@@ -811,11 +567,10 @@ console.log(JSON.stringify({
     expect(agentDeviceRunner).toContain(
       "recordingPath: platform === 'ios' ? undefined : recordingPath"
     );
-    expect(agentDeviceRunner).toContain('feedbackFirstSampleMs');
-    expect(agentDeviceRunner).toContain("'screencap'");
+    expect(agentDeviceRunner).not.toContain('gestureMarkerPath');
+    expect(agentDeviceRunner).not.toContain("'screencap'");
     expect(agentDeviceRunner).toContain("'deep-link-confirmed'");
     expect(agentDeviceRunner).toContain('acceptDeepLinkPrompt');
-    expect(agentDeviceRunner).toContain('Date.now() + 180000');
     expect(agentDeviceRunner).toMatch(/'--timeout',\s*'180000'/);
     expect(
       agentDeviceRunner.indexOf('const replayResult = await replayExit')

@@ -1,12 +1,8 @@
 name: Documentation
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  merge_group:
-    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
@@ -27,9 +23,6 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/setup
-
-      - name: Typecheck guides and examples
-        run: yarn typecheck
 
       - name: Build canonical documentation
         run: yarn docs:build

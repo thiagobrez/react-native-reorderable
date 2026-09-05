@@ -87,7 +87,7 @@ The release workflow intentionally has no npm token. Its publish job receives a 
 
 Every user-visible package change carries a file from `yarn changeset`. After a fully green push to `main`, Changesets creates or updates `changeset-release/main`. This pull request is the on-demand release boundary: leave it open while accumulating changes and merge it when the release should happen.
 
-Merging the release pull request causes the exact-package workflow to build one tarball and run that same tarball through package inspection, clean consumers, the supported React Native compatibility matrix, performance checks, and the four-engine device contract. Publication starts only after that workflow succeeds; the `main` ruleset's required pull-request checks are what guarantee the commit already passed the fast set. Immediately before npm, the publisher rechecks the tarball bytes, SHA-256, source commit, package name, and version against its manifest.
+Merging the release pull request causes the exact-package workflow to build one tarball and run that same tarball through package inspection, clean consumers, the supported React Native compatibility matrix, the minimum Android and iOS runtime floors, and the four-engine device contract. Publication starts only after that workflow succeeds; the `main` ruleset's required pull-request checks are what guarantee the commit already passed the fast set. Immediately before npm, the publisher rechecks the tarball bytes, SHA-256, source commit, package name, and version against its manifest.
 
 Changesets then creates the package tag and GitHub release. The same release workflow builds and deploys the documentation from that tagged commit. Stable versions use the npm `latest` tag.
 

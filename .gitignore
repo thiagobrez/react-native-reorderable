@@ -100,7 +100,7 @@ artifacts/issue-39/detox/
 artifacts/issue-39/feedback/
 artifacts/issue-39/outcomes-by-case/
 
-# Issue 40 physical performance jobs (uploaded by CI, not committed)
+# Local physical performance evidence (issue 40, pipeline removed in #75)
 artifacts/issue-40/
 
 # Exact release candidate generated and uploaded by CI

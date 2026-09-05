@@ -46,20 +46,3 @@ reorderable://integrations/flash-section-list?preset=focused&engine=auto
 Examples and Integrations always normalize the engine to Auto. Scenario Lab
 remounts the selected scenario when its policy changes so each run begins from
 a deterministic state.
-
-## Device verification
-
-The shared verifier navigates through visible app controls and targets a named
-scenario:
-
-```sh
-node scripts/verify-named-scenario-device.mjs \
-  --platform ios \
-  --device "iPhone 17 Pro" \
-  --scenario selection \
-  --engine fallback \
-  --artifacts artifacts/issue-38/selection-ios
-```
-
-The FlashList and Legend List package scripts delegate to this same named
-scenario verifier rather than maintaining hidden automation surfaces.

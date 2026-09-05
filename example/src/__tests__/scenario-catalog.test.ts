@@ -1,6 +1,4 @@
 import { describe, expect, it } from '@jest/globals';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
   AREAS,
   LAB_SCENARIOS,
@@ -104,14 +102,5 @@ describe('example application scenario catalog', () => {
       parseExampleLink('reorderable://lab/selection?preset=unknown&engine=auto')
     ).toBeNull();
     expect(parseExampleLink('not a link')).toBeNull();
-  });
-
-  it('keeps device automation on an app-owned visible activation target', () => {
-    const verifier = readFileSync(
-      resolve(process.cwd(), 'scripts/verify-named-scenario-device.mjs'),
-      'utf8'
-    );
-    expect(verifier).toContain('id="row-autoscroll-10"');
-    expect(verifier).not.toMatch(/reorderable-(?:list|section-list)-wrapper-/);
   });
 });

@@ -1,6 +1,12 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { reconcileReorder } from '../semantic';
@@ -894,6 +900,84 @@ console.log(JSON.stringify({
     expect(workflow).toContain('api-level: 36');
     expect(workflow).toContain('profile: pixel_2');
     expect(workflow).not.toContain('profile: pixel_7_pro');
+  });
+
+  it('purges the apple-runner cache before iOS retry attempts only', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'issue39-retry-'));
+    try {
+      const home = resolve(directory, 'home');
+      const appleRunner = resolve(home, '.agent-device', 'apple-runner');
+      const workspace = resolve(directory, 'workspace');
+      mkdirSync(resolve(workspace, 'scripts'), { recursive: true });
+      writeFileSync(
+        resolve(workspace, 'scripts/reset-device-contract-ios-simulator.mjs'),
+        'process.exit(0);\n'
+      );
+      writeFileSync(
+        resolve(workspace, 'scripts/run-device-contract-isolated.mjs'),
+        [
+          "import { appendFileSync, existsSync } from 'node:fs';",
+          "import { homedir } from 'node:os';",
+          "import { resolve } from 'node:path';",
+          'appendFileSync(',
+          "  'attempts.log',",
+          '  `${process.env.ISSUE39_MATRIX_ATTEMPT} runner-cached=${existsSync(',
+          "    resolve(homedir(), '.agent-device', 'apple-runner')",
+          '  )}\\n`',
+          ');',
+          'process.exit(Number(process.env.ISSUE39_STUB_EXIT));',
+          '',
+        ].join('\n')
+      );
+      const runJob = (configuration: string, stubExit: number) => {
+        mkdirSync(appleRunner, { recursive: true });
+        rmSync(resolve(workspace, 'attempts.log'), { force: true });
+        const job = spawnSync(
+          process.execPath,
+          [resolve(root, 'scripts/run-device-contract-job.mjs'), configuration],
+          {
+            cwd: workspace,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              HOME: home,
+              ISSUE39_STUB_EXIT: String(stubExit),
+            },
+          }
+        );
+        return {
+          attempts: readFileSync(resolve(workspace, 'attempts.log'), 'utf8'),
+          output: `${job.stdout}${job.stderr}`,
+          status: job.status,
+        };
+      };
+
+      // Infrastructure failure (exit 75) on iOS: the retry attempt must start
+      // with no restored runner artifact, and the purge must be visible in the
+      // attempt log.
+      const iosRetry = runJob('ios27.native', 75);
+      expect(iosRetry.status).toBe(75);
+      expect(iosRetry.attempts).toBe(
+        'attempt-1 runner-cached=true\nattempt-2 runner-cached=false\n'
+      );
+      expect(iosRetry.output).toContain('apple-runner');
+
+      // Contract failure on iOS: no retry, so no purge.
+      const iosContractFailure = runJob('ios27.fallback', 1);
+      expect(iosContractFailure.status).toBe(1);
+      expect(iosContractFailure.attempts).toBe(
+        'attempt-1 runner-cached=true\n'
+      );
+
+      // Android retries never touch the Apple runner artifact.
+      const androidRetry = runJob('android.fallback', 75);
+      expect(androidRetry.status).toBe(75);
+      expect(androidRetry.attempts).toBe(
+        'attempt-1 runner-cached=true\nattempt-2 runner-cached=true\n'
+      );
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 
   it('keeps the physical iOS 27 VoiceOver record tied to the named public contract', () => {

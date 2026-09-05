@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 
 const configuration = process.argv[2];
@@ -109,6 +110,17 @@ let finalStatus = 1;
 for (let index = 1; index <= 2; index += 1) {
   const attempt = `attempt-${index}`;
   clearAttemptEvidence(attempt);
+  if (index > 1 && configuration.startsWith('ios')) {
+    // The restored runner artifact can be broken in ways that fail hard (see
+    // issue #76): rebuild from scratch on retries instead of restoring it.
+    const appleRunnerArtifact = resolve(
+      homedir(),
+      '.agent-device',
+      'apple-runner'
+    );
+    console.log(`Purging ${appleRunnerArtifact} so ${attempt} rebuilds it`);
+    rmSync(appleRunnerArtifact, { force: true, recursive: true });
+  }
   const startedAt = Date.now();
   const resetResult = configuration.startsWith('ios')
     ? spawnSync(

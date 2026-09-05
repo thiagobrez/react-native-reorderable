@@ -24,9 +24,9 @@ GitHub only offers status checks that have run recently. Let the workflows run o
 5. Under **Target branches**, select **Add target**, choose **Include default branch**, and confirm that it resolves to `main`.
 6. Under **Branch rules**, enable **Require a pull request before merging**.
 7. Enable **Require status checks to pass**. Use **Add checks** to require:
-   - The five `CI` jobs: `lint`, `test`, `build-library`, `build-android`, and `build-ios`.
+   - The four `CI` jobs: `lint`, `test`, `build-android`, and `build-ios`.
    - The `Documentation` workflow's `build` job. Select the entry whose source is GitHub Actions and whose workflow is `Documentation` if GitHub shows multiple `build` checks.
-   - `Approve exact tarball for publication workflow` from `Exact package candidate`. This final job depends on every required package, performance, consumer, and device-contract job in that workflow.
+   - The two `Performance publication gates` jobs: `geometry` and `render-regressions`.
    - `Changeset requirement`, the commit-specific check created by the release-intent workflow.
 8. Enable **Require branches to be up to date before merging** so checks from an older head commit cannot authorize a merge.
 9. Leave bypass permissions empty unless the repository has a separately documented emergency policy, then select **Create**.

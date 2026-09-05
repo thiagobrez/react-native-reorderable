@@ -3,8 +3,6 @@ name: Performance publication gates
 on:
   pull_request:
     branches: [main]
-  merge_group:
-    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:
@@ -13,7 +11,6 @@ concurrency:
 
 jobs:
   geometry:
-    name: Production geometry budgets
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,7 +23,6 @@ jobs:
         run: yarn benchmark:issue40
 
   render-regressions:
-    name: Reassure children, list, and section-list paths
     runs-on: ubuntu-latest
     steps:
       - name: Checkout candidate with baseline history

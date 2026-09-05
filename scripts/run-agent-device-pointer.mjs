@@ -35,14 +35,6 @@ if (!scenario || override?.driver !== 'agent-device')
   throw new Error(
     `No Agent Device pointer route for ${configuration}/${scenarioId}`
   );
-const feedbackSettleMarginMs =
-  override.destinationSelector.relation === 'predecessorCenter'
-    ? pointerTiming.predecessorCenterSettleMarginMs
-    : pointerTiming.agentDeviceSettleMarginMs;
-const feedbackFirstSampleMs =
-  pointerTiming.sourceHoldMs +
-  pointerTiming.moveBudgetMs +
-  feedbackSettleMarginMs;
 
 let targetId;
 if (platform === 'android') {
@@ -105,15 +97,10 @@ if (platform === 'android') {
 const sessionName = `issue39-${scenarioId}`;
 const sessionDeviceArgs = platform === 'ios' ? ['--udid', targetId] : [];
 const agentDevice = resolve('node_modules/.bin/agent-device');
-const feedbackDirectory = resolve(
-  process.env.ISSUE39_FEEDBACK_DIR ??
-    `artifacts/issue-39/feedback/${configuration}/${scenarioId}`
-);
 const recordingDirectory = resolve(
   process.env.ISSUE39_AGENT_DEVICE_DIR ??
     `artifacts/issue-39/agent-device/${configuration}/${scenarioId}`
 );
-await mkdir(feedbackDirectory, { recursive: true });
 await mkdir(recordingDirectory, { recursive: true });
 const replayStateRoot = resolve(
   'artifacts/issue-39/agent-device',
@@ -143,18 +130,6 @@ const runSessionCommand = (...args) =>
     [...args, '--session', sessionName, ...sessionDeviceArgs],
     { env: replayEnvironment }
   );
-const screenshot = async (path) => {
-  if (platform === 'android') {
-    const { stdout } = await execFileAsync(
-      'adb',
-      ['-s', targetId, 'exec-out', 'screencap', '-p'],
-      { encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 }
-    );
-    await writeFile(path, stdout);
-    return;
-  }
-  await execFileAsync('xcrun', ['simctl', 'io', targetId, 'screenshot', path]);
-};
 const wait = (milliseconds) =>
   new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
 let replay;
@@ -254,11 +229,6 @@ try {
   );
   const replayPath = resolve(recordingDirectory, 'pointer-replay.ad');
   const recordingPath = resolve(recordingDirectory, 'pointer.mp4');
-  const baselinePath = resolve(feedbackDirectory, 'baseline.png');
-  const gestureMarkerPath = resolve(
-    recordingDirectory,
-    'gesture-start-marker.png'
-  );
   const expectedLabels = scenario.expected.labels ?? [
     `Current selection: ${scenario.expected.selection}`,
     `Callback count: ${scenario.expected.callbackCount}`,
@@ -267,25 +237,16 @@ try {
     replayPath,
     agentDeviceReplayScript({
       acceptDeepLinkPrompt,
-      baselinePath,
       deepLink: scenario.deepLink.replace('${ENGINE}', engine),
       destinationSelector,
       expectedLabels,
-      gestureMarkerPath,
       initialLabels: scenario.initial?.labels ?? ['Callback count: 0'],
       platform,
       recordingPath: platform === 'ios' ? undefined : recordingPath,
       sourceSelector,
-      terminalPath: resolve(feedbackDirectory, 'terminal.png'),
       timing: pointerTiming,
     })
   );
-  const previousBaselineMtime = await stat(baselinePath)
-    .then(({ mtimeMs }) => mtimeMs)
-    .catch(() => 0);
-  const previousGestureMarkerMtime = await stat(gestureMarkerPath)
-    .then(({ mtimeMs }) => mtimeMs)
-    .catch(() => 0);
   if (platform === 'ios') await startIosRecording(recordingPath);
   replay = spawn(
     agentDevice,
@@ -302,56 +263,15 @@ try {
     ],
     { env: replayEnvironment, stdio: 'inherit' }
   );
-  let replayExitCode;
   const replayExit = new Promise((resolveExit) =>
     replay.once('exit', (code) => {
       replayExited = true;
-      replayExitCode = code;
       resolveExit(code);
     })
   );
-  const baselineDeadline = Date.now() + 180000;
-  while (
-    (await stat(baselinePath)
-      .then(({ mtimeMs }) => mtimeMs <= previousBaselineMtime)
-      .catch(() => true)) &&
-    replayExitCode == null &&
-    Date.now() < baselineDeadline
-  ) {
-    await wait(100);
-  }
-  if (replayExitCode != null)
-    throw new Error(
-      `Agent Device replay exited ${replayExitCode} before baseline`
-    );
-  if (Date.now() >= baselineDeadline)
-    throw new Error('Timed out waiting for the replay baseline marker');
-  if (platform === 'ios') await writeFile(deepLinkConfirmationMarker, '');
-  await screenshot(baselinePath);
-  const gestureMarkerDeadline = Date.now() + 60000;
-  while (
-    (await stat(gestureMarkerPath)
-      .then(({ mtimeMs }) => mtimeMs <= previousGestureMarkerMtime)
-      .catch(() => true)) &&
-    replayExitCode == null &&
-    Date.now() < gestureMarkerDeadline
-  ) {
-    await wait(100);
-  }
-  if (replayExitCode != null)
-    throw new Error(
-      `Agent Device replay exited ${replayExitCode} before gesture marker`
-    );
-  if (Date.now() >= gestureMarkerDeadline)
-    throw new Error('Timed out waiting for the replay gesture marker');
-  await wait(feedbackFirstSampleMs);
-
-  for (let index = 1; index <= pointerTiming.sampleCount; index += 1) {
-    await screenshot(resolve(feedbackDirectory, `sample-${index}.png`));
-    if (index < pointerTiming.sampleCount)
-      await wait(pointerTiming.sampleIntervalMs);
-  }
   const replayResult = await replayExit;
+  if (platform === 'ios' && replayResult === 0)
+    await writeFile(deepLinkConfirmationMarker, '');
   let snapshot;
   let observedOutcome;
   try {

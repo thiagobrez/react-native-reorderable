@@ -6,8 +6,9 @@ Validated against fresh debug builds with `@shopify/flash-list@2.3.2` on:
 - iOS 26.5 (23F77), iPhone 17 Pro, Auto policy's runtime fallback; and
 - Android, Pixel 10 Pro emulator, Auto policy.
 
-The reusable gate is `yarn verify:flash-device --platform <ios|android>
---device <name> --engine <auto|fallback> --session <name>`. Its four successful
+The reusable gate at the time was `yarn verify:flash-device --platform
+<ios|android> --device <name> --engine <auto|fallback> --session <name>`
+(removed with the manual device gates in #75). Its four successful
 runs and screenshots are under `matrix/`. It asserts provider windowing,
 selected multi-row reorder, edge auto-scroll into an initially off-window
 destination, section rendering, and in-flight cancellation by disabling three

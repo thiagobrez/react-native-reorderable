@@ -22,3 +22,14 @@ Amended 2026-09-02 ([#57](https://github.com/thiagobrez/react-native-reorderable
 | Publication | `release.yml`, triggered by `workflow_run` on candidate success | Release |
 
 Pruned as redundant or unused: the candidate's duplicate `quality` and `render-regressions` jobs, `ci.yml`'s `build-library` job (a strict subset of `test`), all `merge_group` triggers (no merge queue is configured), coverage collection (collected twice, enforced nowhere), the duplicate package-artifact verification and sha256 re-checks, and the manual named-scenario device-verification scripts. Physical-device performance validation is removed from the lifecycle entirely: Reassure render gates plus geometry benchmarks on hosted CI are the accepted performance proof, and device-specific performance regressions join the dogfooding-caught risk class ([#45](https://github.com/thiagobrez/react-native-reorderable/issues/45) closed accordingly). The required checks on `main` become `lint`, `test`, `build-android`, `build-ios`, the documentation `build`, `geometry`, `render-regressions`, and the changeset requirement; `build-library` and the tarball-approval check leave the PR gate.
+
+Amended 2026-09-04 ([#65](https://github.com/thiagobrez/react-native-reorderable/issues/65), decided in [#60](https://github.com/thiagobrez/react-native-reorderable/issues/60)): pointer harness ownership is now fixed per device-contract configuration and scenario rather than preferring Agent Device everywhere it can express the gesture.
+
+| Configuration | Pointer harness |
+| --- | --- |
+| `ios27.native` | Agent Device, except `multi-selection-reorder` on Detox |
+| `ios27.fallback` | Agent Device |
+| `ios26.auto-fallback` | Detox |
+| `android.fallback` | Detox |
+
+The iOS 26 cell moves to Detox because the first pointer gesture the Agent Device XCTest runner synthesizes into a freshly erased, cold-booted iOS 26.5 simulator on hosted runners arrives seconds late or never while injection reports success ([#54](https://github.com/thiagobrez/react-native-reorderable/issues/54)) — the pipeline's dominant failure, and one no widened gesture timing or scenario retry may paper over, because a silent input drop is indistinguishable from a broken contract. That cell's unique responsibility is proving automatic engine selection picks the fallback engine on a runtime without native SwiftUI reordering, and Detox pointer synthesis proves that equally: scenario definitions, terminal public-outcome assertions, and the four-engine parity comparison are unchanged. Agent Device is retained on iOS 27, where its selector-targeted center drag is the only harness that expresses insertion against native SwiftUI rows.

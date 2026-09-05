@@ -7,8 +7,7 @@
       "kind": "drag",
       "destinationPlacement": "beforeTarget",
       "sourceLabel": "Card row 1",
-      "targetLabel": "Card row 4",
-      "holdDurationMs": 8000
+      "targetLabel": "Card row 4"
     },
     "covers": ["free-form"],
     "selectors": [
@@ -43,8 +42,7 @@
       "kind": "drag",
       "destinationPlacement": "beforeTarget",
       "sourceLabel": "List row 1",
-      "targetLabel": "List row 4",
-      "holdDurationMs": 8000
+      "targetLabel": "List row 4"
     },
     "covers": ["list"],
     "selectors": [
@@ -71,8 +69,7 @@
       "kind": "drag",
       "destinationPlacement": "beforeTarget",
       "sourceLabel": "Section 1, row 1",
-      "targetLabel": "Section 1, row 4",
-      "holdDurationMs": 8000
+      "targetLabel": "Section 1, row 4"
     },
     "covers": ["section-list"],
     "selectors": [
@@ -99,8 +96,7 @@
       "kind": "drag",
       "destinationPlacement": "beforeTarget",
       "sourceLabel": "Card row 2",
-      "targetLabel": "Card row 6",
-      "holdDurationMs": 8000
+      "targetLabel": "Card row 6"
     },
     "covers": ["multi-selection"],
     "selectors": [
@@ -127,8 +123,7 @@
       "kind": "drag",
       "destinationPlacement": "beforeTarget",
       "sourceLabel": "blue draggable card, selected",
-      "targetLabel": "Accepting drop zone",
-      "holdDurationMs": 8000
+      "targetLabel": "Accepting drop zone"
     },
     "covers": ["scoped-drag-drop"],
     "selectors": [

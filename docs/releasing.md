@@ -24,9 +24,9 @@ GitHub only offers status checks that have run recently. Let the workflows run o
 5. Under **Target branches**, select **Add target**, choose **Include default branch**, and confirm that it resolves to `main`.
 6. Under **Branch rules**, enable **Require a pull request before merging**.
 7. Enable **Require status checks to pass**. Use **Add checks** to require:
-   - The five `CI` jobs: `lint`, `test`, `build-library`, `build-android`, and `build-ios`.
+   - The four `CI` jobs: `lint`, `test`, `build-android`, and `build-ios`.
    - The `Documentation` workflow's `build` job. Select the entry whose source is GitHub Actions and whose workflow is `Documentation` if GitHub shows multiple `build` checks.
-   - `Approve exact tarball for publication workflow` from `Exact package candidate`. This final job depends on every required package, performance, consumer, and device-contract job in that workflow.
+   - The two `Performance publication gates` jobs: `geometry` and `render-regressions`.
    - `Changeset requirement`, the commit-specific check created by the release-intent workflow.
 8. Enable **Require branches to be up to date before merging** so checks from an older head commit cannot authorize a merge.
 9. Leave bypass permissions empty unless the repository has a separately documented emergency policy, then select **Create**.
@@ -87,7 +87,7 @@ The release workflow intentionally has no npm token. Its publish job receives a 
 
 Every user-visible package change carries a file from `yarn changeset`. After a fully green push to `main`, Changesets creates or updates `changeset-release/main`. This pull request is the on-demand release boundary: leave it open while accumulating changes and merge it when the release should happen.
 
-Merging the release pull request causes the exact-package workflow to build one tarball and run that same tarball through package inspection, clean consumers, the supported React Native compatibility matrix, performance checks, and the four-engine device contract. Publication starts only after that workflow and the ordinary `CI` and `Documentation` workflows are green for the same commit. Immediately before npm, the publisher rechecks the tarball bytes, SHA-256, source commit, package name, and version against its manifest.
+Merging the release pull request causes the exact-package workflow to build one tarball and run that same tarball through package inspection, clean consumers, the supported React Native compatibility matrix, performance checks, and the four-engine device contract. Publication starts only after that workflow succeeds; the `main` ruleset's required pull-request checks are what guarantee the commit already passed the fast set. Immediately before npm, the publisher rechecks the tarball bytes, SHA-256, source commit, package name, and version against its manifest.
 
 Changesets then creates the package tag and GitHub release. The same release workflow builds and deploys the documentation from that tagged commit. Stable versions use the npm `latest` tag.
 

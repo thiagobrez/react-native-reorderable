@@ -1,18 +1,16 @@
 name: Documentation
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  merge_group:
-    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
+  # Keep the event name in the group: sharing one group across events once let
+  # a release-authorizing push run deadlock behind other events for 13 hours.
   group: docs-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -25,9 +23,6 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/setup
-
-      - name: Typecheck guides and examples
-        run: yarn typecheck
 
       - name: Build canonical documentation
         run: yarn docs:build

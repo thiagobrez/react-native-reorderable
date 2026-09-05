@@ -439,6 +439,8 @@ jobs:
           target: google_apis
           profile: pixel_2
           script: |
+            # Gradle must run from the generated consumer directory, not the
+            # repository root, or it builds the wrong project.
             cd "$RUNNER_TEMP/ReorderableConsumer/android" && ./gradlew app:installDebug --no-daemon -PnewArchEnabled=true -PhermesEnabled=true
             adb shell am start -W -n com.reorderableconsumer/.MainActivity
 
@@ -576,6 +578,9 @@ jobs:
             bundle install
             bundle exec pod install --project-directory=ios
           )
+          # build-framework-cache must run before detox build: without a
+          # prebuilt framework cache, Detox compiles it lazily mid-build and
+          # the Apple contract build fails on hosted runners.
           yarn detox build-framework-cache
           yarn detox build --configuration '${{ matrix.configuration }}'
 

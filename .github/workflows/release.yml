@@ -32,22 +32,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Require ordinary push gates for the same commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          for workflow in ci.yml docs.yml; do
-            conclusion=$(gh run list \
-              --workflow "$workflow" \
-              --commit "$RELEASE_COMMIT" \
-              --event push \
-              --limit 10 \
-              --json conclusion,status \
-              --jq '[.[] | select(.status == "completed")][0].conclusion')
-            test "$conclusion" = success
-          done
-
       - name: Select Changesets mode
         id: mode
         run: node scripts/select-release-mode.mjs

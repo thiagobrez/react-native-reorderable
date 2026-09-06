@@ -505,7 +505,6 @@ jobs:
 
       - name: Cache cocoapods
         if: runner.os == 'macOS'
-        id: cocoapods-cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: example/ios/Pods
@@ -515,20 +514,22 @@ jobs:
 
       - name: Verify Apple runtime and prepare native app
         if: runner.os == 'macOS'
-        env:
-          COCOAPODS_CACHE_HIT: ${{ steps.cocoapods-cache.outputs.cache-hit }}
         run: |
           xcrun simctl list runtimes | grep -F '${{ matrix.runtime }}'
           brew tap wix/brew
           brew trust --formula wix/brew/applesimutils
           brew install wix/brew/applesimutils
-          if [[ "$COCOAPODS_CACHE_HIT" != 'true' ]]; then
-            (
-              cd example
-              bundle install
-              bundle exec pod install --project-directory=ios
-            )
-          fi
+          # Always run pod install, even on a Pods cache hit: React Native
+          # codegen runs inside pod install and writes its sources to
+          # example/ios/build/generated, which is outside the cached Pods
+          # directory, so a restored cache alone leaves the ReactCodegen pod
+          # target pointing at files that do not exist. The cache still pays
+          # for itself by keeping the Pods checkout warm.
+          (
+            cd example
+            bundle install
+            bundle exec pod install --project-directory=ios
+          )
           # build-framework-cache must run before detox build: without a
           # prebuilt framework cache, Detox compiles it lazily mid-build and
           # the Apple contract build fails on hosted runners.

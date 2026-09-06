@@ -508,9 +508,16 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: example/ios/Pods
-          key: ${{ runner.os }}-cocoapods-${{ hashFiles('example/ios/Podfile.lock') }}
+          # The contract- prefix keeps this cache disjoint from ci.yml's
+          # cocoapods cache: this job installs the packed candidate tarball
+          # and builds Release for Detox, so its Pods tree (notably the
+          # prebuilt React core binaries) is Release-flavored. Sharing a key
+          # with ci.yml's Debug build once poisoned build-ios with
+          # release-only core binaries and failed the link on debug-only
+          # symbols.
+          key: ${{ runner.os }}-contract-cocoapods-${{ hashFiles('example/ios/Podfile.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cocoapods-
+            ${{ runner.os }}-contract-cocoapods-
 
       - name: Verify Apple runtime and prepare native app
         if: runner.os == 'macOS'

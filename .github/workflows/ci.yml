@@ -152,7 +152,11 @@ jobs:
             ${{ runner.os }}-cocoapods-
 
       - name: Install cocoapods
-        if: env.turbo_cache_hit != 1 && steps.cocoapods-cache.outputs.cache-hit != 'true'
+        # Always run the Gemfile-pinned pod install, even on a Pods cache hit:
+        # skipping it lets the React Native CLI reinstall pods mid-build with
+        # the runner image's unpinned system CocoaPods, which can be older
+        # than the one that generated Podfile.lock.
+        if: env.turbo_cache_hit != 1
         run: |
           cd example
           bundle install

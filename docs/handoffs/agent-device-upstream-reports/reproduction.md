@@ -46,6 +46,23 @@ Seven iterations reached the gesture; the first synthesized drag was **lost or l
 
 **The discriminator is decisive.** In every lost or late iteration the public XCTest coordinate tap on the same runner, moments later, landed in under a second. So the loss is specific to the private synthesized-event path (`XCSynthesizedEventRecord`/`XCPointerEventPath`), not a simulator-wide input stall. That is what points the fix at the synthesized-gesture path rather than at boot or AX readiness.
 
+## Hardened-run confirmation (run 34027523634, same matrix)
+
+After adding the setup retry and the delivery classification, a second 4x3 run measured
+**all 12 iterations** (0 wasted, was 5 of 12) and reproduced the defect independently:
+
+- first gesture: 1 lost, 2 late, 3 errored, 6 prompt; delivery latency across 36 gestures
+  median 888 ms, p90 15284 ms, max 16867 ms.
+- the XCTest coordinate tap landed in 11 of 12 iterations, including every lost/late one;
+  the single exception (sample 4 iteration 3) was an iteration where the whole input path
+  stalled, not just the synthesized gesture.
+
+Across both runs (24 iterations) the defect appears in a consistent fraction with a p90
+delivery latency at the full wait timeout, so the matrix reliably surfaces it even though a
+single iteration is probabilistic. "errored" iterations show the same ~15 s app-loss with a
+non-zero gesture exit rather than a false ok; they are excluded from the conservative
+reproduced count.
+
 ## Delivery classes
 
 Each gesture is classified by what the app observed, not the gesture command's exit code:

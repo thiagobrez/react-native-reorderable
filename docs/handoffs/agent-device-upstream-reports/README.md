@@ -21,6 +21,11 @@ The draft follows upstream's only stated convention (from their `CONTRIBUTING.md
 "Issues" section): include OS and Node version, Xcode version, the exact command,
 and the exact output. Upstream has no issue templates and labels are theirs to set.
 
+## Reproduction
+
+A CI reproduction lives on this branch; see [`reproduction.md`](./reproduction.md).
+Run it before filing so the report can cite a fresh run and the probe table.
+
 ## Before you file
 
 1. Stage the evidence locally (re-downloads the two run artifacts, ~230 MB):

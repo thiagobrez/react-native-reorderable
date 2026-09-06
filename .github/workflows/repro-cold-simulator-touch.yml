@@ -1,0 +1,112 @@
+name: Repro cold-simulator lost touch stream
+
+# Reproduction for the agent-device upstream report tracked in issue #84: the
+# first `gesture drag` synthesized into a freshly erased, cold-booted iOS 26.5
+# simulator on a hosted macos-26 runner reports ok while the app receives no
+# touch stream. Every job erases and cold-boots the simulator several times and
+# records what the app observed. Jobs never fail for a reproduced defect; read
+# the step summary and the uploaded artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Cold boot iterations per job
+        default: '3'
+        required: false
+      samples:
+        description: Parallel jobs per configuration
+        default: '4'
+        required: false
+  push:
+    branches:
+      - docs/issue-84-agent-device-upstream-handoff
+    paths:
+      - .github/workflows/repro-cold-simulator-touch.yml
+      - scripts/repro-cold-simulator-touch.mjs
+
+concurrency:
+  group: repro-cold-simulator-touch-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan matrix
+    runs-on: ubuntu-latest
+    outputs:
+      samples: ${{ steps.plan.outputs.samples }}
+    steps:
+      - id: plan
+        run: |
+          count='${{ inputs.samples || '4' }}'
+          echo "samples=$(node -e "console.log(JSON.stringify(Array.from({length: Number('$count')}, (_, i) => i + 1)))")" >> "$GITHUB_OUTPUT"
+
+  repro:
+    name: ${{ matrix.label }} / sample ${{ matrix.sample }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: ${{ fromJSON(needs.plan.outputs.samples) }}
+        include:
+          - label: ios26-macos-26
+            runner: macos-26
+            xcode: '26'
+            runtime: iOS-26-5
+            runtime_display: iOS 26.5
+        exclude: []
+    env:
+      RCT_USE_RN_DEP: 1
+      RCT_USE_PREBUILT_RNCORE: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Use appropriate Xcode version
+        if: matrix.xcode != ''
+        uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
+        with:
+          xcode-version: ${{ matrix.xcode }}
+
+      - name: Verify simulator runtime
+        run: xcrun simctl list runtimes | grep -F '${{ matrix.runtime_display }}'
+
+      - name: Cache cocoapods
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: example/ios/Pods
+          key: ${{ runner.os }}-cocoapods-${{ hashFiles('example/ios/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cocoapods-
+
+      - name: Install cocoapods
+        run: |
+          cd example
+          bundle install
+          bundle exec pod install --project-directory=ios
+
+      - name: Build the Scenario Lab (same Release build as the device-contract job)
+        run: |
+          cd example/ios
+          xcodebuild -workspace ReorderableExample.xcworkspace -scheme ReorderableExample -configuration Release -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -n 40
+          test -d build/Build/Products/Release-iphonesimulator/ReorderableExample.app
+
+      - name: Reproduce
+        run: node scripts/repro-cold-simulator-touch.mjs --runtime '${{ matrix.runtime }}' --iterations '${{ inputs.iterations || '3' }}' --out artifacts/repro-cold-touch
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: repro-cold-touch-${{ matrix.label }}-sample-${{ matrix.sample }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: artifacts/repro-cold-touch/

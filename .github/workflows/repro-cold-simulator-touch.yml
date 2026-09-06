@@ -35,7 +35,7 @@ on:
       - scripts/repro-cold-simulator-touch.mjs
 
 concurrency:
-  group: repro-cold-simulator-touch-${{ github.ref }}
+  group: repro-cold-simulator-touch-${{ github.ref }}-${{ inputs.agent_device_sha || 'release' }}
   cancel-in-progress: false
 
 permissions:

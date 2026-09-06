@@ -57,10 +57,9 @@ const timing = { sourceHoldMs: 650, moveMs: 1200, destinationHoldMs: 8000 };
 const agentDevice =
   process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device');
 const sessionName = 'repro-cold-touch';
-// A synthesized drag whose touch stream reaches the app only after this many
-// milliseconds is counted as late delivery. 3 s is well beyond a healthy commit
-// (sub-second in warm runs) and below the 15 s wait window, so it separates the
-// defect's late tail from ordinary jitter.
+// Classify the observable result after the gesture command returns. This is
+// post-command observation wait, not the timestamp of the first delivered touch.
+// The separate runner/backboardd logs are needed to attribute an input delay.
 const LATE_DELIVERY_THRESHOLD_MS = 3000;
 
 if (!existsSync(appPath)) throw new Error(`Missing app build at ${appPath}`);
@@ -423,14 +422,15 @@ const gestureWaits = records
     record.probes?.secondGesture,
     record.probes?.relaunchGesture,
   ])
-  .filter((attempt) => attempt != null && typeof attempt.waitDurationMs === 'number')
+  .filter((attempt) => attempt != null && attempt.deliveryClass !== 'errored' &&
+    typeof attempt.waitDurationMs === 'number')
   .map((attempt) => attempt.waitDurationMs)
   .sort((a, b) => a - b);
 const percentile = (values, fraction) =>
   values.length === 0
     ? null
     : values[Math.min(values.length - 1, Math.floor(values.length * fraction))];
-const gesturesMeasured = summaryRows.filter((row) => row.firstClass != null).length;
+const gesturesMeasured = summaryRows.filter((row) => row.firstClass != null && row.firstClass !== 'errored').length;
 const lost = summaryRows.filter((row) => row.firstClass === 'lost').length;
 const late = summaryRows.filter((row) => row.firstClass === 'late').length;
 // The defect is reproduced whenever the first synthesized gesture into a cold
@@ -445,7 +445,7 @@ const summary = {
   firstGestureLost: lost,
   firstGestureLate: late,
   reproduced,
-  deliveryLatencyMs: {
+  postCommandObservationWaitMs: {
     count: gestureWaits.length,
     min: gestureWaits[0] ?? null,
     median: percentile(gestureWaits, 0.5),
@@ -455,13 +455,13 @@ const summary = {
   rows: summaryRows,
 };
 writeFileSync(resolve(outRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-const latency = summary.deliveryLatencyMs;
+const latency = summary.postCommandObservationWaitMs;
 const table = [
   `### Cold-simulator touch reproduction (${runtimeVersion}, ${deviceName})`,
   '',
   `First synthesized gesture lost or late (reported ok, app saw it late or never): **${reproduced}/${gesturesMeasured}** measured iterations (lost ${lost}, late ${late}).`,
   '',
-  `Delivery latency across ${latency.count} synthesized gestures: min ${latency.min} ms, median ${latency.median} ms, p90 ${latency.p90} ms, max ${latency.max} ms.`,
+  `Post-command observation wait across ${latency.count} synthesized gestures: min ${latency.min} ms, median ${latency.median} ms, p90 ${latency.p90} ms, max ${latency.max} ms.`,
   '',
   '| # | boot ms | prepare ms | 1st gesture | 1st wait ms | 2nd gesture | relaunch gesture | XCTest tap delivered | error |',
   '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -479,7 +479,7 @@ if (process.env.GITHUB_STEP_SUMMARY)
 // iterations reached the gesture and cannot turn setup failures into green.
 if (expectation !== 'observe') {
   const complete = summaryRows.every(
-    (row) => row.error == null && row.firstClass != null
+    (row) => row.error == null && row.firstClass != null && row.firstClass !== 'errored'
   );
   const matches =
     expectation === 'reproduced'

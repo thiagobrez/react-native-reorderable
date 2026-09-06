@@ -41,7 +41,8 @@ const installResult = run('xcrun', [
 if (installResult.status !== 0)
   throw new Error('Failed to install the Scenario Lab before runner preflight');
 
-const agentDevice = resolve('node_modules/.bin/agent-device');
+const agentDevice =
+  process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device');
 const sessionName = 'issue39-ios-runner-preflight';
 const stateRoot = resolve(
   'artifacts/issue-39/agent-device',

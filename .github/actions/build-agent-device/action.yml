@@ -1,0 +1,30 @@
+name: Build Agent Device
+description: Build an immutable upstream revision for manual Apple validation
+inputs:
+  sha:
+    description: Full commit SHA in callstack/agent-device
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Require an immutable revision
+      shell: bash
+      env:
+        AGENT_DEVICE_REVISION: ${{ inputs.sha }}
+      run: '[[ "$AGENT_DEVICE_REVISION" =~ ^[0-9a-f]{40}$ ]]'
+
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        repository: callstack/agent-device
+        ref: ${{ inputs.sha }}
+        path: .agent-device-validation
+        persist-credentials: false
+
+    - name: Build CLI and use its matching runner source
+      shell: bash
+      working-directory: .agent-device-validation
+      run: |
+        corepack pnpm install --frozen-lockfile
+        corepack pnpm build
+        echo "AGENT_DEVICE_BIN=$PWD/bin/agent-device.mjs" >> "$GITHUB_ENV"
+        echo "Agent Device source: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"

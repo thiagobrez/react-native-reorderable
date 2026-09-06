@@ -13,8 +13,8 @@
 // Usage:
 //   node scripts/repro-cold-simulator-touch.mjs --runtime iOS-26-5 [--iterations 3] [--out artifacts/repro-cold-touch]
 //
-// The script never fails the job for a reproduced defect; results are written
-// as JSON plus a table on stdout and $GITHUB_STEP_SUMMARY.
+// Results are written as JSON plus a table on stdout and $GITHUB_STEP_SUMMARY.
+// --expect prompt or reproduced turns observations into an explicit validation gate.
 
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -34,6 +34,11 @@ if (runtimeVersion == null)
     'Usage: node scripts/repro-cold-simulator-touch.mjs --runtime <iOS-26-5|iOS-27-0> [--iterations N] [--out DIR]'
   );
 const iterations = Number(args.get('iterations') ?? 3);
+const expectation = args.get('expect') ?? 'observe';
+if (!['observe', 'prompt', 'reproduced'].includes(expectation))
+  throw new Error('Expected --expect observe, prompt, or reproduced');
+if (!Number.isInteger(iterations) || iterations < 1 || iterations > 20)
+  throw new Error('Iterations must be an integer from 1 to 20');
 const outRoot = resolve(args.get('out') ?? 'artifacts/repro-cold-touch');
 const deviceName = args.get('device') ?? 'iPhone 17 Pro';
 const appPath = resolve(
@@ -49,7 +54,8 @@ const initialOrder =
 const contractDrag = { source: 'id="card-card-0"', destination: 'id="card-card-3"' };
 const followUpDrag = { source: 'id="card-card-5"', destination: 'id="card-card-1"' };
 const timing = { sourceHoldMs: 650, moveMs: 1200, destinationHoldMs: 8000 };
-const agentDevice = resolve('node_modules/.bin/agent-device');
+const agentDevice =
+  process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device');
 const sessionName = 'repro-cold-touch';
 // A synthesized drag whose touch stream reaches the app only after this many
 // milliseconds is counted as late delivery. 3 s is well beyond a healthy commit
@@ -182,7 +188,8 @@ async function iteration(index, udid) {
       options
     );
   const stopDaemons = () => {
-    run(agentDevice, ['daemon', 'stop'], { env: defaultEnvironment });
+    if (process.env.CI === 'true')
+      run(agentDevice, ['daemon', 'stop'], { env: defaultEnvironment });
     run(agentDevice, ['daemon', 'stop'], { env: environment });
   };
 
@@ -280,10 +287,8 @@ async function iteration(index, udid) {
       //   errored the gesture command itself failed (not the defect)
       const gestureReportedOk = gestureJson?.ok ?? gestureJson?.success ?? null;
       const deliveryClass =
-        gesture.status !== 0 && gestureReportedOk !== true
-          ? delivered
-            ? 'late'
-            : 'errored'
+        gesture.status !== 0
+          ? 'errored'
           : delivered
             ? wait.durationMs > LATE_DELIVERY_THRESHOLD_MS
               ? 'late'
@@ -469,3 +474,22 @@ const table = [
 console.log(table);
 if (process.env.GITHUB_STEP_SUMMARY)
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${table}\n`);
+
+// An observation run preserves exploratory evidence. Validation must prove all
+// iterations reached the gesture and cannot turn setup failures into green.
+if (expectation !== 'observe') {
+  const complete = summaryRows.every(
+    (row) => row.error == null && row.firstClass != null
+  );
+  const matches =
+    expectation === 'reproduced'
+      ? reproduced > 0
+      : summaryRows.every(
+          (row) =>
+            row.firstClass === 'prompt' &&
+            row.secondClass === 'prompt' &&
+            row.relaunchClass === 'prompt' &&
+            row.xctestTapDelivered === true
+        );
+  if (!complete || !matches) process.exitCode = 1;
+}

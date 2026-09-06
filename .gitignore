@@ -108,3 +108,7 @@ artifacts/candidate/
 
 # Local agent worktrees
 .claude/worktrees/
+
+# Source builds and cold-touch validation evidence
+.agent-device-validation/
+artifacts/repro-cold-touch*/

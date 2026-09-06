@@ -4,12 +4,21 @@ name: Repro cold-simulator lost touch stream
 # first `gesture drag` synthesized into a freshly erased, cold-booted iOS 26.5
 # simulator on a hosted macos-26 runner reports ok while the app receives no
 # touch stream. Every job erases and cold-boots the simulator several times and
-# records what the app observed. Jobs never fail for a reproduced defect; read
-# the step summary and the uploaded artifact.
+# records what the app observed. Manual validation can require prompt delivery
+# or reproduction; observation runs retain results without enforcing a verdict.
 
 on:
   workflow_dispatch:
     inputs:
+      agent_device_sha:
+        description: Optional full agent-device commit SHA to build for Apple validation
+        required: false
+        type: string
+      expectation:
+        description: Required delivery result (observe only records evidence)
+        type: choice
+        default: observe
+        options: [observe, prompt, reproduced]
       iterations:
         description: Cold boot iterations per job
         default: '3'
@@ -70,6 +79,12 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      - name: Build the requested Agent Device revision
+        if: runner.os == 'macOS' && inputs.agent_device_sha != ''
+        uses: ./.github/actions/build-agent-device
+        with:
+          sha: ${{ inputs.agent_device_sha }}
+
       - name: Use appropriate Xcode version
         if: matrix.xcode != ''
         uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
@@ -83,9 +98,9 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: example/ios/Pods
-          key: ${{ runner.os }}-cocoapods-${{ hashFiles('example/ios/Podfile.lock') }}
+          key: ${{ runner.os }}-contract-cocoapods-${{ hashFiles('example/ios/Podfile.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cocoapods-
+            ${{ runner.os }}-contract-cocoapods-
 
       - name: Install cocoapods
         run: |
@@ -100,7 +115,7 @@ jobs:
           test -d build/Build/Products/Release-iphonesimulator/ReorderableExample.app
 
       - name: Reproduce
-        run: node scripts/repro-cold-simulator-touch.mjs --runtime '${{ matrix.runtime }}' --iterations '${{ inputs.iterations || '3' }}' --out artifacts/repro-cold-touch
+        run: node scripts/repro-cold-simulator-touch.mjs --runtime '${{ matrix.runtime }}' --iterations '${{ inputs.iterations || '3' }}' --out artifacts/repro-cold-touch --expect '${{ inputs.expectation || 'observe' }}'
 
       - name: Upload evidence
         if: always()

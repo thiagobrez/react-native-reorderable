@@ -7,6 +7,10 @@ on:
     - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
+      agent_device_sha:
+        description: Optional full agent-device commit SHA to build for Apple validation
+        required: false
+        type: string
       channel:
         description: Validation channel recorded with the candidate
         required: true
@@ -487,6 +491,12 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/setup
+
+      - name: Build the requested Agent Device revision
+        if: runner.os == 'macOS' && inputs.agent_device_sha != ''
+        uses: ./.github/actions/build-agent-device
+        with:
+          sha: ${{ inputs.agent_device_sha }}
 
       - name: Download inspected candidate
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

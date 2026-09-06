@@ -226,18 +226,24 @@ async function iteration(index, udid) {
     // hiccup does not burn an iteration that would otherwise measure the gesture.
     const runSetup = () => {
       const steps = [
-        session(['open', bundleId, '--relaunch']),
-        session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
-        session(['open', deepLink]),
-        acceptAlert(),
-        session(['open', bundleId, '--relaunch']),
-        session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
-        session(['open', deepLink]),
-        session(['wait', initialOrder, '30000', '--depth', '100']),
-        session(['wait', 'Callback count: 0', '15000', '--depth', '100']),
+        () => session(['open', bundleId, '--relaunch']),
+        () => session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
+        () => session(['open', deepLink]),
+        acceptAlert,
+        () => session(['open', bundleId, '--relaunch']),
+        () => session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
+        () => session(['open', deepLink]),
+        () => session(['wait', initialOrder, '30000', '--depth', '100']),
+        () => session(['wait', 'Callback count: 0', '15000', '--depth', '100']),
       ];
-      // Index 3 is the alert accept, absent when no confirmation is pending.
-      return steps.find((result, position) => result.status !== 0 && position !== 3);
+      for (const [position, step] of steps.entries()) {
+        const result = step();
+        // Absence is expected after the confirmation has already been accepted.
+        // A timeout can leave the URL sheet over matching text in the scenario.
+        const absentAlert = position === 3 && result.stderr.includes('alert not found');
+        if (result.status !== 0 && !absentAlert) return result;
+      }
+      return undefined;
     };
     let setupFailure = runSetup();
     for (let attempt = 2; attempt <= 3 && setupFailure != null; attempt += 1) {

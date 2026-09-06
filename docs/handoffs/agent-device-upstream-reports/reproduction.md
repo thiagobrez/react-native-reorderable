@@ -24,24 +24,32 @@ Driver: `scripts/repro-cold-simulator-touch.mjs`
      it drags the last card to the top so it changes the order whatever the first
      drag did);
    - **relaunch gesture**: `open --relaunch` + deep link, then the same drag;
-   - **XCTest tap**: `press 'id="engine-fallback"'` then `wait text 'engine=fallback'`
-     (agent-device's `press` uses the public `XCUICoordinate.tap()` path, not the
-     private `XCSynthesizedEventRecord` path the drag uses).
+   - **selector press**: `press 'id="engine-fallback"'` then `wait text 'engine=fallback'`.
+     This can use the same private synthesis bridge as the drag; it is not an
+     independent public-XCTest control.
 7. Collect `simulator-log.txt` (backboardd, SpringBoard, app), `host-log.txt`
    (testmanagerd, CoreSimulatorService), the recording, the agent-device state
    directory (runner.log, request logs) and `iteration.json`.
 
 `summary.json` and the job step summary hold one row per iteration with
-`firstDelivered`, `secondDelivered`, `relaunchDelivered`, `xctestTapDelivered`.
+the gesture observation classes and `selectorTapDelivered` (historical artifacts
+called the last field `xctestTapDelivered`).
 
 ## Measurement limits and current validation
 
 `waitDurationMs` measures observation after the gesture command returns, not time
 from touch-down to input delivery. Historical percentile tables below also included
 errored commands; those waits cannot establish touch latency. Current summaries use
-`postCommandObservationWaitMs` and exclude commands that failed before synthesis.
-A later successful public XCTest tap is a useful probe, but cannot rule out a
-simulator-wide stall that recovered before the tap.
+`postCommandObservationWaitMs` and exclude commands that failed before synthesis
+or could not observe the result. A failed wait only counts as `lost` when its
+structured reason is `wait_target_absent`; viewport errors, runner restarts and
+other observer failures are `observation-error`, and still fail validation.
+Both released 0.20.10 and candidate traces show the selector press using
+`kind=coordinateTap` private synthesis with `fallbackAttempted=false`. The original
+claim that this was an independent public-XCTest discriminator is withdrawn.
+A later successful action also cannot rule out a simulator stall that recovered
+before that action. A URL confirmation covering the app is a setup failure;
+matching text behind it does not establish readiness.
 
 The normal mode records observations. `--expect prompt` requires every cold
 iteration and follow-up to pass; `--expect reproduced` requires a reproduced
@@ -54,7 +62,7 @@ session cleanup completes.
 
 Seven iterations reached the gesture; the first synthesized drag was **lost or late in 3 of them** while the gesture command reported ok, and the delivery-latency distribution across all 21 measured gestures was min 179 ms, median 1100 ms, **p90 15465 ms, max 40918 ms** — the p90 is a full 15 s wait timeout.
 
-| sample/it | first gesture | 1st wait | XCTest tap | note |
+| sample/it | first gesture | 1st wait | Selector press | note |
 | --- | --- | --- | --- | --- |
 | 2 / 2 | **lost** | 15.3 s (timeout) | delivered 851 ms | gesture reported ok, durationMs 9850; app never saw it |
 | 2 / 3 | **lost** | 40.9 s | delivered 131 ms | delayed burst drained ~40 s late |
@@ -62,7 +70,9 @@ Seven iterations reached the gesture; the first synthesized drag was **lost or l
 | 4 / 1 | errored | 15.5 s (timeout) | delivered 240 ms | gesture command itself exited 1; app also lost |
 | 1 / 1, 3 / 1, 3 / 2 | prompt | 0.3-2.7 s | delivered | healthy |
 
-**Historical interpretation (qualified by the measurement limits above).** In every lost or late iteration the public XCTest coordinate tap on the same runner, moments later, landed in under a second. So the loss is specific to the private synthesized-event path (`XCSynthesizedEventRecord`/`XCPointerEventPath`), not a simulator-wide input stall. That is what points the fix at the synthesized-gesture path rather than at boot or AX readiness.
+**Original interpretation withdrawn.** A subsequent selector press worked, but it
+used the same private synthesis bridge. These outcomes cannot identify a private
+versus public input-path failure or establish a persistent-digitizer mechanism.
 
 ## Hardened-run confirmation (run 34027523634, same matrix)
 
@@ -95,12 +105,12 @@ Each gesture is classified by what the app observed, not the gesture command's e
 ## Reading the probes
 
 
-| first | second | relaunch | XCTest tap | Reading |
+| first | second | relaunch | Selector press | Reading |
 | --- | --- | --- | --- | --- |
-| lost | delivered | delivered | delivered | Only the first private-synthesis gesture after a cold boot is lost: input pipeline warm-up. |
-| lost | lost | delivered | delivered | The first app instance never receives synthesized events; a relaunch heals it. |
-| lost | lost | lost | delivered | Private synthesis is broken for the boot while the public XCTest path works: the two paths differ in delivery. |
-| lost | lost | lost | lost | Nothing reaches the app: app-side or simulator-wide input stall. |
+| lost | delivered | delivered | delivered | The first outcome was not observed; later gestures worked. Cause remains unproven. |
+| lost | lost | delivered | delivered | Outcomes were observed after relaunch; this does not identify a transport cause. |
+| lost | lost | lost | delivered | The later selector press worked after failed drag outcomes; both may use private synthesis. |
+| lost | lost | lost | lost | No expected outcomes were observed; inspect setup, overlays, app, runner and simulator evidence. |
 
 ## Running it
 

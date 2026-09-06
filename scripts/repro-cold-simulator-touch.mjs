@@ -8,7 +8,7 @@
 //
 //   second-gesture   same app instance, same private event synthesis path
 //   relaunch-gesture fresh app instance on the same booted simulator
-//   xctest-tap       agent-device `press` (public XCTest coordinate tap)
+//   selector-press   agent-device `press` (may also use private synthesis)
 //
 // Usage:
 //   node scripts/repro-cold-simulator-touch.mjs --runtime iOS-26-5 [--iterations 3] [--out artifacts/repro-cold-touch]
@@ -280,7 +280,11 @@ async function iteration(index, udid) {
       try {
         gestureJson = JSON.parse(gesture.stdout);
       } catch {}
-      const wait = session(['wait', expected, '15000', '--depth', '100']);
+      const wait = session(['wait', expected, '15000', '--depth', '100', '--json']);
+      let waitJson = null;
+      try {
+        waitJson = JSON.parse(wait.stdout);
+      } catch {}
       const delivered = wait.status === 0;
       if (delivered) deliveredCount += 1;
       // These are observation classes, not touch-transport measurements:
@@ -288,6 +292,7 @@ async function iteration(index, udid) {
       //   late    effect observed after the post-command wait threshold
       //   prompt  effect observed within that threshold
       //   errored gesture command failed before its outcome could be measured
+      //   observation-error the observer failed without establishing absence
       // Inspect the recording/runner trace to distinguish delayed input from
       // slow app or accessibility processing.
       const gestureReportedOk = gestureJson?.ok ?? gestureJson?.success ?? null;
@@ -298,7 +303,9 @@ async function iteration(index, udid) {
             ? wait.durationMs > LATE_DELIVERY_THRESHOLD_MS
               ? 'late'
               : 'prompt'
-            : 'lost';
+            : waitJson?.error?.details?.reason === 'wait_target_absent'
+              ? 'lost'
+              : 'observation-error';
       const attempt = {
         name,
         startedAt,
@@ -310,6 +317,7 @@ async function iteration(index, udid) {
         delivered,
         deliveryClass,
         waitDurationMs: wait.durationMs,
+        waitError: waitJson?.error ?? null,
         expected,
         gestureStderr: gesture.stderr.slice(0, 1000),
       };
@@ -339,12 +347,12 @@ async function iteration(index, udid) {
     const tap = session(['press', 'id="engine-fallback"']);
     // The deep-link text in the scenario header switches to engine=fallback.
     const tapWait = session(['wait', 'text', 'engine=fallback', '10000', '--depth', '100']);
-    record.probes.xctestTap = {
+    record.probes.selectorTap = {
       pressExit: tap.status,
       delivered: tapWait.status === 0,
       waitDurationMs: tapWait.durationMs,
     };
-    log(`iteration ${index}: xctest tap delivered=${record.probes.xctestTap.delivered}`);
+    log(`iteration ${index}: selector press delivered=${record.probes.selectorTap.delivered}`);
   } catch (error) {
     record.error = error.message;
     log(`iteration ${index}: ${error.message}`);
@@ -413,9 +421,9 @@ const summaryRows = records.map((record) => ({
   firstWaitMs: record.firstGesture?.waitDurationMs ?? null,
   secondClass: record.probes?.secondGesture?.deliveryClass ?? null,
   relaunchClass: record.probes?.relaunchGesture?.deliveryClass ?? null,
-  // A later public XCTest tap is a separate probe; it cannot rule out an
-  // earlier simulator stall that recovered before this tap.
-  xctestTapDelivered: record.probes?.xctestTap?.delivered ?? null,
+  // A later selector press may use the same private synthesis bridge. It is
+  // neither a public-XCTest control nor proof against an earlier input stall.
+  selectorTapDelivered: record.probes?.selectorTap?.delivered ?? null,
   error: record.error ?? null,
 }));
 // Every measured synthesized-gesture wait across the run (first, second,
@@ -426,7 +434,7 @@ const gestureWaits = records
     record.probes?.secondGesture,
     record.probes?.relaunchGesture,
   ])
-  .filter((attempt) => attempt != null && attempt.deliveryClass !== 'errored' &&
+  .filter((attempt) => attempt != null && !['errored', 'observation-error'].includes(attempt.deliveryClass) &&
     typeof attempt.waitDurationMs === 'number')
   .map((attempt) => attempt.waitDurationMs)
   .sort((a, b) => a - b);
@@ -434,7 +442,7 @@ const percentile = (values, fraction) =>
   values.length === 0
     ? null
     : values[Math.min(values.length - 1, Math.floor(values.length * fraction))];
-const gesturesMeasured = summaryRows.filter((row) => row.firstClass != null && row.firstClass !== 'errored').length;
+const gesturesMeasured = summaryRows.filter((row) => row.firstClass != null && !['errored', 'observation-error'].includes(row.firstClass)).length;
 const lost = summaryRows.filter((row) => row.firstClass === 'lost').length;
 const late = summaryRows.filter((row) => row.firstClass === 'late').length;
 // Count the observed symptom. This alone does not establish a transport defect.
@@ -468,11 +476,11 @@ const table = [
   '',
   `Post-command observation wait across ${latency.count} synthesized gestures: min ${latency.min} ms, median ${latency.median} ms, p90 ${latency.p90} ms, max ${latency.max} ms.`,
   '',
-  '| # | boot ms | prepare ms | 1st gesture | 1st wait ms | 2nd gesture | relaunch gesture | XCTest tap delivered | error |',
+  '| # | boot ms | prepare ms | 1st gesture | 1st wait ms | 2nd gesture | relaunch gesture | Selector press delivered | error |',
   '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ...summaryRows.map(
     (row) =>
-      `| ${row.iteration} | ${row.bootMs ?? ''} | ${row.prepareMs ?? ''} | ${row.firstClass ?? ''} | ${row.firstWaitMs ?? ''} | ${row.secondClass ?? ''} | ${row.relaunchClass ?? ''} | ${row.xctestTapDelivered} | ${row.error ? row.error.split('\n')[0].slice(0, 80) : ''} |`
+      `| ${row.iteration} | ${row.bootMs ?? ''} | ${row.prepareMs ?? ''} | ${row.firstClass ?? ''} | ${row.firstWaitMs ?? ''} | ${row.secondClass ?? ''} | ${row.relaunchClass ?? ''} | ${row.selectorTapDelivered} | ${row.error ? row.error.split('\n')[0].slice(0, 80) : ''} |`
   ),
   '',
 ].join('\n');
@@ -484,7 +492,7 @@ if (process.env.GITHUB_STEP_SUMMARY)
 // iterations reached the gesture and cannot turn setup failures into green.
 if (expectation !== 'observe') {
   const complete = summaryRows.every(
-    (row) => row.error == null && row.firstClass != null && row.firstClass !== 'errored'
+    (row) => row.error == null && row.firstClass != null && !['errored', 'observation-error'].includes(row.firstClass)
   );
   const matches =
     expectation === 'reproduced'
@@ -494,7 +502,7 @@ if (expectation !== 'observe') {
             row.firstClass === 'prompt' &&
             row.secondClass === 'prompt' &&
             row.relaunchClass === 'prompt' &&
-            row.xctestTapDelivered === true
+            row.selectorTapDelivered === true
         );
   if (!complete || !matches) process.exitCode = 1;
 }

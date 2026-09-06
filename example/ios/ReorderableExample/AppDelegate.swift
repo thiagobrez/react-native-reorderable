@@ -97,14 +97,15 @@ private extension UIWindow {
     guard event.type == .touches else { return }
     for touch in event.allTouches ?? [] {
       let key = ObjectIdentifier(touch)
-      if touch.phase == .began {
+      let firstObserved = issue84TouchStarts[key] == nil
+      if firstObserved {
         issue84TouchStarts[key] = (arrivedAt, touch.timestamp, false)
       }
       let start = issue84TouchStarts[key]
       if touch.phase == .moved {
         guard let start, !start.moved else { continue }
         issue84TouchStarts[key] = (start.arrival, start.timestamp, true)
-      } else if touch.phase != .began && touch.phase != .ended && touch.phase != .cancelled {
+      } else if !firstObserved && touch.phase != .began && touch.phase != .ended && touch.phase != .cancelled {
         continue
       }
       let point = touch.location(in: self)
@@ -117,8 +118,8 @@ private extension UIWindow {
       let recognizers = (touch.gestureRecognizers ?? []).prefix(12).map {
         "\(NSStringFromClass(type(of: $0))):\($0.state.rawValue)"
       }.joined(separator: ",")
-      NSLog("ISSUE84_TOUCH phase=%ld timestamp=%.6f arrival=%.6f timestampDeltaMs=%.1f arrivalDeltaMs=%.1f point=(%.1f,%.1f) target=%@ recognizers=%@",
-            touch.phase.rawValue, touch.timestamp, arrivedAt,
+      NSLog("ISSUE84_TOUCH phase=%ld first=%d timestamp=%.6f arrival=%.6f timestampDeltaMs=%.1f arrivalDeltaMs=%.1f point=(%.1f,%.1f) target=%@ recognizers=%@",
+            touch.phase.rawValue, firstObserved ? 1 : 0, touch.timestamp, arrivedAt,
             (touch.timestamp - (start?.timestamp ?? touch.timestamp)) * 1000,
             (arrivedAt - (start?.arrival ?? arrivedAt)) * 1000,
             Double(point.x), Double(point.y), target.joined(separator: "/"), recognizers)

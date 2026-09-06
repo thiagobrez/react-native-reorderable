@@ -277,13 +277,13 @@ async function iteration(index, udid) {
       const wait = session(['wait', expected, '15000', '--depth', '100']);
       const delivered = wait.status === 0;
       if (delivered) deliveredCount += 1;
-      // The defect being reproduced: the gesture command reports ok while the
-      // app's touch stream arrives late or never. Classify by what the app saw,
-      // not by the gesture command's exit code.
-      //   lost   the gesture reported ok but the app never observed the effect
-      //   late   the app observed it, but only after LATE_DELIVERY_THRESHOLD_MS
-      //   prompt the app observed it promptly (healthy)
-      //   errored the gesture command itself failed (not the defect)
+      // These are observation classes, not touch-transport measurements:
+      //   lost    no expected effect observed before the wait failed
+      //   late    effect observed after the post-command wait threshold
+      //   prompt  effect observed within that threshold
+      //   errored gesture command failed before its outcome could be measured
+      // Inspect the recording/runner trace to distinguish delayed input from
+      // slow app or accessibility processing.
       const gestureReportedOk = gestureJson?.ok ?? gestureJson?.success ?? null;
       const deliveryClass =
         gesture.status !== 0
@@ -407,15 +407,13 @@ const summaryRows = records.map((record) => ({
   firstWaitMs: record.firstGesture?.waitDurationMs ?? null,
   secondClass: record.probes?.secondGesture?.deliveryClass ?? null,
   relaunchClass: record.probes?.relaunchGesture?.deliveryClass ?? null,
-  // The discriminator: the public XCTest coordinate tap on the same runner,
-  // right after the synthesized gesture. It landing while the gesture is lost
-  // is what points at the private synthesized-event path rather than a
-  // simulator-wide input stall.
+  // A later public XCTest tap is a separate probe; it cannot rule out an
+  // earlier simulator stall that recovered before this tap.
   xctestTapDelivered: record.probes?.xctestTap?.delivered ?? null,
   error: record.error ?? null,
 }));
 // Every measured synthesized-gesture wait across the run (first, second,
-// relaunch), for the delivery-latency distribution.
+// relaunch), for the post-command observation-wait distribution.
 const gestureWaits = records
   .flatMap((record) => [
     record.firstGesture,
@@ -433,8 +431,7 @@ const percentile = (values, fraction) =>
 const gesturesMeasured = summaryRows.filter((row) => row.firstClass != null && row.firstClass !== 'errored').length;
 const lost = summaryRows.filter((row) => row.firstClass === 'lost').length;
 const late = summaryRows.filter((row) => row.firstClass === 'late').length;
-// The defect is reproduced whenever the first synthesized gesture into a cold
-// simulator was lost or arrived late while the gesture command reported ok.
+// Count the observed symptom. This alone does not establish a transport defect.
 const reproduced = lost + late;
 const summary = {
   runtimeVersion,
@@ -459,7 +456,9 @@ const latency = summary.postCommandObservationWaitMs;
 const table = [
   `### Cold-simulator touch reproduction (${runtimeVersion}, ${deviceName})`,
   '',
-  `First synthesized gesture lost or late (reported ok, app saw it late or never): **${reproduced}/${gesturesMeasured}** measured iterations (lost ${lost}, late ${late}).`,
+  `First gesture outcome unobserved or observed after the wait threshold: **${reproduced}/${gesturesMeasured}** measured iterations (lost ${lost}, late ${late}).`,
+  '',
+  'Classes describe outcome observation, not actual touch-delivery timing. Consult the recording and runner trace.',
   '',
   `Post-command observation wait across ${latency.count} synthesized gestures: min ${latency.min} ms, median ${latency.median} ms, p90 ${latency.p90} ms, max ${latency.max} ms.`,
   '',

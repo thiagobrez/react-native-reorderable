@@ -1,6 +1,6 @@
 # Reproduction: first synthesized drag lost on a cold hosted iOS 26.5 simulator
 
-> Upstream fix: [callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362) (draft). This branch is its fail-without evidence.
+> Proposed fix: [callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362). The historical runs demonstrate missing or delayed **app outcomes**, not a proven transport-level cause. The persistent-digitizer explanation was contradicted by later traces; see [the reassessment](./fix-proposal.md).
 
 Workflow: `.github/workflows/repro-cold-simulator-touch.yml`
 Driver: `scripts/repro-cold-simulator-touch.mjs`
@@ -34,6 +34,22 @@ Driver: `scripts/repro-cold-simulator-touch.mjs`
 `summary.json` and the job step summary hold one row per iteration with
 `firstDelivered`, `secondDelivered`, `relaunchDelivered`, `xctestTapDelivered`.
 
+## Measurement limits and current validation
+
+`waitDurationMs` measures observation after the gesture command returns, not time
+from touch-down to input delivery. Historical percentile tables below also included
+errored commands; those waits cannot establish touch latency. Current summaries use
+`postCommandObservationWaitMs` and exclude commands that failed before synthesis.
+A later successful public XCTest tap is a useful probe, but cannot rule out a
+simulator-wide stall that recovered before the tap.
+
+The normal mode records observations. `--expect prompt` requires every cold
+iteration and follow-up to pass; `--expect reproduced` requires a reproduced
+symptom and rejects setup errors. Both workflows accept an optional immutable
+`agent_device_sha`; local runs accept `AGENT_DEVICE_BIN`. Build the selected CLI
+and runner before starting the loop, and keep those artifacts unchanged until
+session cleanup completes.
+
 ## Results (run 34025552105, macos-26 / iOS 26.5, 4 samples x 3 iterations)
 
 Seven iterations reached the gesture; the first synthesized drag was **lost or late in 3 of them** while the gesture command reported ok, and the delivery-latency distribution across all 21 measured gestures was min 179 ms, median 1100 ms, **p90 15465 ms, max 40918 ms** — the p90 is a full 15 s wait timeout.
@@ -42,11 +58,11 @@ Seven iterations reached the gesture; the first synthesized drag was **lost or l
 | --- | --- | --- | --- | --- |
 | 2 / 2 | **lost** | 15.3 s (timeout) | delivered 851 ms | gesture reported ok, durationMs 9850; app never saw it |
 | 2 / 3 | **lost** | 40.9 s | delivered 131 ms | delayed burst drained ~40 s late |
-| 1 / 2 | **late** | 7.7 s | delivered | reorder committed 7.7 s after touch-down |
+| 1 / 2 | **late** | 7.7 s | delivered | outcome observed 7.7 s after the gesture command returned |
 | 4 / 1 | errored | 15.5 s (timeout) | delivered 240 ms | gesture command itself exited 1; app also lost |
 | 1 / 1, 3 / 1, 3 / 2 | prompt | 0.3-2.7 s | delivered | healthy |
 
-**The discriminator is decisive.** In every lost or late iteration the public XCTest coordinate tap on the same runner, moments later, landed in under a second. So the loss is specific to the private synthesized-event path (`XCSynthesizedEventRecord`/`XCPointerEventPath`), not a simulator-wide input stall. That is what points the fix at the synthesized-gesture path rather than at boot or AX readiness.
+**Historical interpretation (qualified by the measurement limits above).** In every lost or late iteration the public XCTest coordinate tap on the same runner, moments later, landed in under a second. So the loss is specific to the private synthesized-event path (`XCSynthesizedEventRecord`/`XCPointerEventPath`), not a simulator-wide input stall. That is what points the fix at the synthesized-gesture path rather than at boot or AX readiness.
 
 ## Hardened-run confirmation (run 34027523634, same matrix)
 
@@ -100,5 +116,5 @@ Locally (fast machines have never reproduced it, but the mechanics can be checke
 node scripts/repro-cold-simulator-touch.mjs --runtime iOS-26-5 --iterations 1 --out /tmp/repro-smoke
 ```
 
-The driver never fails the job on a reproduced defect; it only fails on usage or
-setup errors so that all matrix samples report.
+Without `--expect`, the driver records observations without enforcing a verdict.
+Use `--expect prompt` or `--expect reproduced` for pass/fail validation.

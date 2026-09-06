@@ -1,6 +1,8 @@
-# Fix for agent-device: warm the synthesized-input digitizer before the first gesture
+# Proposed agent-device synthesized-input preparation
 
-> **Filed as [callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362)** (draft, pending maintainer cold-boot device validation via its `replay-ios` lane). The section below is the original analysis; the shipped fix is the digitizer warm-up described in the PR, which the backboardd evidence below pinned down: the HID digitizer attaches ~10 s after the first synthesized event is posted on a cold sim, wrecking the first timed gesture. The readiness-preflight framing here was superseded once the logs showed the attach, not the AX channel, is what is cold.
+> **Reassessed 2026-09-06:** [callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362) is a proposed fix, not a shipped or confirmed fix. The maintainer rejected the app-delivering warm-up tap and gesture-only placement. The revision prepares a zero-path event record at the shared synthesis boundary; an XCTest ordering regression fails before the change and passes after it. Local traces show digitizers attaching/detaching per gesture, contradicting the original persistent-digitizer explanation. The cold source-baseline/fixed comparison and maintainer approval remain required. See [the trace correction](https://github.com/callstack/agent-device/pull/2362#issuecomment-5561886720) and [CI restoration PR #101](https://github.com/thiagobrez/react-native-reorderable/pull/101).
+
+The analysis below is historical. Its causal claims and contact-based warm-up proposal are superseded by this reassessment.
 
 # Original analysis: readiness preflight proves the wrong channel
 

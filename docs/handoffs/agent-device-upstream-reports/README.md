@@ -1,5 +1,7 @@
 # Handoff: file the agent-device upstream report (issue #84)
 
+> Current work: [upstream PR #2362](https://github.com/callstack/agent-device/pull/2362) and [CI restoration PR #101](https://github.com/thiagobrez/react-native-reorderable/pull/101). The filing instructions below are historical. Read the [reassessment](./fix-proposal.md) and [measurement limits](./reproduction.md#measurement-limits-and-current-validation) before reusing the original causal claims or latency figures.
+
 Prepared 2026-09-06 for a human filer. Issue [#84](https://github.com/thiagobrez/react-native-reorderable/issues/84)
 is `ready-for-human` because it publishes to an external tracker
 ([callstack/agent-device](https://github.com/callstack/agent-device/issues)).

@@ -51,6 +51,11 @@ const followUpDrag = { source: 'id="card-card-5"', destination: 'id="card-card-1
 const timing = { sourceHoldMs: 650, moveMs: 1200, destinationHoldMs: 8000 };
 const agentDevice = resolve('node_modules/.bin/agent-device');
 const sessionName = 'repro-cold-touch';
+// A synthesized drag whose touch stream reaches the app only after this many
+// milliseconds is counted as late delivery. 3 s is well beyond a healthy commit
+// (sub-second in warm runs) and below the 15 s wait window, so it separates the
+// defect's late tail from ordinary jitter.
+const LATE_DELIVERY_THRESHOLD_MS = 3000;
 
 if (!existsSync(appPath)) throw new Error(`Missing app build at ${appPath}`);
 mkdirSync(outRoot, { recursive: true });
@@ -198,20 +203,41 @@ async function iteration(index, udid) {
     // Same alert-seeding dance as the device-contract preflight: the first deep
     // link after an erase shows the URL confirmation alert.
     log(`iteration ${index}: launch and deep link`);
-    const setup = [
-      session(['open', bundleId, '--relaunch']),
-      session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
-      session(['open', deepLink]),
-      session(['alert', 'accept']),
-      session(['open', bundleId, '--relaunch']),
-      session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
-      session(['open', deepLink]),
-      session(['wait', initialOrder, '30000', '--depth', '100']),
-      session(['wait', 'Callback count: 0', '15000', '--depth', '100']),
-    ];
-    const setupFailure = setup.find(
-      (result, position) => result.status !== 0 && position !== 3
-    );
+    // `alert accept` can hit RUNNER_BUSY right after the deep link on a slow
+    // host; retry it, because an unaccepted URL confirmation blocks the scenario.
+    const acceptAlert = () => {
+      let result;
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        result = session(['alert', 'accept']);
+        if (result.status === 0 || !result.stderr.includes('RUNNER_BUSY')) break;
+        spawnSync('sleep', ['3']);
+      }
+      return result;
+    };
+    // Bring the scenario to its start state. A cold hosted host can hiccup on an
+    // individual `open`/`wait` (xcrun timeout, unrendered deep link) that a
+    // relaunch clears; retry the whole approach a few times so a transient setup
+    // hiccup does not burn an iteration that would otherwise measure the gesture.
+    const runSetup = () => {
+      const steps = [
+        session(['open', bundleId, '--relaunch']),
+        session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
+        session(['open', deepLink]),
+        acceptAlert(),
+        session(['open', bundleId, '--relaunch']),
+        session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
+        session(['open', deepLink]),
+        session(['wait', initialOrder, '30000', '--depth', '100']),
+        session(['wait', 'Callback count: 0', '15000', '--depth', '100']),
+      ];
+      // Index 3 is the alert accept, absent when no confirmation is pending.
+      return steps.find((result, position) => result.status !== 0 && position !== 3);
+    };
+    let setupFailure = runSetup();
+    for (let attempt = 2; attempt <= 3 && setupFailure != null; attempt += 1) {
+      log(`iteration ${index}: scenario setup retry ${attempt}`);
+      setupFailure = runSetup();
+    }
     record.steps.setup = {
       ok: setupFailure == null,
       failure: setupFailure?.stderr.slice(0, 500),
@@ -245,21 +271,40 @@ async function iteration(index, udid) {
       const wait = session(['wait', expected, '15000', '--depth', '100']);
       const delivered = wait.status === 0;
       if (delivered) deliveredCount += 1;
+      // The defect being reproduced: the gesture command reports ok while the
+      // app's touch stream arrives late or never. Classify by what the app saw,
+      // not by the gesture command's exit code.
+      //   lost   the gesture reported ok but the app never observed the effect
+      //   late   the app observed it, but only after LATE_DELIVERY_THRESHOLD_MS
+      //   prompt the app observed it promptly (healthy)
+      //   errored the gesture command itself failed (not the defect)
+      const gestureReportedOk = gestureJson?.ok ?? gestureJson?.success ?? null;
+      const deliveryClass =
+        gesture.status !== 0 && gestureReportedOk !== true
+          ? delivered
+            ? 'late'
+            : 'errored'
+          : delivered
+            ? wait.durationMs > LATE_DELIVERY_THRESHOLD_MS
+              ? 'late'
+              : 'prompt'
+            : 'lost';
       const attempt = {
         name,
         startedAt,
         gestureExit: gesture.status,
         gestureDurationMs: gesture.durationMs,
-        gestureReportedOk: gestureJson?.ok ?? gestureJson?.success ?? null,
+        gestureReportedOk,
         gestureReportedDurationMs:
           gestureJson?.data?.durationMs ?? gestureJson?.durationMs ?? null,
         delivered,
+        deliveryClass,
         waitDurationMs: wait.durationMs,
         expected,
         gestureStderr: gesture.stderr.slice(0, 1000),
       };
       log(
-        `iteration ${index}: ${name} gestureExit=${attempt.gestureExit} delivered=${delivered} (${wait.durationMs} ms)`
+        `iteration ${index}: ${name} class=${deliveryClass} reportedOk=${gestureReportedOk} appDelivered=${delivered} (${wait.durationMs} ms)`
       );
       return attempt;
     };
@@ -354,35 +399,70 @@ const summaryRows = records.map((record) => ({
   iteration: record.index,
   bootMs: record.steps.coldReset?.bootstatus?.durationMs ?? null,
   prepareMs: record.steps.prepare?.durationMs ?? null,
-  firstGestureOk: record.firstGesture?.gestureExit === 0,
-  firstDelivered: record.firstGesture?.delivered ?? null,
-  secondDelivered: record.probes?.secondGesture?.delivered ?? null,
-  relaunchDelivered: record.probes?.relaunchGesture?.delivered ?? null,
+  firstClass: record.firstGesture?.deliveryClass ?? null,
+  firstWaitMs: record.firstGesture?.waitDurationMs ?? null,
+  secondClass: record.probes?.secondGesture?.deliveryClass ?? null,
+  relaunchClass: record.probes?.relaunchGesture?.deliveryClass ?? null,
+  // The discriminator: the public XCTest coordinate tap on the same runner,
+  // right after the synthesized gesture. It landing while the gesture is lost
+  // is what points at the private synthesized-event path rather than a
+  // simulator-wide input stall.
   xctestTapDelivered: record.probes?.xctestTap?.delivered ?? null,
   error: record.error ?? null,
 }));
-const reproduced = summaryRows.filter(
-  (row) => row.firstGestureOk && row.firstDelivered === false
-).length;
+// Every measured synthesized-gesture wait across the run (first, second,
+// relaunch), for the delivery-latency distribution.
+const gestureWaits = records
+  .flatMap((record) => [
+    record.firstGesture,
+    record.probes?.secondGesture,
+    record.probes?.relaunchGesture,
+  ])
+  .filter((attempt) => attempt != null && typeof attempt.waitDurationMs === 'number')
+  .map((attempt) => attempt.waitDurationMs)
+  .sort((a, b) => a - b);
+const percentile = (values, fraction) =>
+  values.length === 0
+    ? null
+    : values[Math.min(values.length - 1, Math.floor(values.length * fraction))];
+const gesturesMeasured = summaryRows.filter((row) => row.firstClass != null).length;
+const lost = summaryRows.filter((row) => row.firstClass === 'lost').length;
+const late = summaryRows.filter((row) => row.firstClass === 'late').length;
+// The defect is reproduced whenever the first synthesized gesture into a cold
+// simulator was lost or arrived late while the gesture command reported ok.
+const reproduced = lost + late;
 const summary = {
   runtimeVersion,
   deviceName,
   udid,
   iterations,
-  reproducedLostFirstGesture: reproduced,
+  gesturesMeasured,
+  firstGestureLost: lost,
+  firstGestureLate: late,
+  reproduced,
+  deliveryLatencyMs: {
+    count: gestureWaits.length,
+    min: gestureWaits[0] ?? null,
+    median: percentile(gestureWaits, 0.5),
+    p90: percentile(gestureWaits, 0.9),
+    max: gestureWaits[gestureWaits.length - 1] ?? null,
+  },
   rows: summaryRows,
 };
 writeFileSync(resolve(outRoot, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+const latency = summary.deliveryLatencyMs;
 const table = [
   `### Cold-simulator touch reproduction (${runtimeVersion}, ${deviceName})`,
   '',
-  `Reproduced (gesture ok, app saw nothing): **${reproduced}/${iterations}**`,
+  `First synthesized gesture lost or late (reported ok, app saw it late or never): **${reproduced}/${gesturesMeasured}** measured iterations (lost ${lost}, late ${late}).`,
   '',
-  '| # | boot ms | prepare ms | 1st gesture ok | 1st delivered | 2nd delivered | relaunch delivered | XCTest tap delivered | error |',
+  `Delivery latency across ${latency.count} synthesized gestures: min ${latency.min} ms, median ${latency.median} ms, p90 ${latency.p90} ms, max ${latency.max} ms.`,
+  '',
+  '| # | boot ms | prepare ms | 1st gesture | 1st wait ms | 2nd gesture | relaunch gesture | XCTest tap delivered | error |',
   '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ...summaryRows.map(
     (row) =>
-      `| ${row.iteration} | ${row.bootMs ?? ''} | ${row.prepareMs ?? ''} | ${row.firstGestureOk} | ${row.firstDelivered} | ${row.secondDelivered} | ${row.relaunchDelivered} | ${row.xctestTapDelivered} | ${row.error ?? ''} |`
+      `| ${row.iteration} | ${row.bootMs ?? ''} | ${row.prepareMs ?? ''} | ${row.firstClass ?? ''} | ${row.firstWaitMs ?? ''} | ${row.secondClass ?? ''} | ${row.relaunchClass ?? ''} | ${row.xctestTapDelivered} | ${row.error ? row.error.split('\n')[0].slice(0, 80) : ''} |`
   ),
   '',
 ].join('\n');

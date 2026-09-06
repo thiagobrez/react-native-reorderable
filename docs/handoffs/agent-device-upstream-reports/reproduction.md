@@ -32,7 +32,33 @@ Driver: `scripts/repro-cold-simulator-touch.mjs`
 `summary.json` and the job step summary hold one row per iteration with
 `firstDelivered`, `secondDelivered`, `relaunchDelivered`, `xctestTapDelivered`.
 
+## Results (run 34025552105, macos-26 / iOS 26.5, 4 samples x 3 iterations)
+
+Seven iterations reached the gesture; the first synthesized drag was **lost or late in 3 of them** while the gesture command reported ok, and the delivery-latency distribution across all 21 measured gestures was min 179 ms, median 1100 ms, **p90 15465 ms, max 40918 ms** — the p90 is a full 15 s wait timeout.
+
+| sample/it | first gesture | 1st wait | XCTest tap | note |
+| --- | --- | --- | --- | --- |
+| 2 / 2 | **lost** | 15.3 s (timeout) | delivered 851 ms | gesture reported ok, durationMs 9850; app never saw it |
+| 2 / 3 | **lost** | 40.9 s | delivered 131 ms | delayed burst drained ~40 s late |
+| 1 / 2 | **late** | 7.7 s | delivered | reorder committed 7.7 s after touch-down |
+| 4 / 1 | errored | 15.5 s (timeout) | delivered 240 ms | gesture command itself exited 1; app also lost |
+| 1 / 1, 3 / 1, 3 / 2 | prompt | 0.3-2.7 s | delivered | healthy |
+
+**The discriminator is decisive.** In every lost or late iteration the public XCTest coordinate tap on the same runner, moments later, landed in under a second. So the loss is specific to the private synthesized-event path (`XCSynthesizedEventRecord`/`XCPointerEventPath`), not a simulator-wide input stall. That is what points the fix at the synthesized-gesture path rather than at boot or AX readiness.
+
+## Delivery classes
+
+Each gesture is classified by what the app observed, not the gesture command's exit code:
+
+- **lost** the gesture reported ok but the app never observed the effect (15 s wait timed out).
+- **late** the app observed it, but only after 3 s (`LATE_DELIVERY_THRESHOLD_MS`).
+- **prompt** the app observed it promptly (healthy).
+- **errored** the gesture command itself failed (a different symptom, not counted as reproduced).
+
+`summary.json` carries the per-iteration classes, the counts, and the latency distribution; the job step summary prints them.
+
 ## Reading the probes
+
 
 | first | second | relaunch | XCTest tap | Reading |
 | --- | --- | --- | --- | --- |

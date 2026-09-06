@@ -1,4 +1,8 @@
-# Fix proposal for agent-device: readiness preflight proves the wrong channel
+# Fix for agent-device: warm the synthesized-input digitizer before the first gesture
+
+> **Filed as [callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362)** (draft, pending maintainer cold-boot device validation via its `replay-ios` lane). The section below is the original analysis; the shipped fix is the digitizer warm-up described in the PR, which the backboardd evidence below pinned down: the HID digitizer attaches ~10 s after the first synthesized event is posted on a cold sim, wrecking the first timed gesture. The readiness-preflight framing here was superseded once the logs showed the attach, not the AX channel, is what is cold.
+
+# Original analysis: readiness preflight proves the wrong channel
 
 Grounded in the upstream `main` source at `callstack/agent-device` (read 2026-09-06)
 and the CI reproduction on this branch. This is a design writeup, not a merged

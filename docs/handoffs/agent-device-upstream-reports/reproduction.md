@@ -1,5 +1,7 @@
 # Reproduction: first synthesized drag lost on a cold hosted iOS 26.5 simulator
 
+> Upstream fix: [callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362) (draft). This branch is its fail-without evidence.
+
 Workflow: `.github/workflows/repro-cold-simulator-touch.yml`
 Driver: `scripts/repro-cold-simulator-touch.mjs`
 

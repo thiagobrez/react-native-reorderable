@@ -206,19 +206,19 @@ async function iteration(index, udid) {
     record.steps.prepare = { status: prepare.status, durationMs: prepare.durationMs };
     if (prepare.status !== 0) throw new Error(`prepare ios-runner exited ${prepare.status}`);
 
-    // Same alert-seeding dance as the device-contract preflight: the first deep
-    // link after an erase shows the URL confirmation alert.
     log(`iteration ${index}: launch and deep link`);
-    // `alert accept` can hit RUNNER_BUSY right after the deep link on a slow
-    // host; retry it, because an unaccepted URL confirmation blocks the scenario.
-    const acceptAlert = () => {
-      let result;
-      for (let attempt = 1; attempt <= 4; attempt += 1) {
-        result = session(['alert', 'accept']);
-        if (result.status === 0 || !result.stderr.includes('RUNNER_BUSY')) break;
-        spawnSync('sleep', ['3']);
+    const confirmDeepLink = () => {
+      const result = session(['alert', 'get', '--json']);
+      if (result.status === 0) return session(['alert', 'accept']);
+      let error;
+      try {
+        error = JSON.parse(result.stdout).error;
+      } catch {
+        // Unreadable output cannot establish that a confirmation is absent.
       }
-      return result;
+      return error?.details?.runnerErrorCode === 'ALERT_NOT_FOUND'
+        ? undefined
+        : result;
     };
     // Bring the scenario to its start state. A cold hosted host can hiccup on an
     // individual `open`/`wait` (xcrun timeout, unrendered deep link) that a
@@ -229,19 +229,13 @@ async function iteration(index, udid) {
         () => session(['open', bundleId, '--relaunch']),
         () => session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
         () => session(['open', deepLink]),
-        acceptAlert,
-        () => session(['open', bundleId, '--relaunch']),
-        () => session(['wait', 'Scenario Lab', '30000', '--depth', '100']),
-        () => session(['open', deepLink]),
+        confirmDeepLink,
         () => session(['wait', initialOrder, '30000', '--depth', '100']),
         () => session(['wait', 'Callback count: 0', '15000', '--depth', '100']),
       ];
-      for (const [position, step] of steps.entries()) {
+      for (const step of steps) {
         const result = step();
-        // Absence is expected after the confirmation has already been accepted.
-        // A timeout can leave the URL sheet over matching text in the scenario.
-        const absentAlert = position === 3 && result.stderr.includes('alert not found');
-        if (result.status !== 0 && !absentAlert) return result;
+        if (result != null && result.status !== 0) return result;
       }
       return undefined;
     };

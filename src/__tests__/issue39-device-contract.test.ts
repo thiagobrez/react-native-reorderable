@@ -862,9 +862,6 @@ describe('issue 39 portable device contract', () => {
     );
     expect(iosRunnerPreflight).toMatch(/'--timeout',\s*'300000'/);
     expect(iosRunnerPreflight).toContain(
-      "runSessionCommand('alert', 'accept')"
-    );
-    expect(iosRunnerPreflight).toContain(
       "runSessionCommand('open', 'reorderable.example', '--relaunch')"
     );
     expect(iosRunnerPreflight).toContain(

@@ -85,6 +85,12 @@ private var issue84TouchStarts: [ObjectIdentifier: (arrival: Double, timestamp: 
 private var issue84ApplicationTouches: [ObjectIdentifier: Bool] = [:]
 
 @MainActor
+private var issue84MainLoopLastWake: Double = 0
+
+@MainActor
+private var issue84MainLoopLastSleep: Double = 0
+
+@MainActor
 private func installIssue84TouchDiagnostics() {
   guard let original = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.sendEvent(_:))),
         let diagnostic = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.issue84SendEvent(_:))),
@@ -94,11 +100,27 @@ private func installIssue84TouchDiagnostics() {
   }
   method_exchangeImplementations(original, diagnostic)
   method_exchangeImplementations(applicationOriginal, applicationDiagnostic)
+  let activities = CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.afterWaiting.rawValue
+  guard let observer = CFRunLoopObserverCreateWithHandler(nil, activities, true, 0, { _, activity in
+    MainActor.assumeIsolated {
+      let now = ProcessInfo.processInfo.systemUptime
+      if activity == .afterWaiting {
+        issue84MainLoopLastWake = now
+      } else if activity == .beforeWaiting {
+        issue84MainLoopLastSleep = now
+      }
+    }
+  }) else {
+    fatalError("ISSUE84_TOUCH could not install main run-loop observer")
+  }
+  CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
 }
 
 private extension UIApplication {
   @objc func issue84ApplicationSendEvent(_ event: UIEvent) {
     let arrivedAt = ProcessInfo.processInfo.systemUptime
+    let lastWake = issue84MainLoopLastWake
+    let lastSleep = issue84MainLoopLastSleep
     var observations: [(phase: Int, timestamp: Double)] = []
     if event.type == .touches {
       for touch in event.allTouches ?? [] {
@@ -122,8 +144,9 @@ private extension UIApplication {
     issue84ApplicationSendEvent(event)
     let returnedAt = ProcessInfo.processInfo.systemUptime
     for observation in observations {
-      NSLog("ISSUE84_APP_EVENT phase=%ld timestamp=%.6f arrival=%.6f handlingMs=%.1f",
-            observation.phase, observation.timestamp, arrivedAt, (returnedAt - arrivedAt) * 1000)
+      NSLog("ISSUE84_APP_EVENT phase=%ld timestamp=%.6f arrival=%.6f handlingMs=%.1f lastWake=%.6f lastSleep=%.6f",
+            observation.phase, observation.timestamp, arrivedAt, (returnedAt - arrivedAt) * 1000,
+            lastWake, lastSleep)
     }
   }
 }

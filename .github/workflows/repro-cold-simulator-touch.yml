@@ -2,8 +2,8 @@ name: Repro cold-simulator lost touch stream
 
 # Reproduction for the agent-device upstream report tracked in issue #84: the
 # first `gesture drag` synthesized into a freshly erased, cold-booted iOS 26.5
-# simulator on a hosted macos-26 runner reports ok while the app receives no
-# touch stream. Every job erases and cold-boots the simulator several times and
+# simulator on a hosted macos-26 runner reports ok without the expected app
+# outcome. Every job erases and cold-boots the simulator several times and
 # records what the app observed. Manual validation can require prompt delivery
 # or reproduction; observation runs retain results without enforcing a verdict.
 

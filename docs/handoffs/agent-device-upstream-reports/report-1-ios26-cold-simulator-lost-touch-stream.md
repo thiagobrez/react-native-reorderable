@@ -1,3 +1,5 @@
+> Historical report draft. Its causal and timing claims are superseded by the [current reassessment](./fix-proposal.md). Do not file this text verbatim.
+
 # Upstream report 1 (draft for callstack/agent-device)
 
 **Suggested title:** `gesture drag` reports `ok=1` but the app receives no touch stream on a freshly erased, cold-booted iOS 26.5 simulator (GitHub-hosted macos-26)

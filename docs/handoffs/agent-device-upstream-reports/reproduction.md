@@ -17,8 +17,10 @@ Driver: `scripts/repro-cold-simulator-touch.mjs`
    link again, wait for the initial order and `Callback count: 0`.
 4. Start a `simctl io recordVideo` capture.
 5. **First gesture**: `gesture drag 'id="card-card-0"' 'id="card-card-3"' 650 1200 8000 --json`,
-   then `wait "Callback count: 1" 15000`. `delivered=false` with `gestureExit=0`
-   is the reproduced defect.
+   then `wait "Callback count: 1" 15000 --json`. A successful gesture followed by
+   a wait whose structured reason is `wait_target_absent` establishes that the
+   expected outcome was not observed within that wait. Other observer errors do
+   not establish a missing outcome.
 6. Probes, always run so passing iterations act as controls:
    - **second gesture** on the same app instance (private event synthesis again;
      it drags the last card to the top so it changes the order whatever the first
@@ -58,49 +60,25 @@ symptom and rejects setup errors. Both workflows accept an optional immutable
 and runner before starting the loop, and keep those artifacts unchanged until
 session cleanup completes.
 
-## Results (run 34025552105, macos-26 / iOS 26.5, 4 samples x 3 iterations)
+## Historical results
 
-Seven iterations reached the gesture; the first synthesized drag was **lost or late in 3 of them** while the gesture command reported ok, and the delivery-latency distribution across all 21 measured gestures was min 179 ms, median 1100 ms, **p90 15465 ms, max 40918 ms** — the p90 is a full 15 s wait timeout.
+The original [four-sample run](https://github.com/thiagobrez/react-native-reorderable/actions/runs/34025552105) and [setup-retry run](https://github.com/thiagobrez/react-native-reorderable/actions/runs/34027523634) reported missing or delayed first outcomes. Their classifier included observer failures as missing outcomes and their wait distributions included failed commands. Their original counts and percentile labels must not be used as current transport or timing evidence.
 
-| sample/it | first gesture | 1st wait | Selector press | note |
-| --- | --- | --- | --- | --- |
-| 2 / 2 | **lost** | 15.3 s (timeout) | delivered 851 ms | gesture reported ok, durationMs 9850; app never saw it |
-| 2 / 3 | **lost** | 40.9 s | delivered 131 ms | delayed burst drained ~40 s late |
-| 1 / 2 | **late** | 7.7 s | delivered | outcome observed 7.7 s after the gesture command returned |
-| 4 / 1 | errored | 15.5 s (timeout) | delivered 240 ms | gesture command itself exited 1; app also lost |
-| 1 / 1, 3 / 1, 3 / 2 | prompt | 0.3-2.7 s | delivered | healthy |
+The earlier exact-source [base run](https://github.com/thiagobrez/react-native-reorderable/actions/runs/34056421445) observed two missing first outcomes and one delayed first observation. The [candidate run](https://github.com/thiagobrez/react-native-reorderable/actions/runs/34056673023) failed: it included toolchain/setup failures, an invalid viewport before synthesis, a URL confirmation overlay, and an observer error falsely classified as lost even though the recording showed a committed drop. It is not a green comparison.
 
-**Original interpretation withdrawn.** A subsequent selector press worked, but it
-used the same private synthesis bridge. These outcomes cannot identify a private
-versus public input-path failure or establish a persistent-digitizer mechanism.
-
-## Hardened-run confirmation (run 34027523634, same matrix)
-
-After adding the setup retry and the delivery classification, a second 4x3 run measured
-**all 12 iterations** (0 wasted, was 5 of 12) and reproduced the defect independently:
-
-- first gesture: 1 lost, 2 late, 3 errored, 6 prompt; delivery latency across 36 gestures
-  median 888 ms, p90 15284 ms, max 16867 ms.
-- the XCTest coordinate tap landed in 11 of 12 iterations, including every lost/late one;
-  the single exception (sample 4 iteration 3) was an iteration where the whole input path
-  stalled, not just the synthesized gesture.
-
-Across both runs (24 iterations) the defect appears in a consistent fraction with a p90
-delivery latency at the full wait timeout, so the matrix reliably surfaces it even though a
-single iteration is probabilistic. "errored" iterations show the same ~15 s app-loss with a
-non-zero gesture exit rather than a false ok; they are excluded from the conservative
-reproduced count.
+Fresh base and candidate runs use the corrected harness at downstream `afdde2e0867beae448ec9784a641bbdd6cbdbde4`; see [current validation](./fix-proposal.md#what-the-evidence-establishes). Original reports remain in Git history and retained run artifacts.
 
 ## Delivery classes
 
-Each gesture is classified by what the app observed, not the gesture command's exit code:
+Each class describes the command result and post-command observation:
 
-- **lost** the gesture reported ok but the app never observed the effect (15 s wait timed out).
-- **late** the app observed it, but only after 3 s (`LATE_DELIVERY_THRESHOLD_MS`).
-- **prompt** the app observed it promptly (healthy).
-- **errored** the gesture command itself failed (a different symptom, not counted as reproduced).
+- **lost**: the gesture command succeeded, but the expected effect was absent when the wait failed with `wait_target_absent`.
+- **late**: the wait succeeded after more than 3 seconds (`LATE_DELIVERY_THRESHOLD_MS`).
+- **prompt**: the wait succeeded within 3 seconds.
+- **errored**: the gesture command failed; not counted as a measured missing outcome.
+- **observation-error**: the wait failed without establishing target absence; not counted as a measured missing outcome.
 
-`summary.json` carries the per-iteration classes, the counts, and the latency distribution; the job step summary prints them.
+`summary.json` carries the classes and post-command wait distribution. `--expect prompt` requires every gesture and follow-up to pass promptly, every selector press to be observed, and no setup errors. `--expect reproduced` requires at least one lost or late first observation and a usable first-gesture measurement on every iteration. Neither expectation proves a transport mechanism.
 
 ## Reading the probes
 
@@ -115,15 +93,18 @@ Each gesture is classified by what the app observed, not the gesture command's e
 ## Running it
 
 ```bash
-gh workflow run repro-cold-simulator-touch.yml --ref docs/issue-84-agent-device-upstream-handoff -f iterations=3 -f samples=4
+gh workflow run repro-cold-simulator-touch.yml --ref ci/restore-agent-device \
+  -f agent_device_sha="<full-upstream-sha>" -f expectation=prompt -f iterations=3 -f samples=1
 gh run list --workflow repro-cold-simulator-touch.yml --limit 5
 gh run download <run-id> -D /tmp/repro
 ```
 
-Locally (fast machines have never reproduced it, but the mechanics can be checked):
+Locally (a passing run on one host does not establish a hosted cold-start fix):
 
 ```bash
-node scripts/repro-cold-simulator-touch.mjs --runtime iOS-26-5 --iterations 1 --out /tmp/repro-smoke
+AGENT_DEVICE_BIN=/absolute/path/to/agent-device/bin/agent-device.mjs \
+  node scripts/repro-cold-simulator-touch.mjs --runtime iOS-26-5 \
+  --iterations 1 --expect prompt --out /tmp/repro-smoke
 ```
 
 Without `--expect`, the driver records observations without enforcing a verdict.

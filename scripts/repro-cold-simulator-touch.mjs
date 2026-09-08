@@ -3,7 +3,7 @@
 // Each iteration erases and cold-boots the target simulator, prepares the
 // agent-device XCUITest runner, opens the Scenario Lab free-form scenario and
 // issues the same `gesture drag` the device-contract job uses. It then records
-// whether the app observed the drop (`Callback count` increments) and runs a
+// whether the app committed a drop from that gesture's source and runs a
 // small set of follow-up probes that tell the failure modes apart:
 //
 //   second-gesture   same app instance, same private event synthesis path
@@ -51,8 +51,16 @@ const initialOrder =
 // The contract drag (card-0 before card-3). The follow-up drag on the same app
 // instance moves the last card to the top so it always changes the order
 // whatever the first drag did.
-const contractDrag = { source: 'id="card-card-0"', destination: 'id="card-card-3"' };
-const followUpDrag = { source: 'id="card-card-5"', destination: 'id="card-card-1"' };
+const contractDrag = {
+  source: 'id="card-card-0"',
+  destination: 'id="card-card-3"',
+  expected: 'Last committed event: {"sourceIds":["card-0"]',
+};
+const followUpDrag = {
+  source: 'id="card-card-5"',
+  destination: 'id="card-card-1"',
+  expected: 'Last committed event: {"sourceIds":["card-5"]',
+};
 const timing = { sourceHoldMs: 650, moveMs: 1200, destinationHoldMs: 8000 };
 const agentDevice =
   process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device');
@@ -253,9 +261,8 @@ async function iteration(index, udid) {
     recorder = startRecording(udid, resolve(iterationRoot, 'screen.mp4'));
     record.steps.recordingStarted = await recorder.waitStarted();
 
-    let deliveredCount = 0;
     const gestureAttempt = (name, drag) => {
-      const expected = `Callback count: ${deliveredCount + 1}`;
+      const expected = drag.expected;
       const startedAt = iso();
       const gesture = session(
         [
@@ -280,7 +287,6 @@ async function iteration(index, udid) {
         waitJson = JSON.parse(wait.stdout);
       } catch {}
       const delivered = wait.status === 0;
-      if (delivered) deliveredCount += 1;
       // These are observation classes, not touch-transport measurements:
       //   lost    no expected effect observed before the wait failed
       //   late    effect observed after the post-command wait threshold
@@ -332,7 +338,6 @@ async function iteration(index, udid) {
       session(['wait', initialOrder, '30000', '--depth', '100']),
     ];
     if (relaunch.every((result) => result.status === 0)) {
-      deliveredCount = 0;
       record.probes.relaunchGesture = gestureAttempt('gesture-after-app-relaunch', contractDrag);
     } else {
       record.probes.relaunchGesture = { skipped: 'relaunch failed' };

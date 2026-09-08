@@ -355,6 +355,11 @@ async function iteration(index, udid) {
   } catch (error) {
     record.error = error.message;
     log(`iteration ${index}: ${error.message}`);
+    record.steps.failureScreenshot = run(
+      'xcrun',
+      ['simctl', 'io', udid, 'screenshot', resolve(iterationRoot, 'failure.png')],
+      { timeoutMs: 10000 }
+    );
   } finally {
     if (recorder != null) await recorder.stop();
     const simulatorLog = run(

@@ -82,12 +82,50 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 private var issue84TouchStarts: [ObjectIdentifier: (arrival: Double, timestamp: Double, moved: Bool)] = [:]
 
 @MainActor
+private var issue84ApplicationTouches: [ObjectIdentifier: Bool] = [:]
+
+@MainActor
 private func installIssue84TouchDiagnostics() {
   guard let original = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.sendEvent(_:))),
-        let diagnostic = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.issue84SendEvent(_:))) else {
-    fatalError("ISSUE84_TOUCH could not install window event probe")
+        let diagnostic = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.issue84SendEvent(_:))),
+        let applicationOriginal = class_getInstanceMethod(UIApplication.self, #selector(UIApplication.sendEvent(_:))),
+        let applicationDiagnostic = class_getInstanceMethod(UIApplication.self, #selector(UIApplication.issue84ApplicationSendEvent(_:))) else {
+    fatalError("ISSUE84_TOUCH could not install application/window event probes")
   }
   method_exchangeImplementations(original, diagnostic)
+  method_exchangeImplementations(applicationOriginal, applicationDiagnostic)
+}
+
+private extension UIApplication {
+  @objc func issue84ApplicationSendEvent(_ event: UIEvent) {
+    let arrivedAt = ProcessInfo.processInfo.systemUptime
+    var observations: [(phase: Int, timestamp: Double)] = []
+    if event.type == .touches {
+      for touch in event.allTouches ?? [] {
+        let key = ObjectIdentifier(touch)
+        let firstObserved = issue84ApplicationTouches[key] == nil
+        let firstMovement = touch.phase == .moved && issue84ApplicationTouches[key] == false
+        if firstObserved {
+          issue84ApplicationTouches[key] = false
+        }
+        if firstMovement {
+          issue84ApplicationTouches[key] = true
+        }
+        if firstObserved || firstMovement || touch.phase == .began || touch.phase == .ended || touch.phase == .cancelled {
+          observations.append((touch.phase.rawValue, touch.timestamp))
+        }
+        if touch.phase == .ended || touch.phase == .cancelled {
+          issue84ApplicationTouches.removeValue(forKey: key)
+        }
+      }
+    }
+    issue84ApplicationSendEvent(event)
+    let returnedAt = ProcessInfo.processInfo.systemUptime
+    for observation in observations {
+      NSLog("ISSUE84_APP_EVENT phase=%ld timestamp=%.6f arrival=%.6f handlingMs=%.1f",
+            observation.phase, observation.timestamp, arrivedAt, (returnedAt - arrivedAt) * 1000)
+    }
+  }
 }
 
 private extension UIWindow {

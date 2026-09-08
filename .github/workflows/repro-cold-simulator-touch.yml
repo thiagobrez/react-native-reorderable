@@ -8,12 +8,25 @@ permissions:
 
 jobs:
   probe:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            xcode: '26'
+            runtime: iOS-26-5
+          - runner: xcode-27
+            xcode: ''
+            runtime: iOS-27-0
+    runs-on: ${{ matrix.runner }}
+    env:
+      PROBE_RUNTIME: ${{ matrix.runtime }}
     timeout-minutes: 25
     steps:
       - uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd
+        if: matrix.xcode != ''
         with:
-          xcode-version: '26'
+          xcode-version: ${{ matrix.xcode }}
       - name: Measure exact toolchain queries before and after cold boots
         run: |
           python3 - <<'PY'
@@ -23,11 +36,15 @@ jobs:
           def run(stage, command, timeout=30):
               started = time.monotonic()
               try:
-                  result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-                  row = dict(stage=stage, command=command, exit=result.returncode,
-                             stdout=result.stdout[-10000:], stderr=result.stderr[-10000:])
+                  child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                  spawn_ms = round((time.monotonic() - started) * 1000)
+                  stdout, stderr = child.communicate(timeout=timeout)
+                  row = dict(stage=stage, command=command, exit=child.returncode, spawnMs=spawn_ms,
+                             stdout=stdout[-10000:], stderr=stderr[-10000:])
               except subprocess.TimeoutExpired:
-                  row = dict(stage=stage, command=command, error='timeout', timeoutSeconds=timeout)
+                  child.kill()
+                  child.communicate()
+                  row = dict(stage=stage, command=command, error='timeout', timeoutSeconds=timeout, spawnMs=spawn_ms)
               row['elapsedMs'] = round((time.monotonic() - started) * 1000)
               row['developerDir'] = os.environ.get('DEVELOPER_DIR')
               with evidence.open('a') as stream:
@@ -41,9 +58,14 @@ jobs:
                   ['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-build-version'],
               ]:
                   run(stage, command)
+          def resources(stage):
+              run(stage, ['sysctl', 'hw.ncpu', 'hw.memsize', 'vm.swapusage'])
+              run(stage, ['vm_stat'])
+              run(stage, ['top', '-l', '1', '-n', '12', '-o', 'cpu', '-stats', 'pid,command,cpu,mem,state'])
           run('selection', ['xcode-select', '-p'])
+          resources('resources-before')
           probes('before-boot')
-          runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5'
+          runtime = 'com.apple.CoreSimulator.SimRuntime.' + os.environ['PROBE_RUNTIME']
           created = run('create', ['xcrun', 'simctl', 'create', 'Issue84ToolchainProbe',
                                   'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime])
           assert created.get('exit') == 0, created
@@ -60,6 +82,7 @@ jobs:
                   assert ready.get('exit') == 0, ready
                   probes(f'cold-{index}')
                   probes(f'immediate-repeat-{index}')
+                  resources(f'resources-after-{index}')
           finally:
               run('cleanup-shutdown', ['xcrun', 'simctl', 'shutdown', udid], 120)
               run('cleanup-delete', ['xcrun', 'simctl', 'delete', udid], 120)
@@ -68,6 +91,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: cold-toolchain-probes
+          name: cold-toolchain-probes-${{ matrix.runner }}
           path: artifacts/
           retention-days: 30

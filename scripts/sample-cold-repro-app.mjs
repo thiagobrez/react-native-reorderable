@@ -29,11 +29,11 @@ try {
     throw new Error(`Expected one app on ${udid}; found ${targets.length}`);
   record.targetPid = Number(targets[0][1]);
   record.executable = targets[0][2];
-  record.captureStartedAt = new Date().toISOString();
+  record.commandStartedAt = new Date().toISOString();
   const result = execute(
     '/usr/bin/sample',
-    [targets[0][1], '20', '10', '-file', resolve(directory, 'app-stacks.txt')],
-    45000
+    [targets[0][1], '60', '10', '-mayDie', '-file', resolve(directory, 'app-stacks.txt')],
+    180000
   );
   record.status = result.status;
   record.signal = result.signal;

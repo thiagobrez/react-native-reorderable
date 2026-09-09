@@ -1,5 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Linking } from 'react-native';
 jest.mock('react', () =>
   jest.requireActual<typeof import('react')>('../../../node_modules/react')
 );
@@ -45,6 +46,66 @@ import App from '../App';
 import { ScenarioFrame } from '../components';
 
 describe('issue 38 example application', () => {
+  it.each(['reset', 'same deep link', 'reset after reorder'])(
+    'reports the initial card order after %s',
+    async (action) => {
+      const url = 'reorderable://lab/free-form?preset=teaching&engine=auto';
+      jest.spyOn(Linking, 'getInitialURL').mockResolvedValueOnce(url);
+      const subscribe = jest.spyOn(Linking, 'addEventListener');
+      const rendered = await render(<App />);
+      const order = 'Order: card-0, card-1, card-2, card-3, card-4, card-5';
+      expect(
+        rendered.getByTestId('scenario-free-form-order')
+      ).toHaveTextContent(order);
+
+      if (action === 'reset after reorder') {
+        await fireEvent(
+          rendered.getByTestId('free-form-container'),
+          'reorder',
+          {
+            sourceIds: ['card-0'],
+            destination: { sectionId: null, beforeId: 'card-3' },
+            nextOrder: [
+              {
+                sectionId: null,
+                itemIds: [
+                  'card-1',
+                  'card-2',
+                  'card-0',
+                  'card-3',
+                  'card-4',
+                  'card-5',
+                ],
+              },
+            ],
+          }
+        );
+        expect(
+          rendered.getByTestId('scenario-free-form-callback-count')
+        ).toHaveTextContent('Callback count: 1');
+        expect(
+          rendered.getByTestId('scenario-free-form-order')
+        ).not.toHaveTextContent(order);
+      }
+      if (action === 'same deep link') {
+        const onLink = subscribe.mock.calls.at(-1)![1];
+        await act(() => onLink({ url }));
+      } else {
+        await fireEvent.press(rendered.getByTestId('scenario-free-form-reset'));
+      }
+
+      expect(
+        rendered.getByTestId('scenario-free-form-order')
+      ).toHaveTextContent(order);
+      expect(
+        rendered.getByTestId('scenario-free-form-callback-count')
+      ).toHaveTextContent('Callback count: 0');
+      expect(
+        rendered.getByTestId('scenario-free-form-last-event')
+      ).toHaveTextContent('Last committed event: None');
+    }
+  );
+
   it('navigates the three visible catalogs without exposing an engine control', async () => {
     const rendered = await render(<App />);
     expect(rendered.getAllByTestId(/^open-/)).toHaveLength(5);

@@ -36,6 +36,9 @@ if (runtimeVersion == null)
   );
 const iterations = Number(args.get('iterations') ?? 3);
 const expectation = args.get('expect') ?? 'observe';
+const inputProbe = process.env.REPRO_NATIVE_INPUT_PROBE ?? 'none';
+if (!['none', 'stacks', 'files'].includes(inputProbe))
+  throw new Error('Expected REPRO_NATIVE_INPUT_PROBE none, stacks, or files');
 if (!['observe', 'prompt', 'reproduced'].includes(expectation))
   throw new Error('Expected --expect observe, prompt, or reproduced');
 if (!Number.isInteger(iterations) || iterations < 1 || iterations > 20)
@@ -202,7 +205,7 @@ async function iteration(index, udid) {
   };
 
   let recorder;
-  let stackCapture;
+  let inputCapture;
   try {
     log(`iteration ${index}: cold reset of ${udid}`);
     record.steps.coldReset = coldReset(udid);
@@ -329,20 +332,20 @@ async function iteration(index, udid) {
       return attempt;
     };
 
-    if (process.env.REPRO_NATIVE_STACK_SAMPLE === 'true') {
-      const sampler = spawn(
+    if (inputProbe !== 'none') {
+      const capture = spawn(
         process.execPath,
-        [fileURLToPath(new URL('./sample-cold-repro-app.mjs', import.meta.url)), udid, iterationRoot],
+        [fileURLToPath(new URL('./capture-cold-repro-app.mjs', import.meta.url)), udid, iterationRoot, inputProbe],
         { stdio: 'ignore' }
       );
-      stackCapture = new Promise((resolveCapture) => {
-        sampler.once('error', (error) => resolveCapture({ error: error.message }));
-        sampler.once('close', (status, signal) => resolveCapture({ status, signal }));
+      inputCapture = new Promise((resolveCapture) => {
+        capture.once('error', (error) => resolveCapture({ error: error.message }));
+        capture.once('close', (status, signal) => resolveCapture({ status, signal }));
       });
     }
     record.firstGesture = gestureAttempt('first-gesture-after-cold-boot', contractDrag);
-    // Keep the sampled app alive until its stack report has been written.
-    if (stackCapture != null) await stackCapture;
+    // Keep the captured app alive until its report has been written.
+    if (inputCapture != null) await inputCapture;
     record.probes = {};
     record.probes.secondGesture = gestureAttempt('second-gesture-same-app-instance', followUpDrag);
 
@@ -377,7 +380,7 @@ async function iteration(index, udid) {
     );
   } finally {
     if (recorder != null) await recorder.stop();
-    if (stackCapture != null) record.steps.stackCapture = await stackCapture;
+    if (inputCapture != null) record.steps.inputCaptureWorker = await inputCapture;
     const simulatorLog = run(
       'xcrun',
       [

@@ -27,10 +27,11 @@ on:
         description: Parallel jobs per configuration
         default: '4'
         required: false
-      native_stack_sample:
-        description: Capture app stacks during input (diagnostic overhead)
-        type: boolean
-        default: false
+      native_input_probe:
+        description: Native input diagnostic (adds overhead)
+        type: choice
+        default: none
+        options: [none, stacks, files]
   push:
     branches:
       - docs/issue-84-agent-device-upstream-handoff
@@ -76,7 +77,7 @@ jobs:
     env:
       RCT_USE_RN_DEP: 1
       RCT_USE_PREBUILT_RNCORE: 1
-      REPRO_NATIVE_STACK_SAMPLE: ${{ inputs.native_stack_sample || 'false' }}
+      REPRO_NATIVE_INPUT_PROBE: ${{ inputs.native_input_probe || 'none' }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0

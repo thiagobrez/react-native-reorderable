@@ -381,6 +381,9 @@ async function iteration(index, udid) {
   } finally {
     if (recorder != null) await recorder.stop();
     if (inputCapture != null) record.steps.inputCaptureWorker = await inputCapture;
+    // Follow-up timeouts must not age the first input out of the evidence window.
+    const logStart = `@${Math.floor(Date.parse(record.firstGesture?.startedAt ?? record.startedAt) / 1000) - 5}`;
+    record.logStart = logStart;
     const simulatorLog = run(
       'xcrun',
       [
@@ -389,8 +392,8 @@ async function iteration(index, udid) {
         udid,
         'log',
         'show',
-        '--last',
-        '8m',
+        '--start',
+        logStart,
         '--style',
         'compact',
         '--predicate',
@@ -406,8 +409,8 @@ async function iteration(index, udid) {
       'log',
       [
         'show',
-        '--last',
-        '8m',
+        '--start',
+        logStart,
         '--style',
         'compact',
         '--predicate',

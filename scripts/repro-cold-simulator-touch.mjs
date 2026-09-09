@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const args = new Map();
 for (let index = 2; index < process.argv.length; index += 2)
@@ -201,6 +202,7 @@ async function iteration(index, udid) {
   };
 
   let recorder;
+  let stackCapture;
   try {
     log(`iteration ${index}: cold reset of ${udid}`);
     record.steps.coldReset = coldReset(udid);
@@ -327,6 +329,17 @@ async function iteration(index, udid) {
       return attempt;
     };
 
+    if (process.env.REPRO_NATIVE_STACK_SAMPLE === 'true') {
+      const sampler = spawn(
+        process.execPath,
+        [fileURLToPath(new URL('./sample-cold-repro-app.mjs', import.meta.url)), udid, iterationRoot],
+        { stdio: 'ignore' }
+      );
+      stackCapture = new Promise((resolveCapture) => {
+        sampler.once('error', (error) => resolveCapture({ error: error.message }));
+        sampler.once('close', (status, signal) => resolveCapture({ status, signal }));
+      });
+    }
     record.firstGesture = gestureAttempt('first-gesture-after-cold-boot', contractDrag);
     record.probes = {};
     record.probes.secondGesture = gestureAttempt('second-gesture-same-app-instance', followUpDrag);
@@ -362,6 +375,7 @@ async function iteration(index, udid) {
     );
   } finally {
     if (recorder != null) await recorder.stop();
+    if (stackCapture != null) record.steps.stackCapture = await stackCapture;
     const simulatorLog = run(
       'xcrun',
       [

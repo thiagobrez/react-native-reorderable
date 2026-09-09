@@ -350,7 +350,7 @@ export default function App() {
             <ScenarioContent
               area={area}
               engine={engine}
-              key={`${scenario}:${preset}:${area === 'lab' ? engine : 'auto'}`}
+              key={`${scenario}:${preset}:${area === 'lab' ? engine : 'auto'}:${resetToken}`}
               onOutcome={setOutcome}
               onPresetChange={(next) => {
                 setPreset(next);

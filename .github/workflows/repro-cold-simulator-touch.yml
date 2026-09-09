@@ -32,6 +32,10 @@ on:
         type: choice
         default: none
         options: [none, stacks, files]
+      prefetch_uikit_file:
+        description: Diagnostic read-only prefetch of the runtime UIKit feature file
+        type: boolean
+        default: false
   push:
     branches:
       - docs/issue-84-agent-device-upstream-handoff
@@ -119,6 +123,11 @@ jobs:
           cd example/ios
           xcodebuild -workspace ReorderableExample.xcworkspace -scheme ReorderableExample -configuration Release -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -n 40
           test -d build/Build/Products/Release-iphonesimulator/ReorderableExample.app
+
+      - name: Prefetch runtime file for the diagnostic control
+        if: inputs.prefetch_uikit_file == true
+        timeout-minutes: 1
+        run: node scripts/prefetch-cold-repro-file.mjs '${{ matrix.runtime }}' artifacts/repro-cold-touch/prefetch.json
 
       - name: Reproduce
         run: node scripts/repro-cold-simulator-touch.mjs --runtime '${{ matrix.runtime }}' --iterations '${{ inputs.iterations || '3' }}' --out artifacts/repro-cold-touch --expect '${{ inputs.expectation || 'observe' }}'

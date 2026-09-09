@@ -2,8 +2,13 @@
   "intent": "beforeTarget",
   "default": {
     "driver": "detox",
-    "destinationSelector": { "relation": "namedTarget" },
-    "destination": { "normalizedX": 0.5, "normalizedY": 0.25 }
+    "destinationSelector": {
+      "relation": "namedTarget"
+    },
+    "destination": {
+      "normalizedX": 0.5,
+      "normalizedY": 0.25
+    }
   },
   "overrides": {
     "ios27.native": {
@@ -40,7 +45,9 @@
           }
         ],
         "destinationId": "card-3",
-        "labelsById": { "card-2": "Card row 3" },
+        "labelsById": {
+          "card-2": "Card row 3"
+        },
         "destinationSelector": {
           "relation": "predecessorCenter",
           "testID": "card-card-2"
@@ -138,6 +145,48 @@
           "label": "Accepting drop zone"
         }
       }
+    },
+    "ios26.auto-fallback": {
+      "free-form-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 4"
+        }
+      },
+      "virtualized-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "List row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "List row 4"
+        }
+      },
+      "section-list-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Section 1, row 4",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Section 1, row 4"
+        }
+      },
+      "multi-selection-reorder": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Card row 6",
+        "destinationSelector": {
+          "relation": "namedTargetCenterAfterSourceLift",
+          "label": "Card row 6"
+        }
+      },
+      "scoped-drop": {
+        "driver": "agent-device",
+        "semanticTargetLabel": "Accepting drop zone",
+        "destinationSelector": {
+          "relation": "namedTargetCenter",
+          "label": "Accepting drop zone"
+        }
+      }
     }
   },
   "routes": {
@@ -156,11 +205,11 @@
       "scoped-drop": "agent-device"
     },
     "ios26.auto-fallback": {
-      "free-form-reorder": "detox",
-      "virtualized-list-reorder": "detox",
-      "section-list-reorder": "detox",
-      "multi-selection-reorder": "detox",
-      "scoped-drop": "detox"
+      "free-form-reorder": "agent-device",
+      "virtualized-list-reorder": "agent-device",
+      "section-list-reorder": "agent-device",
+      "multi-selection-reorder": "agent-device",
+      "scoped-drop": "agent-device"
     },
     "android.fallback": {
       "free-form-reorder": "detox",

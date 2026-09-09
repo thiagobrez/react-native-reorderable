@@ -3,9 +3,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const configuration = process.argv[2];
+const deviceName = process.argv[3] ?? 'iPhone 17 Pro';
 if (configuration == null || !configuration.startsWith('ios'))
   throw new Error(
-    'Usage: node scripts/prepare-agent-device-ios-runner.mjs <ios-configuration>'
+    'Usage: node scripts/prepare-agent-device-ios-runner.mjs <ios-configuration> [device-name]'
   );
 
 const runtimeVersion = configuration.startsWith('ios26')
@@ -22,9 +23,9 @@ const devices = JSON.parse(devicesResult.stdout);
 const runtime = Object.entries(devices.devices).find(([key]) =>
   key.includes(runtimeVersion)
 )?.[1];
-const target = runtime?.find(({ name }) => name === 'iPhone 17 Pro');
+const target = runtime?.find(({ name }) => name === deviceName);
 if (target == null)
-  throw new Error(`${runtimeVersion} iPhone 17 Pro simulator is unavailable`);
+  throw new Error(`${runtimeVersion} ${deviceName} simulator is unavailable`);
 
 const run = (command, args, options = {}) =>
   spawnSync(command, args, { stdio: 'inherit', ...options });
@@ -41,7 +42,8 @@ const installResult = run('xcrun', [
 if (installResult.status !== 0)
   throw new Error('Failed to install the Scenario Lab before runner preflight');
 
-const agentDevice = resolve('node_modules/.bin/agent-device');
+const agentDevice =
+  process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device');
 const sessionName = 'issue39-ios-runner-preflight';
 const stateRoot = resolve(
   'artifacts/issue-39/agent-device',
@@ -58,19 +60,42 @@ const environment = {
 const deepLinkConfirmationMarker = resolve(stateRoot, 'deep-link-confirmed');
 const runAgentDevice = (...args) =>
   run(agentDevice, args, { env: environment });
+const sessionArguments = [
+  '--platform',
+  'ios',
+  '--session',
+  sessionName,
+  '--udid',
+  target.udid,
+];
 const runSessionCommand = (...args) =>
-  runAgentDevice(
-    ...args,
-    '--platform',
-    'ios',
-    '--session',
-    sessionName,
-    '--udid',
-    target.udid
-  );
+  runAgentDevice(...args, ...sessionArguments);
 const requireSuccess = (result, description) => {
   if (result.status !== 0)
     throw new Error(`${description} exited ${result.status ?? result.signal}`);
+};
+const confirmDeepLink = () => {
+  const result = run(
+    agentDevice,
+    ['alert', 'get', '--json', ...sessionArguments],
+    { env: environment, encoding: 'utf8', stdio: 'pipe' }
+  );
+  if (result.status === 0) {
+    requireSuccess(
+      runSessionCommand('alert', 'accept'),
+      'Scenario Lab URL confirmation'
+    );
+    return;
+  }
+  let error;
+  try {
+    error = JSON.parse(result.stdout).error;
+  } catch {
+    // Unreadable output cannot establish that a confirmation is absent.
+  }
+  if (error?.details?.runnerErrorCode === 'ALERT_NOT_FOUND') return;
+  process.stderr.write(`${result.stdout ?? ''}${result.stderr ?? ''}`);
+  requireSuccess(result, 'Scenario Lab URL confirmation');
 };
 const defaultEnvironment = { ...process.env };
 delete defaultEnvironment.AGENT_DEVICE_STATE_DIR;
@@ -113,21 +138,9 @@ try {
   );
   requireSuccess(
     runSessionCommand('open', deepLink),
-    'Scenario Lab URL confirmation seed'
-  );
-  runSessionCommand('alert', 'accept');
-  requireSuccess(
-    runSessionCommand('open', 'reorderable.example', '--relaunch'),
-    'Scenario Lab post-confirmation relaunch'
-  );
-  requireSuccess(
-    runSessionCommand('wait', 'Scenario Lab', '15000', '--depth', '100'),
-    'Scenario Lab post-confirmation readiness'
-  );
-  requireSuccess(
-    runSessionCommand('open', deepLink),
     'Scenario Lab preflight deep link'
   );
+  confirmDeepLink();
   requireSuccess(
     runSessionCommand('wait', initialOutcome, '15000', '--depth', '100'),
     'Scenario Lab preflight deep-link outcome'

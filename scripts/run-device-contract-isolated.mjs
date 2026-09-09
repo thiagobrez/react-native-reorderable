@@ -43,13 +43,17 @@ const replayStateRoot = resolve(
   'replay-daemon-state'
 );
 const stopReplayDaemon = () =>
-  spawnSync(resolve('node_modules/.bin/agent-device'), ['daemon', 'stop'], {
-    env: {
-      ...process.env,
-      AGENT_DEVICE_STATE_DIR: replayStateRoot,
-    },
-    stdio: 'inherit',
-  });
+  spawnSync(
+    process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device'),
+    ['daemon', 'stop'],
+    {
+      env: {
+        ...process.env,
+        AGENT_DEVICE_STATE_DIR: replayStateRoot,
+      },
+      stdio: 'inherit',
+    }
+  );
 const hasObservedScenarioOutcome = (outcomeFile, scenarioId) => {
   if (!existsSync(outcomeFile)) return false;
   try {

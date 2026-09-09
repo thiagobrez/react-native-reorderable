@@ -33,3 +33,15 @@ Amended 2026-09-04 ([#65](https://github.com/thiagobrez/react-native-reorderable
 | `android.fallback` | Detox |
 
 The iOS 26 cell moves to Detox because the first pointer gesture the Agent Device XCTest runner synthesizes into a freshly erased, cold-booted iOS 26.5 simulator on hosted runners arrives seconds late or never while injection reports success ([#54](https://github.com/thiagobrez/react-native-reorderable/issues/54)) — the pipeline's dominant failure, and one no widened gesture timing or scenario retry may paper over, because a silent input drop is indistinguishable from a broken contract. That cell's unique responsibility is proving automatic engine selection picks the fallback engine on a runtime without native SwiftUI reordering, and Detox pointer synthesis proves that equally: scenario definitions, terminal public-outcome assertions, and the four-engine parity comparison are unchanged. Agent Device is retained on iOS 27, where its selector-targeted center drag is the only harness that expresses insertion against native SwiftUI rows.
+
+Amended 2026-09-06: restore Agent Device for all five `ios26.auto-fallback`
+pointer scenarios, using the same semantic target plans as `ios27.fallback`.
+The restoration is being validated with the cold-start synthesis fix in
+[callstack/agent-device#2362](https://github.com/callstack/agent-device/pull/2362).
+Detox continues to own accessibility actions and in-flight lifecycle mutations,
+Android pointer scenarios, and native iOS multi-selection. The package-candidate
+workflow still owns the four-engine contract and parity checks; PR gate placement,
+exact-tarball validation, render backstops, and the single retained infrastructure
+retry (including runner-cache cleanup) retain their existing responsibilities.
+Cold-start delivery and the normal contract must pass before this restoration is
+ready to merge; a successful warm-simulator run alone is insufficient.

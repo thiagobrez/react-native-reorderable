@@ -120,14 +120,12 @@ describe('issue 39 portable device contract', () => {
       destination: { normalizedX: 0.5, normalizedY: 0.25 },
       driver: 'detox',
     });
-    expect(pointerDrivers.routes['ios26.auto-fallback']).toEqual({
-      'free-form-reorder': 'detox',
-      'virtualized-list-reorder': 'detox',
-      'section-list-reorder': 'detox',
-      'multi-selection-reorder': 'detox',
-      'scoped-drop': 'detox',
-    });
-    expect(pointerDrivers.overrides['ios26.auto-fallback']).toBeUndefined();
+    expect(pointerDrivers.routes['ios26.auto-fallback']).toEqual(
+      pointerDrivers.routes['ios27.fallback']
+    );
+    expect(pointerDrivers.overrides['ios26.auto-fallback']).toEqual(
+      pointerDrivers.overrides['ios27.fallback']
+    );
     expect(pointerDrivers.routes['android.fallback']).toEqual({
       'free-form-reorder': 'detox',
       'virtualized-list-reorder': 'detox',
@@ -863,9 +861,6 @@ describe('issue 39 portable device contract', () => {
       /runAgentDevice\(\s*'prepare',\s*'ios-runner'/
     );
     expect(iosRunnerPreflight).toMatch(/'--timeout',\s*'300000'/);
-    expect(iosRunnerPreflight).toContain(
-      "runSessionCommand('alert', 'accept')"
-    );
     expect(iosRunnerPreflight).toContain(
       "runSessionCommand('open', 'reorderable.example', '--relaunch')"
     );

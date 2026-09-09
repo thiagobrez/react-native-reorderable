@@ -122,28 +122,28 @@ function accessibilityActionForPlatform(actionName) {
 }
 
 async function runIndependentIosSystemAction(...args) {
-  await execFileAsync('yarn', [
-    'agent-device',
-    ...args,
-    '--session',
-    'issue39-detox-interruption',
-    '--udid',
-    device.id,
-  ]);
+  await execFileAsync(
+    process.env.AGENT_DEVICE_BIN ??
+      require('node:path').resolve('node_modules/.bin/agent-device'),
+    [...args, '--session', 'issue39-detox-interruption', '--udid', device.id]
+  );
 }
 
 async function prepareIndependentIosSystemSession() {
-  await execFileAsync('yarn', [
-    'agent-device',
-    'open',
-    'reorderable.example',
-    '--platform',
-    'ios',
-    '--session',
-    'issue39-detox-interruption',
-    '--udid',
-    device.id,
-  ]);
+  await execFileAsync(
+    process.env.AGENT_DEVICE_BIN ??
+      require('node:path').resolve('node_modules/.bin/agent-device'),
+    [
+      'open',
+      'reorderable.example',
+      '--platform',
+      'ios',
+      '--session',
+      'issue39-detox-interruption',
+      '--udid',
+      device.id,
+    ]
+  );
 }
 
 async function interruptActiveDrag(scenario) {

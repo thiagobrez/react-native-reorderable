@@ -96,7 +96,8 @@ if (platform === 'android') {
 
 const sessionName = `issue39-${scenarioId}`;
 const sessionDeviceArgs = platform === 'ios' ? ['--udid', targetId] : [];
-const agentDevice = resolve('node_modules/.bin/agent-device');
+const agentDevice =
+  process.env.AGENT_DEVICE_BIN ?? resolve('node_modules/.bin/agent-device');
 const recordingDirectory = resolve(
   process.env.ISSUE39_AGENT_DEVICE_DIR ??
     `artifacts/issue-39/agent-device/${configuration}/${scenarioId}`

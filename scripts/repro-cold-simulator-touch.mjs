@@ -37,6 +37,9 @@ if (runtimeVersion == null)
 const iterations = Number(args.get('iterations') ?? 3);
 const expectation = args.get('expect') ?? 'observe';
 const inputProbe = process.env.REPRO_NATIVE_INPUT_PROBE ?? 'none';
+const filePrefetch = process.env.REPRO_RUNTIME_FILE_PREFETCH ?? 'none';
+if (!['none', 'before-boot', 'before-input'].includes(filePrefetch))
+  throw new Error('Expected REPRO_RUNTIME_FILE_PREFETCH none, before-boot, or before-input');
 if (!['none', 'stacks', 'files', 'timeline'].includes(inputProbe))
   throw new Error('Expected REPRO_NATIVE_INPUT_PROBE none, stacks, files, or timeline');
 if (!['observe', 'prompt', 'reproduced'].includes(expectation))
@@ -332,6 +335,21 @@ async function iteration(index, udid) {
       return attempt;
     };
 
+    if (filePrefetch === 'before-input') {
+      const prefetch = run(process.execPath, [
+        fileURLToPath(new URL('./prefetch-cold-repro-file.mjs', import.meta.url)),
+        runtimeVersion,
+        resolve(iterationRoot, 'prefetch.json'),
+      ], { timeoutMs: 60000 });
+      record.steps.runtimeFilePrefetch = {
+        status: prefetch.status,
+        durationMs: prefetch.durationMs,
+        error: prefetch.error,
+        stderr: prefetch.stderr,
+      };
+      if (prefetch.status !== 0)
+        throw new Error(`Runtime file prefetch failed: ${prefetch.stderr}`);
+    }
     if (inputProbe !== 'none') {
       const capture = spawn(
         process.execPath,

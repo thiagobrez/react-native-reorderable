@@ -32,10 +32,11 @@ on:
         type: choice
         default: none
         options: [none, stacks, files, timeline]
-      prefetch_uikit_file:
-        description: Diagnostic read-only prefetch of the runtime UIKit feature file
-        type: boolean
-        default: false
+      runtime_file_prefetch:
+        description: Diagnostic read-only prefetch timing for the runtime UIKit file
+        type: choice
+        default: none
+        options: [none, before-boot, before-input]
   push:
     branches:
       - docs/issue-84-agent-device-upstream-handoff
@@ -82,6 +83,7 @@ jobs:
       RCT_USE_RN_DEP: 1
       RCT_USE_PREBUILT_RNCORE: 1
       REPRO_NATIVE_INPUT_PROBE: ${{ inputs.native_input_probe || 'none' }}
+      REPRO_RUNTIME_FILE_PREFETCH: ${{ inputs.runtime_file_prefetch || 'none' }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -125,7 +127,7 @@ jobs:
           test -d build/Build/Products/Release-iphonesimulator/ReorderableExample.app
 
       - name: Prefetch runtime file for the diagnostic control
-        if: inputs.prefetch_uikit_file == true
+        if: inputs.runtime_file_prefetch == 'before-boot'
         timeout-minutes: 1
         run: node scripts/prefetch-cold-repro-file.mjs '${{ matrix.runtime }}' artifacts/repro-cold-touch/prefetch.json
 

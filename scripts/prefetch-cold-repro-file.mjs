@@ -1,4 +1,4 @@
-// Diagnostic control: read the measured slow file before any cold-boot iteration.
+// Diagnostic control: read the measured slow file at the selected preparation point.
 // This tests host file-cache readiness; it does not change feature values.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';

@@ -37,8 +37,8 @@ if (runtimeVersion == null)
 const iterations = Number(args.get('iterations') ?? 3);
 const expectation = args.get('expect') ?? 'observe';
 const inputProbe = process.env.REPRO_NATIVE_INPUT_PROBE ?? 'none';
-if (!['none', 'stacks', 'files'].includes(inputProbe))
-  throw new Error('Expected REPRO_NATIVE_INPUT_PROBE none, stacks, or files');
+if (!['none', 'stacks', 'files', 'timeline'].includes(inputProbe))
+  throw new Error('Expected REPRO_NATIVE_INPUT_PROBE none, stacks, files, or timeline');
 if (!['observe', 'prompt', 'reproduced'].includes(expectation))
   throw new Error('Expected --expect observe, prompt, or reproduced');
 if (!Number.isInteger(iterations) || iterations < 1 || iterations > 20)

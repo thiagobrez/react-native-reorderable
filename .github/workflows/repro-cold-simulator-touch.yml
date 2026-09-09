@@ -31,7 +31,7 @@ on:
         description: Native input diagnostic (adds overhead)
         type: choice
         default: none
-        options: [none, stacks, files]
+        options: [none, stacks, files, timeline]
       prefetch_uikit_file:
         description: Diagnostic read-only prefetch of the runtime UIKit feature file
         type: boolean

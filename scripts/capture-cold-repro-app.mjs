@@ -4,7 +4,7 @@ import { closeSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const [udid, directory, kind] = process.argv.slice(2);
-const artifact = kind === 'files' ? 'app-files' : 'app-stacks';
+const artifact = `app-${kind}`;
 const outputPath = resolve(directory, `${artifact}.txt`);
 const record = { udid, kind, startedAt: new Date().toISOString() };
 const execute = (command, args, timeout, options = {}) =>
@@ -17,8 +17,14 @@ const execute = (command, args, timeout, options = {}) =>
   });
 
 try {
-  if (!['stacks', 'files'].includes(kind)) throw new Error('Unknown capture kind');
+  if (!['stacks', 'files', 'timeline'].includes(kind)) throw new Error('Unknown capture kind');
   const processes = execute('/bin/ps', ['-axo', 'pid=,comm='], 5000);
+  record.discovery = {
+    status: processes.status,
+    signal: processes.signal,
+    error: processes.error?.message,
+    stderr: processes.stderr,
+  };
   if (processes.status !== 0) throw new Error('App process discovery failed');
   const targets = processes.stdout
     .split('\n')
@@ -35,13 +41,17 @@ try {
   record.executable = targets[0][2];
   record.commandStartedAt = new Date().toISOString();
   let result;
-  if (kind === 'files') {
+  if (kind === 'files' || kind === 'timeline') {
     const output = openSync(outputPath, 'w');
     try {
+      const args = kind === 'files'
+        ? ['/usr/bin/fs_usage', '-w', '-f', 'filesys', '-t', '60', targets[0][1]]
+        : ['/usr/sbin/spindump', targets[0][1], '60', '10', '-onlyTarget',
+          '-timeline', '-timelimit', '180', '-noFile'];
       result = execute(
         '/usr/bin/sudo',
-        ['-n', '/usr/bin/fs_usage', '-w', '-f', 'filesys', '-t', '60', targets[0][1]],
-        90000,
+        ['-n', ...args],
+        kind === 'files' ? 90000 : 190000,
         { stdio: ['ignore', output, 'pipe'], killSignal: 'SIGTERM' }
       );
     } finally {
@@ -61,7 +71,7 @@ try {
   const content = result.status === 0 ? readFileSync(outputPath, 'utf8') : '';
   if (kind === 'files')
     record.hasFileEvents = /^\s*\d{2}:\d{2}:\d{2}\.\d+/m.test(content);
-  else record.hasStacks = /^\s+\d+ Thread_/m.test(content);
+  else record.hasStacks = /^\s*(?:\d+ Thread_|Thread\s+0x)/m.test(content);
 } catch (error) {
   record.error = error.message;
 } finally {

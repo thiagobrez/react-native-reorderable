@@ -1,6 +1,6 @@
 // Diagnostic-only stack capture, isolated from the synchronous gesture driver.
 import { spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const [udid, directory] = process.argv.slice(2);
@@ -32,13 +32,16 @@ try {
   record.commandStartedAt = new Date().toISOString();
   const result = execute(
     '/usr/bin/sample',
-    [targets[0][1], '60', '10', '-mayDie', '-file', resolve(directory, 'app-stacks.txt')],
+    [targets[0][1], '60', '10', '-file', resolve(directory, 'app-stacks.txt')],
     180000
   );
   record.status = result.status;
   record.signal = result.signal;
   record.stderr = result.stderr;
   record.error = result.error?.message;
+  record.hasStacks = result.status === 0 && /^\s+\d+ Thread_/m.test(
+    readFileSync(resolve(directory, 'app-stacks.txt'), 'utf8')
+  );
 } catch (error) {
   record.error = error.message;
 } finally {

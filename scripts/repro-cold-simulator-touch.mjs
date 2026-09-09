@@ -341,6 +341,8 @@ async function iteration(index, udid) {
       });
     }
     record.firstGesture = gestureAttempt('first-gesture-after-cold-boot', contractDrag);
+    // Keep the sampled app alive until its stack report has been written.
+    if (stackCapture != null) await stackCapture;
     record.probes = {};
     record.probes.secondGesture = gestureAttempt('second-gesture-same-app-instance', followUpDrag);
 

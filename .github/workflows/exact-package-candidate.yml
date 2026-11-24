@@ -3,8 +3,6 @@ name: Exact package candidate
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       channel:
@@ -18,7 +16,7 @@ on:
           - dry-run
 
 concurrency:
-  # A nightly or manually dispatched matrix must never cancel the push run that
+  # A manually dispatched matrix must never cancel the push run that
   # authorizes a release for the same main commit, and consecutive pushes must
   # not cancel each other's runs: every main SHA stays release-eligible.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
@@ -44,7 +42,7 @@ jobs:
 
       - name: Inspect metadata, contents, entrypoints, and type surfaces
         env:
-          CANDIDATE_CHANNEL: ${{ inputs.channel || (github.event_name == 'schedule' && 'nightly') || 'release' }}
+          CANDIDATE_CHANNEL: ${{ inputs.channel || 'release' }}
         run: |
           node scripts/verify-package-artifact.mjs \
             artifacts/candidate/react-native-reorderable.tgz \
@@ -406,11 +404,11 @@ jobs:
             org.reactjs.native.example.ReorderableConsumer
 
   peer-canary:
-    name: Nightly peer-version canary (non-gating)
+    name: Peer-version canary (non-gating)
     # Drift canary only: deliberately absent from approve-candidate's needs so
-    # a breaking peer release alerts on the nightly run without blocking any
-    # push-to-main candidate or publication.
-    if: github.event_name == 'schedule'
+    # a breaking peer release alerts on a manually dispatched run without
+    # blocking any push-to-main candidate or publication.
+    if: github.event_name == 'workflow_dispatch'
     needs: candidate
     runs-on: ubuntu-latest
     timeout-minutes: 60
